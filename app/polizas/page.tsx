@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { Sidebar } from "@/components/sidebar"
 import { PageHeader } from "@/components/page-header"
@@ -23,7 +23,7 @@ import { ProtectedRoute } from "@/components/protected-route"
 import { Plus, FileText, UserPlus, User } from "lucide-react"
 import { toast } from "sonner"
 
-export default function PolizasPage() {
+function PolizasContent() {
   const searchParams = useSearchParams()
   const { polizas, agregarPoliza } = usePolizas()
   const [clientes, setClientes] = useLocalStorage<Cliente[]>("crm-clientes", clientesData)
@@ -937,5 +937,13 @@ export default function PolizasPage() {
         </main>
       </div>
     </ProtectedRoute>
+  )
+}
+
+export default function PolizasPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Cargando...</div>}>
+      <PolizasContent />
+    </Suspense>
   )
 }

@@ -13,7 +13,7 @@ import { clientes } from "@/data/clientes"
 import { companias } from "@/data/companias"
 import { motion } from "framer-motion"
 import { AlertCircle, DollarSign, TrendingUp, TrendingDown, MessageSquare, Edit2, Check, X } from "lucide-react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -21,7 +21,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
-export default function PolizasPendientesPage() {
+function PolizasPendientesContent() {
   const searchParams = useSearchParams()
   const [polizas, setPolizas] = useState<Poliza[]>(polizasData)
   const [filtroEstatus, setFiltroEstatus] = useState<"todas" | "activa" | "gracia" | "vencida">("todas")
@@ -719,5 +719,13 @@ export default function PolizasPendientesPage() {
         </DialogContent>
       </Dialog>
     </ProtectedRoute>
+  )
+}
+
+export default function PolizasPendientesPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Cargando...</div>}>
+      <PolizasPendientesContent />
+    </Suspense>
   )
 }
