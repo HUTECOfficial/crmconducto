@@ -3,7 +3,6 @@
 import type React from "react"
 import { useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { etapas } from "@/data/etapas"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -14,6 +13,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Mail, Phone, Building2, Trash2, Edit2, MessageSquare, X, Check, Calendar } from "lucide-react"
 import { useSupabase, type Prospecto } from "@/contexts/supabase-context"
 import { toast } from "sonner"
+
+const etapas = [
+  { id: "lead", nombre: "Lead", orden: 1, color: "#94a3b8" },
+  { id: "contactado", nombre: "Contactado", orden: 2, color: "#60a5fa" },
+  { id: "cotizando", nombre: "Cotizando", orden: 3, color: "#fbbf24" },
+  { id: "enviado", nombre: "Enviado", orden: 4, color: "#a78bfa" },
+  { id: "emitido", nombre: "Emitido", orden: 5, color: "#34d399" },
+]
 
 export function KanbanBoard() {
   const { prospectos, actualizarProspecto, eliminarProspecto, agregarEvento, clientes } = useSupabase()

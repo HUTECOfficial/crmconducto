@@ -1,5 +1,5 @@
-import { Poliza } from "@/data/polizas"
-import { Pago } from "@/data/pagos"
+import type { Poliza } from "@/contexts/supabase-context"
+import type { Pago } from "@/data/pagos"
 
 export interface KPICobranza {
   // 1. Indicadores Financieros (KPIs de Flujo)

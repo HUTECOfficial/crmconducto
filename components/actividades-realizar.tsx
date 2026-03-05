@@ -1,15 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { GlassCard } from "@/components/glass-card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { motion, AnimatePresence } from "framer-motion"
 import { CheckCircle2, Clock, AlertCircle, Calendar, Bell, Trash2 } from "lucide-react"
-import { polizas } from "@/data/polizas"
-import { clientes } from "@/data/clientes"
-import { companias } from "@/data/companias"
+import { useSupabase } from "@/contexts/supabase-context"
 
 interface Actividad {
   id: string
@@ -23,11 +21,14 @@ interface Actividad {
 }
 
 export function ActividadesRealizar() {
-  const [actividades, setActividades] = useState<Actividad[]>(() => {
+  const { polizas, clientes, companias } = useSupabase()
+  const [completadas, setCompletadas] = useState<Set<string>>(new Set())
+  const [eliminadas, setEliminadas] = useState<Set<string>>(new Set())
+
+  const actividades = useMemo(() => {
     const acts: Actividad[] = []
     const hoy = new Date()
 
-    // Generar actividades desde pólizas
     polizas.forEach(poliza => {
       const cliente = clientes.find(c => c.id === poliza.clienteId)
       const compania = companias.find(c => c.id === poliza.companiaId)
@@ -119,7 +120,6 @@ export function ActividadesRealizar() {
       }
     })
 
-    // Ordenar por prioridad y fecha
     return acts.sort((a, b) => {
       const prioridadOrden = { alta: 0, media: 1, baja: 2 }
       if (prioridadOrden[a.prioridad] !== prioridadOrden[b.prioridad]) {
@@ -127,24 +127,31 @@ export function ActividadesRealizar() {
       }
       return new Date(a.fecha).getTime() - new Date(b.fecha).getTime()
     })
-  })
+  }, [polizas, clientes, companias])
+
+  const actividadesConEstado = actividades
+    .filter(act => !eliminadas.has(act.id))
+    .map(act => ({ ...act, completada: completadas.has(act.id) }))
 
   const [filtro, setFiltro] = useState<"todas" | "pendientes" | "completadas">("pendientes")
 
-  const actividadesFiltradas = actividades.filter(act => {
+  const actividadesFiltradas = actividadesConEstado.filter(act => {
     if (filtro === "pendientes") return !act.completada
     if (filtro === "completadas") return act.completada
     return true
   })
 
   const toggleCompletada = (id: string) => {
-    setActividades(actividades.map(act => 
-      act.id === id ? { ...act, completada: !act.completada } : act
-    ))
+    setCompletadas(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   }
 
   const eliminarActividad = (id: string) => {
-    setActividades(actividades.filter(act => act.id !== id))
+    setEliminadas(prev => new Set([...prev, id]))
   }
 
   const getIconoTipo = (tipo: Actividad["tipo"]) => {
@@ -171,8 +178,8 @@ export function ActividadesRealizar() {
     }
   }
 
-  const pendientes = actividades.filter(a => !a.completada).length
-  const completadas = actividades.filter(a => a.completada).length
+  const pendientes = actividadesConEstado.filter(a => !a.completada).length
+  const completadasCount = actividadesConEstado.filter(a => a.completada).length
 
   return (
     <GlassCard className="p-6">
@@ -184,7 +191,7 @@ export function ActividadesRealizar() {
           <div>
             <h2 className="text-xl font-bold font-serif">Actividades a Realizar</h2>
             <p className="text-sm text-muted-foreground">
-              {pendientes} pendientes • {completadas} completadas
+              {pendientes} pendientes • {completadasCount} completadas
             </p>
           </div>
         </div>
@@ -204,14 +211,14 @@ export function ActividadesRealizar() {
           size="sm"
           onClick={() => setFiltro("completadas")}
         >
-          Completadas ({completadas})
+          Completadas ({completadasCount})
         </Button>
         <Button
           variant={filtro === "todas" ? "default" : "outline"}
           size="sm"
           onClick={() => setFiltro("todas")}
         >
-          Todas ({actividades.length})
+          Todas ({actividadesConEstado.length})
         </Button>
       </div>
 

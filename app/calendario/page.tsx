@@ -75,6 +75,7 @@ export default function CalendarioPage() {
   const [filtroPrioridad, setFiltroPrioridad] = useState<"todas" | "alta" | "media" | "baja">("todas")
   const [filtroTipo, setFiltroTipo] = useState<string>("todos")
   const [diaSeleccionado, setDiaSeleccionado] = useState<string | null>(null)
+  const [modalDia, setModalDia] = useState(false)
   
   // Estado del formulario
   const [nuevoEvento, setNuevoEvento] = useState({
@@ -452,6 +453,7 @@ export default function CalendarioPage() {
                       onClick={() => {
                         setDiaSeleccionado(fechaStr)
                         setNuevoEvento(prev => ({ ...prev, fecha: fechaStr }))
+                        setModalDia(true)
                       }}
                     >
                       <div className={cn(
@@ -580,6 +582,98 @@ export default function CalendarioPage() {
               </div>
             </GlassCard>
           )}
+
+          {/* Modal Día Seleccionado */}
+          <Dialog open={modalDia} onOpenChange={setModalDia}>
+            <DialogContent className="sm:max-w-[560px] max-h-[85vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-primary" />
+                  {diaSeleccionado && new Date(diaSeleccionado + "T12:00:00").toLocaleDateString("es-MX", {
+                    weekday: "long", day: "numeric", month: "long", year: "numeric"
+                  })}
+                </DialogTitle>
+                <DialogDescription>
+                  {(eventosPorFecha[diaSeleccionado || ""] || []).length} evento(s) programado(s)
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-3 py-2">
+                {(eventosPorFecha[diaSeleccionado || ""] || []).length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Calendar className="w-10 h-10 mx-auto mb-3 opacity-40" />
+                    <p className="text-sm">No hay eventos para este día</p>
+                  </div>
+                ) : (
+                  (eventosPorFecha[diaSeleccionado || ""] || []).map((evento) => {
+                    const colors = PRIORIDAD_COLORS[evento.prioridad]
+                    const cliente = clientes.find(c => c.id === evento.clienteId)
+                    return (
+                      <div
+                        key={evento.id}
+                        className={cn(
+                          "p-3 rounded-xl flex items-start gap-3",
+                          colors.bg,
+                          colors.border,
+                          evento.completado && "opacity-60"
+                        )}
+                      >
+                        {evento.origen === "evento" && (
+                          <Checkbox
+                            checked={evento.completado}
+                            onCheckedChange={() => handleToggleCompletado(evento)}
+                            className="mt-0.5"
+                          />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {TIPO_ICONS[evento.tipo]}
+                            <span className={cn("font-semibold text-sm", evento.completado && "line-through")}>
+                              {evento.titulo}
+                            </span>
+                            <Badge className={cn("text-xs", colors.badge)}>
+                              {evento.prioridad === "alta" ? "🔴 Alta" : evento.prioridad === "media" ? "🟡 Media" : "🟢 Baja"}
+                            </Badge>
+                          </div>
+                          {evento.descripcion && (
+                            <p className="text-xs text-muted-foreground mt-1">{evento.descripcion}</p>
+                          )}
+                          <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                            {evento.hora && <span>🕐 {evento.hora}</span>}
+                            {cliente && <span>👤 {cliente.nombre}</span>}
+                            <Badge variant="outline" className="text-xs capitalize">{evento.tipo}</Badge>
+                          </div>
+                        </div>
+                        {evento.origen === "evento" && (
+                          <button
+                            onClick={() => { handleEliminarEvento(evento.id, evento.origen); }}
+                            className="text-muted-foreground hover:text-destructive transition-colors p-1"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+
+              <div className="flex justify-between pt-2 border-t border-border/20">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setModalDia(false); setModalNuevoEvento(true) }}
+                  className="gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  Agregar Evento
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setModalDia(false)}>
+                  Cerrar
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           {/* Modal Nuevo Evento */}
           <Dialog open={modalNuevoEvento} onOpenChange={setModalNuevoEvento}>

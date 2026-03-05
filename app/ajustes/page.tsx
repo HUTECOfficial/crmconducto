@@ -4,7 +4,6 @@ import { useState } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { PageHeader } from "@/components/page-header"
 import { GlassCard } from "@/components/glass-card"
-import { etapas } from "@/data/etapas"
 import { useSupabase } from "@/contexts/supabase-context"
 import { ProtectedRoute } from "@/components/protected-route"
 import { Badge } from "@/components/ui/badge"
@@ -13,6 +12,14 @@ import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
 import { motion } from "framer-motion"
 import { Palette, Layers, Users } from "lucide-react"
+
+const etapas = [
+  { id: "lead", nombre: "Lead", orden: 1, color: "#94a3b8" },
+  { id: "contactado", nombre: "Contactado", orden: 2, color: "#60a5fa" },
+  { id: "cotizando", nombre: "Cotizando", orden: 3, color: "#fbbf24" },
+  { id: "enviado", nombre: "Enviado", orden: 4, color: "#a78bfa" },
+  { id: "emitido", nombre: "Emitido", orden: 5, color: "#34d399" },
+]
 
 export default function AjustesPage() {
   const { companias } = useSupabase()
