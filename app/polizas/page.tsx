@@ -17,6 +17,7 @@ import { motion } from "framer-motion"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ProtectedRoute } from "@/components/protected-route"
 import { Plus, FileText, UserPlus, User, Search, Edit2, X } from "lucide-react"
+import { PdfUploadZone } from "@/components/pdf-upload-zone"
 import { toast } from "sonner"
 
 const ESTATUS_COLORS: Record<string, string> = {
@@ -607,8 +608,19 @@ function PolizasContent() {
 
                 {/* Nuevo cliente */}
                 {modoNuevoCliente && (
-                  <div className="space-y-4 p-4 border border-primary/20 rounded-lg bg-primary/5">
+                  <div className="space-y-4 p-4 border border-primary/20 rounded-2xl bg-primary/5">
                     <p className="text-sm font-semibold text-primary flex items-center gap-2"><UserPlus className="w-4 h-4" />Datos del Nuevo Cliente</p>
+                    <PdfUploadZone
+                      onExtracted={data => {
+                        setNuevoCliente(n => ({
+                          ...n,
+                          nombre: data.nombre && !n.nombre ? data.nombre : n.nombre,
+                          email: data.email && !n.email ? data.email : n.email,
+                          telefono: data.telefono && !n.telefono ? data.telefono : n.telefono,
+                          empresa: data.empresa && !n.empresa ? data.empresa : n.empresa,
+                        }))
+                      }}
+                    />
                     <div className="grid grid-cols-2 gap-4">
                       {[
                         { label: "Nombre Completo *", key: "nombre", placeholder: "Juan Pérez García" },
