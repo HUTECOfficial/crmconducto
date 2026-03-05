@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { PageHeader } from "@/components/page-header"
 import { GlassCard } from "@/components/glass-card"
@@ -11,9 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { motion } from "framer-motion"
 import { Search, RefreshCw, Eye, Download, Clock, CheckCircle, AlertCircle } from "lucide-react"
 import { ProtectedRoute } from "@/components/protected-route"
-import { polizas } from "@/data/polizas"
-import { clientes } from "@/data/clientes"
-import { companias } from "@/data/companias"
+import { useSupabase } from "@/contexts/supabase-context"
 
 interface ConsultaResult {
   id: string
@@ -29,6 +27,7 @@ interface ConsultaResult {
 }
 
 export default function ConsultaPolizasPage() {
+  const { polizas, clientes, companias } = useSupabase()
   const [numeroPoliza, setNumeroPoliza] = useState("")
   const [nombreCliente, setNombreCliente] = useState("")
   const [nombreAsegurado, setNombreAsegurado] = useState("")
@@ -36,25 +35,29 @@ export default function ConsultaPolizasPage() {
   const [resultados, setResultados] = useState<ConsultaResult[]>([])
   const [ultimaConsulta, setUltimaConsulta] = useState<Date | null>(null)
 
-  const simularConsultaReal = async (numero: string, nombre: string, asegurado: string): Promise<ConsultaResult[]> => {
-    // Simular llamada a API real de aseguradora (IMEC)
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    
-    const polizasEncontradas = polizas.filter(poliza => {
+  const handleConsulta = async () => {
+    if (!numeroPoliza && !nombreCliente && !nombreAsegurado) return
+
+    setIsLoading(true)
+    await new Promise(resolve => setTimeout(resolve, 600))
+
+    const encontradas = polizas.filter(poliza => {
       const cliente = clientes.find(c => c.id === poliza.clienteId)
-      const matchNumero = numero ? poliza.numeroPoliza.toLowerCase().includes(numero.toLowerCase()) : true
-      const matchNombre = nombre ? cliente?.nombre.toLowerCase().includes(nombre.toLowerCase()) : true
-      const matchAsegurado = asegurado ? poliza.nombreAsegurado?.toLowerCase().includes(asegurado.toLowerCase()) : true
+      const matchNumero = numeroPoliza
+        ? poliza.numeroPoliza.toLowerCase().includes(numeroPoliza.toLowerCase())
+        : true
+      const matchNombre = nombreCliente
+        ? cliente?.nombre.toLowerCase().includes(nombreCliente.toLowerCase())
+        : true
+      const matchAsegurado = nombreAsegurado
+        ? (poliza.nombreAsegurado || "").toLowerCase().includes(nombreAsegurado.toLowerCase())
+        : true
       return matchNumero && matchNombre && matchAsegurado
     })
 
-    return polizasEncontradas.map(poliza => {
+    const mapped: ConsultaResult[] = encontradas.map(poliza => {
       const cliente = clientes.find(c => c.id === poliza.clienteId)
       const compania = companias.find(c => c.id === poliza.companiaId)
-      
-      // Simular estatus en tiempo real (puede diferir del estatus local)
-      const estatusReal = Math.random() > 0.8 ? "suspendida" : poliza.estatus as any
-      
       return {
         id: poliza.id,
         numeroPoliza: poliza.numeroPoliza,
@@ -65,24 +68,13 @@ export default function ConsultaPolizasPage() {
         vigenciaFin: poliza.vigenciaFin,
         prima: poliza.prima,
         ultimaActualizacion: new Date().toISOString(),
-        estatusReal
+        estatusReal: poliza.estatus as any,
       }
     })
-  }
 
-  const handleConsulta = async () => {
-    if (!numeroPoliza && !nombreCliente && !nombreAsegurado) return
-    
-    setIsLoading(true)
-    try {
-      const resultados = await simularConsultaReal(numeroPoliza, nombreCliente, nombreAsegurado)
-      setResultados(resultados)
-      setUltimaConsulta(new Date())
-    } catch (error) {
-      console.error("Error en consulta:", error)
-    } finally {
-      setIsLoading(false)
-    }
+    setResultados(mapped)
+    setUltimaConsulta(new Date())
+    setIsLoading(false)
   }
 
   const getEstatusColor = (estatus: string, estatusReal: string) => {

@@ -6,69 +6,50 @@ import { MetricTile } from "@/components/metric-tile"
 import { GlassCard } from "@/components/glass-card"
 import { ActividadesRealizar } from "@/components/actividades-realizar"
 import { Button } from "@/components/ui/button"
-import { FileText, DollarSign, RefreshCw, TrendingUp, Calendar, Clock, Eye, Plus, ArrowRight, AlertCircle } from "lucide-react"
-import { polizas } from "@/data/polizas"
-import { pagos } from "@/data/pagos"
-import { clientes } from "@/data/clientes"
-import { companias } from "@/data/companias"
-import { actividades } from "@/data/actividades"
+import { FileText, DollarSign, RefreshCw, Calendar, Eye, ArrowRight, AlertCircle } from "lucide-react"
 import { motion } from "framer-motion"
 import { Badge } from "@/components/ui/badge"
 import { ProtectedRoute } from "@/components/protected-route"
 import { useAuth } from "@/contexts/auth-context"
 import { useRouter } from "next/navigation"
-import { calcularKPIsCobranza } from "@/lib/kpi-calculator"
+import { useSupabase } from "@/contexts/supabase-context"
 
 export default function DashboardPage() {
   const { usuario } = useAuth()
   const router = useRouter()
+  const { polizas, clientes, companias } = useSupabase()
 
-  // Calcular KPIs
-  const kpisCobranza = calcularKPIsCobranza(polizas, pagos)
-  
-  // Pólizas por cobrar (con prima pendiente)
-  const polizasPorCobrar = polizas.filter(p => {
-    const primaPendiente = p.primaEmitida - p.primaCobrada
-    return primaPendiente > 0 && (p.estatus === "activa" || p.estatus === "gracia")
-  }).length
-  
-  // Próximas renovaciones (próximos 60 días)
-  const hoyCalculo = new Date()
-  const renovacionesProximas = polizas.filter((p) => {
-    const vigenciaFin = new Date(p.vigenciaFin)
-    const diasParaVencer = Math.ceil((vigenciaFin.getTime() - hoyCalculo.getTime()) / (1000 * 60 * 60 * 24))
-    return diasParaVencer > 0 && diasParaVencer <= 60
-  }).length
-  
-  // Registro de pólizas (total de pólizas activas)
-  const registroPolizas = polizas.filter((p) => p.estatus === "activa").length
-  
-  // Registro de movimientos (pagos del mes actual)
-  const registroMovimientos = pagos.filter((p) => {
-    const fechaPago = p.fechaPago ? new Date(p.fechaPago) : null
-    return fechaPago && fechaPago.getMonth() === new Date().getMonth() && fechaPago.getFullYear() === new Date().getFullYear()
-  }).length
-
-  // Renovaciones próximas - mostrar pólizas por renovar ordenadas por urgencia e importancia
   const hoy = new Date()
+
+  // Pólizas por cobrar: activas, en gracia, por-renovar y vencidas
+  const polizasPorCobrar = polizas.filter(p =>
+    p.estatus === "activa" || p.estatus === "gracia" || p.estatus === "por-renovar" || p.estatus === "vencida"
+  ).length
+
+  // Próximas renovaciones (próximos 60 días)
+  const renovacionesProximas = polizas.filter(p => {
+    const vigenciaFin = new Date(p.vigenciaFin)
+    const dias = Math.ceil((vigenciaFin.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
+    return dias > 0 && dias <= 60
+  }).length
+
+  // Registro de pólizas activas
+  const registroPolizas = polizas.filter(p => p.estatus === "activa").length
+
+  // Total pólizas
+  const totalPolizas = polizas.length
+  const registroMovimientos = totalPolizas
+
+  // Renovaciones ordenadas por urgencia
   const renovacionesCercanas = polizas
-    .filter((p) => p.estatus === "por-renovar")
+    .filter(p => p.estatus === "por-renovar" || p.estatus === "gracia" || p.estatus === "vencida")
     .sort((a, b) => {
-      const fechaA = new Date(a.vigenciaFin)
-      const fechaB = new Date(b.vigenciaFin)
-      const diasA = Math.ceil((fechaA.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
-      const diasB = Math.ceil((fechaB.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
-      
-      // Primero por urgencia (próximas a vencer), luego por prima
-      if (diasA !== diasB) {
-        return diasA - diasB // Más urgentes primero
-      }
-      return b.prima - a.prima // Mayor prima primero
+      const diasA = Math.ceil((new Date(a.vigenciaFin).getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
+      const diasB = Math.ceil((new Date(b.vigenciaFin).getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
+      if (diasA !== diasB) return diasA - diasB
+      return b.prima - a.prima
     })
     .slice(0, 5)
-
-  // Actividades recientes
-  const actividadesRecientes = actividades.slice(0, 6)
 
   return (
     <ProtectedRoute>

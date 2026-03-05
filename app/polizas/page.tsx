@@ -1,14 +1,11 @@
 "use client"
 
-import { useState, useEffect, Suspense } from "react"
+import { useState, useEffect, Suspense, useRef } from "react"
 import { useSearchParams } from "next/navigation"
 import { Sidebar } from "@/components/sidebar"
 import { PageHeader } from "@/components/page-header"
 import { GlassCard } from "@/components/glass-card"
-import { usePolizas } from "@/contexts/polizas-context"
-import { useLocalStorage } from "@/hooks/use-local-storage"
-import { clientes as clientesData, type Cliente } from "@/data/clientes"
-import { companias } from "@/data/companias"
+import { useSupabase, type Poliza as SPoliza } from "@/contexts/supabase-context"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -18,165 +15,116 @@ import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { motion } from "framer-motion"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import type { Poliza } from "@/data/polizas"
 import { ProtectedRoute } from "@/components/protected-route"
-import { Plus, FileText, UserPlus, User } from "lucide-react"
+import { Plus, FileText, UserPlus, User, Search, Edit2, X } from "lucide-react"
 import { toast } from "sonner"
+
+const ESTATUS_COLORS: Record<string, string> = {
+  activa: "bg-green-500/10 text-green-500 border-green-500/20",
+  "por-renovar": "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
+  vencida: "bg-red-500/10 text-red-500 border-red-500/20",
+  cancelada: "bg-gray-500/10 text-gray-500 border-gray-500/20",
+  gracia: "bg-orange-500/10 text-orange-500 border-orange-500/20",
+  rehabilitada: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+  vigente: "bg-green-500/10 text-green-600 border-green-500/20",
+  "en-movimientos": "bg-blue-500/10 text-blue-500 border-blue-500/20",
+  "cancelada-cliente": "bg-gray-500/10 text-gray-400 border-gray-500/20",
+  "cancelada-falta-pago": "bg-red-500/10 text-red-400 border-red-500/20",
+}
 
 function PolizasContent() {
   const searchParams = useSearchParams()
-  const { polizas, agregarPoliza } = usePolizas()
-  const [clientes, setClientes] = useLocalStorage<Cliente[]>("crm-clientes", clientesData)
-  const [filtroCompania, setFiltroCompania] = useState<string>("todas")
-  const [filtroRamo, setFiltroRamo] = useState<string>("todos")
-  const [filtroEstatus, setFiltroEstatus] = useState<string>("todos")
-  const [polizaSeleccionada, setPolizaSeleccionada] = useState<Poliza | null>(null)
+  const { polizas, clientes, companias, agregarPoliza, actualizarPoliza, agregarCliente } = useSupabase()
+
+  const [busqueda, setBusqueda] = useState("")
+  const [filtroCompania, setFiltroCompania] = useState("todas")
+  const [filtroRamo, setFiltroRamo] = useState("todos")
+  const [filtroEstatus, setFiltroEstatus] = useState("todos")
+  const [polizaSeleccionada, setPolizaSeleccionada] = useState<SPoliza | null>(null)
   const [modalNuevaPoliza, setModalNuevaPoliza] = useState(false)
+  const [modalEditarPoliza, setModalEditarPoliza] = useState(false)
+  const [polizaEditar, setPolizaEditar] = useState<SPoliza | null>(null)
   const [modoNuevoCliente, setModoNuevoCliente] = useState(false)
-  
-  // Estado del formulario de nueva póliza
+
+  // Autocompletar cliente
+  const [busquedaCliente, setBusquedaCliente] = useState("")
+  const [mostrarSugerencias, setMostrarSugerencias] = useState(false)
+  const clienteRef = useRef<HTMLDivElement>(null)
+
+  const sugerenciasClientes = clientes
+    .filter(c => c.nombre.toLowerCase().includes(busquedaCliente.toLowerCase()) && c.estatus === "activo")
+    .sort((a, b) => a.nombre.localeCompare(b.nombre))
+    .slice(0, 8)
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (clienteRef.current && !clienteRef.current.contains(e.target as Node)) {
+        setMostrarSugerencias(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [])
+
   const [nuevaPoliza, setNuevaPoliza] = useState({
-    clienteId: "",
-    companiaId: "",
-    ramo: "" as Poliza["ramo"] | "",
-    numeroPoliza: "",
-    incisoEndoso: "",
-    nombreAsegurado: "",
-    vigenciaInicio: "",
-    vigenciaFin: "",
-    prima: "",
-    formaPago: "" as Poliza["formaPago"] | "",
+    clienteId: "", companiaId: "", ramo: "" as SPoliza["ramo"] | "",
+    numeroPoliza: "", incisoEndoso: "", nombreAsegurado: "",
+    vigenciaInicio: "", vigenciaFin: "", prima: "", formaPago: "" as SPoliza["formaPago"] | "",
     tipoPago: "" as "efectivo" | "transferencia" | "tarjeta" | "domiciliacion" | "cheque" | "",
-    anosVidaProducto: "", // Solo para seguros de vida
-    agente: "",
-    ultimoDiaPago: "",
-    numeroRecibo: "",
-    registroSistemaCobranza: false,
-    comentarios: "",
-    notas: "",
-    marcaActualizacion: false,
+    anosVidaProducto: "", agente: "", ultimoDiaPago: "", numeroRecibo: "",
+    registroSistemaCobranza: false, comentarios: "", notas: "", marcaActualizacion: false,
   })
 
-  // Estado del formulario de nuevo cliente
-  const [nuevoCliente, setNuevoCliente] = useState({
-    nombre: "",
-    email: "",
-    telefono: "",
-    empresa: "",
+  const [nuevoCliente, setNuevoCliente] = useState({ nombre: "", email: "", telefono: "", empresa: "" })
+
+  // Estado edición
+  const [editForm, setEditForm] = useState({
+    estatus: "" as SPoliza["estatus"] | "",
+    comentarios: "", notas: "", prima: "", formaPago: "" as SPoliza["formaPago"] | "",
+    ultimoDiaPago: "", vigenciaFin: "",
   })
 
-  // Aplicar filtro desde URL si viene de dashboard
   useEffect(() => {
     const filtro = searchParams.get("filtro")
-    if (filtro === "renovaciones") {
-      setFiltroEstatus("por-renovar")
-    }
+    if (filtro === "renovaciones") setFiltroEstatus("por-renovar")
   }, [searchParams])
 
-  // Calcular automáticamente el número de recibos para seguros de vida
   useEffect(() => {
     if (nuevaPoliza.ramo === "vida" && nuevaPoliza.anosVidaProducto && nuevaPoliza.formaPago) {
       const anos = parseInt(nuevaPoliza.anosVidaProducto)
       if (!isNaN(anos) && anos > 0) {
-        let recibosAnuales = 1
-        switch (nuevaPoliza.formaPago) {
-          case "mensual":
-            recibosAnuales = 12
-            break
-          case "trimestral":
-            recibosAnuales = 4
-            break
-          case "semestral":
-            recibosAnuales = 2
-            break
-          case "anual":
-            recibosAnuales = 1
-            break
-        }
-        const totalRecibos = anos * recibosAnuales
-        setNuevaPoliza(prev => ({
-          ...prev,
-          numeroRecibo: `1/${totalRecibos}`
-        }))
+        const recibosAnuales = { mensual: 12, trimestral: 4, semestral: 2, anual: 1 }[nuevaPoliza.formaPago as string] ?? 1
+        setNuevaPoliza(p => ({ ...p, numeroRecibo: `1/${anos * recibosAnuales}` }))
       }
     }
   }, [nuevaPoliza.ramo, nuevaPoliza.anosVidaProducto, nuevaPoliza.formaPago])
 
   const resetFormulario = () => {
     setNuevaPoliza({
-      clienteId: "",
-      companiaId: "",
-      ramo: "",
-      numeroPoliza: "",
-      incisoEndoso: "",
-      nombreAsegurado: "",
-      vigenciaInicio: "",
-      vigenciaFin: "",
-      prima: "",
-      formaPago: "",
-      tipoPago: "",
-      anosVidaProducto: "",
-      agente: "",
-      ultimoDiaPago: "",
-      numeroRecibo: "",
-      registroSistemaCobranza: false,
-      comentarios: "",
-      notas: "",
-      marcaActualizacion: false,
+      clienteId: "", companiaId: "", ramo: "", numeroPoliza: "", incisoEndoso: "",
+      nombreAsegurado: "", vigenciaInicio: "", vigenciaFin: "", prima: "", formaPago: "",
+      tipoPago: "", anosVidaProducto: "", agente: "", ultimoDiaPago: "", numeroRecibo: "",
+      registroSistemaCobranza: false, comentarios: "", notas: "", marcaActualizacion: false,
     })
-    setNuevoCliente({
-      nombre: "",
-      email: "",
-      telefono: "",
-      empresa: "",
-    })
+    setNuevoCliente({ nombre: "", email: "", telefono: "", empresa: "" })
+    setBusquedaCliente("")
     setModoNuevoCliente(false)
   }
 
-  const handleCrearCliente = () => {
-    if (!nuevoCliente.nombre || !nuevoCliente.telefono) {
-      toast.error("Nombre y teléfono son obligatorios para el cliente")
-      return null
-    }
-
-    const clienteNuevo: Cliente = {
-      id: (clientes.length + 1).toString(),
-      nombre: nuevoCliente.nombre,
-      email: nuevoCliente.email || `${nuevoCliente.nombre.toLowerCase().replace(/\s/g, ".")}@email.com`,
-      telefono: nuevoCliente.telefono,
-      empresa: nuevoCliente.empresa || undefined,
-      fechaRegistro: new Date().toISOString().split("T")[0],
-      estatus: "activo",
-    }
-
-    setClientes([...clientes, clienteNuevo])
-    toast.success(`Cliente "${clienteNuevo.nombre}" creado`)
-    return clienteNuevo.id
-  }
-
-  const handleSubmit = () => {
-    // Validaciones
+  const handleSubmit = async () => {
     if (!nuevaPoliza.clienteId && !modoNuevoCliente) {
       toast.error("Seleccione un cliente o cree uno nuevo")
       return
     }
-    if (modoNuevoCliente && (!nuevoCliente.nombre || !nuevoCliente.telefono)) {
-      toast.error("Complete los campos obligatorios del nuevo cliente")
+    if (!nuevaPoliza.companiaId || !nuevaPoliza.ramo || !nuevaPoliza.numeroPoliza ||
+      !nuevaPoliza.vigenciaInicio || !nuevaPoliza.vigenciaFin || !nuevaPoliza.prima || !nuevaPoliza.formaPago) {
+      toast.error("Complete todos los campos obligatorios")
       return
     }
-    if (!nuevaPoliza.companiaId || !nuevaPoliza.ramo || !nuevaPoliza.numeroPoliza || 
-        !nuevaPoliza.vigenciaInicio || !nuevaPoliza.vigenciaFin || !nuevaPoliza.prima || 
-        !nuevaPoliza.formaPago || !nuevaPoliza.tipoPago) {
-      toast.error("Complete todos los campos obligatorios, incluyendo el Tipo de Pago")
-      return
-    }
-
-    // Validación específica para seguros de vida
     if (nuevaPoliza.ramo === "vida" && !nuevaPoliza.anosVidaProducto) {
-      toast.error("Para seguros de vida, debe especificar los años de vida del producto")
+      toast.error("Para seguros de vida especifique los años del producto")
       return
     }
-
     const primaNum = parseFloat(nuevaPoliza.prima)
     if (isNaN(primaNum) || primaNum <= 0) {
       toast.error("La prima debe ser un número válido mayor a 0")
@@ -184,23 +132,32 @@ function PolizasContent() {
     }
 
     let clienteIdFinal = nuevaPoliza.clienteId
-
-    // Si está en modo nuevo cliente, crear primero el cliente
     if (modoNuevoCliente) {
-      const nuevoClienteId = handleCrearCliente()
-      if (!nuevoClienteId) return
-      clienteIdFinal = nuevoClienteId
+      if (!nuevoCliente.nombre || !nuevoCliente.telefono) {
+        toast.error("Nombre y teléfono son obligatorios para el cliente")
+        return
+      }
+      const nuevoId = await agregarCliente({
+        nombre: nuevoCliente.nombre,
+        email: nuevoCliente.email || `${nuevoCliente.nombre.toLowerCase().replace(/\s/g, ".")}@email.com`,
+        telefono: nuevoCliente.telefono,
+        empresa: nuevoCliente.empresa || undefined,
+        fechaRegistro: new Date().toISOString().split("T")[0],
+        estatus: "activo",
+      })
+      if (!nuevoId) return
+      clienteIdFinal = nuevoId
     }
 
-    agregarPoliza({
+    await agregarPoliza({
       clienteId: clienteIdFinal,
       companiaId: nuevaPoliza.companiaId,
-      ramo: nuevaPoliza.ramo as Poliza["ramo"],
+      ramo: nuevaPoliza.ramo as SPoliza["ramo"],
       numeroPoliza: nuevaPoliza.numeroPoliza,
       vigenciaInicio: nuevaPoliza.vigenciaInicio,
       vigenciaFin: nuevaPoliza.vigenciaFin,
       prima: primaNum,
-      formaPago: nuevaPoliza.formaPago as Poliza["formaPago"],
+      formaPago: nuevaPoliza.formaPago as SPoliza["formaPago"],
       estatus: "activa",
       folios: [],
       tramites: 0,
@@ -213,32 +170,68 @@ function PolizasContent() {
       ultimoDiaPago: nuevaPoliza.ultimoDiaPago || undefined,
       numeroRecibo: nuevaPoliza.numeroRecibo || "1/1",
       primaTotalRecibo: primaNum,
+      tipoPago: nuevaPoliza.tipoPago || undefined,
       registroSistemaCobranza: nuevaPoliza.registroSistemaCobranza,
       comentarios: nuevaPoliza.comentarios || undefined,
       notas: nuevaPoliza.notas || undefined,
       marcaActualizacion: nuevaPoliza.marcaActualizacion,
+      anosVidaProducto: nuevaPoliza.anosVidaProducto ? parseInt(nuevaPoliza.anosVidaProducto) : undefined,
     })
 
     setModalNuevaPoliza(false)
     resetFormulario()
-    toast.success("Póliza creada exitosamente")
   }
 
-  const polizasFiltradas = polizas.filter((poliza) => {
-    if (filtroCompania !== "todas" && poliza.companiaId !== filtroCompania) return false
-    if (filtroRamo !== "todos" && poliza.ramo !== filtroRamo) return false
-    if (filtroEstatus !== "todos" && poliza.estatus !== filtroEstatus) return false
+  const abrirEdicion = (poliza: SPoliza) => {
+    setPolizaEditar(poliza)
+    setEditForm({
+      estatus: poliza.estatus,
+      comentarios: poliza.comentarios || "",
+      notas: poliza.notas || "",
+      prima: poliza.prima.toString(),
+      formaPago: poliza.formaPago,
+      ultimoDiaPago: poliza.ultimoDiaPago || "",
+      vigenciaFin: poliza.vigenciaFin,
+    })
+    setPolizaSeleccionada(null)
+    setModalEditarPoliza(true)
+  }
+
+  const guardarEdicion = async () => {
+    if (!polizaEditar) return
+    const primaNum = parseFloat(editForm.prima)
+    await actualizarPoliza(polizaEditar.id, {
+      estatus: editForm.estatus as SPoliza["estatus"],
+      comentarios: editForm.comentarios || undefined,
+      notas: editForm.notas || undefined,
+      prima: isNaN(primaNum) ? polizaEditar.prima : primaNum,
+      formaPago: editForm.formaPago as SPoliza["formaPago"],
+      ultimoDiaPago: editForm.ultimoDiaPago || undefined,
+      vigenciaFin: editForm.vigenciaFin,
+    })
+    setModalEditarPoliza(false)
+    setPolizaEditar(null)
+  }
+
+  // Filtrar y buscar
+  const polizasFiltradas = polizas.filter(p => {
+    if (filtroCompania !== "todas" && p.companiaId !== filtroCompania) return false
+    if (filtroRamo !== "todos" && p.ramo !== filtroRamo) return false
+    if (filtroEstatus !== "todos" && p.estatus !== filtroEstatus) return false
+    if (busqueda) {
+      const q = busqueda.toLowerCase()
+      const cliente = clientes.find(c => c.id === p.clienteId)
+      const compania = companias.find(c => c.id === p.companiaId)
+      return (
+        p.numeroPoliza.toLowerCase().includes(q) ||
+        (cliente?.nombre || "").toLowerCase().includes(q) ||
+        (compania?.nombre || "").toLowerCase().includes(q) ||
+        (p.nombreAsegurado || "").toLowerCase().includes(q) ||
+        p.ramo.toLowerCase().includes(q)
+      )
+    }
     return true
   })
-
-  const estatusColors: Record<Poliza["estatus"], string> = {
-    activa: "bg-green-500/10 text-green-500 border-green-500/20",
-    "por-renovar": "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
-    vencida: "bg-red-500/10 text-red-500 border-red-500/20",
-    cancelada: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-    gracia: "bg-orange-500/10 text-orange-500 border-orange-500/20",
-    rehabilitada: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  }
 
   return (
     <ProtectedRoute>
@@ -247,43 +240,47 @@ function PolizasContent() {
         <main className="main-content-aligned">
           <PageHeader title="Pólizas" subtitle="Gestiona todas las pólizas de tu cartera" />
 
-          {/* Botón Nueva Póliza */}
-          <div className="flex justify-end mb-6">
-            <Button 
-              onClick={() => setModalNuevaPoliza(true)}
-              className="bg-primary hover:bg-primary/90"
-            >
+          {/* Barra superior */}
+          <div className="flex flex-col sm:flex-row gap-3 mb-6 items-start sm:items-center justify-between">
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por póliza, cliente, aseguradora, ramo..."
+                value={busqueda}
+                onChange={e => setBusqueda(e.target.value)}
+                className="pl-9"
+              />
+              {busqueda && (
+                <button className="absolute right-3 top-1/2 -translate-y-1/2" onClick={() => setBusqueda("")}>
+                  <X className="w-4 h-4 text-muted-foreground" />
+                </button>
+              )}
+            </div>
+            <Button onClick={() => setModalNuevaPoliza(true)} className="bg-primary hover:bg-primary/90 shrink-0">
               <Plus className="w-4 h-4 mr-2" />
               Nueva Póliza
             </Button>
           </div>
 
           {/* Filtros */}
-          <GlassCard className="p-4 lg:p-6 mb-4 lg:mb-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4">
+          <GlassCard className="p-4 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="text-sm font-medium mb-2 block">Aseguradora</label>
+                <label className="text-xs font-medium mb-1 block text-muted-foreground">Aseguradora</label>
                 <Select value={filtroCompania} onValueChange={setFiltroCompania}>
-                  <SelectTrigger className="glass">
+                  <SelectTrigger className="h-8 text-sm">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="todas">Todas</SelectItem>
-                    {companias.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.nombre}
-                      </SelectItem>
-                    ))}
+                    {companias.map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-
               <div>
-                <label className="text-sm font-medium mb-2 block">Ramo</label>
+                <label className="text-xs font-medium mb-1 block text-muted-foreground">Ramo</label>
                 <Select value={filtroRamo} onValueChange={setFiltroRamo}>
-                  <SelectTrigger className="glass">
-                    <SelectValue />
-                  </SelectTrigger>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="todos">Todos</SelectItem>
                     <SelectItem value="autos">Autos</SelectItem>
@@ -291,88 +288,97 @@ function PolizasContent() {
                     <SelectItem value="gastos-medicos">Gastos Médicos</SelectItem>
                     <SelectItem value="empresa">Empresa</SelectItem>
                     <SelectItem value="hogar">Hogar</SelectItem>
+                    <SelectItem value="flotilla">Flotilla</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-
               <div>
-                <label className="text-sm font-medium mb-2 block">Estatus</label>
+                <label className="text-xs font-medium mb-1 block text-muted-foreground">Estatus</label>
                 <Select value={filtroEstatus} onValueChange={setFiltroEstatus}>
-                  <SelectTrigger className="glass">
-                    <SelectValue />
-                  </SelectTrigger>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="todos">Todos</SelectItem>
                     <SelectItem value="activa">Activa</SelectItem>
+                    <SelectItem value="vigente">Vigente</SelectItem>
                     <SelectItem value="por-renovar">Por Renovar</SelectItem>
+                    <SelectItem value="en-movimientos">En Movimientos</SelectItem>
+                    <SelectItem value="gracia">En Gracia</SelectItem>
                     <SelectItem value="vencida">Vencida</SelectItem>
                     <SelectItem value="cancelada">Cancelada</SelectItem>
+                    <SelectItem value="cancelada-cliente">Cancelada (Cliente)</SelectItem>
+                    <SelectItem value="cancelada-falta-pago">Cancelada (Falta Pago)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
           </GlassCard>
 
-          {/* Tabla de pólizas - Desktop */}
+          <p className="text-xs text-muted-foreground mb-3">{polizasFiltradas.length} pólizas {busqueda && `para "${busqueda}"`}</p>
+
+          {/* Tabla desktop */}
           <GlassCard className="overflow-hidden hidden lg:block">
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-border/50">
-                    <th className="text-left p-4 font-semibold">Cliente</th>
-                    <th className="text-left p-4 font-semibold">Póliza</th>
-                    <th className="text-left p-4 font-semibold">Aseguradora</th>
-                    <th className="text-left p-4 font-semibold">Ramo</th>
-                    <th className="text-left p-4 font-semibold">Vigencia</th>
-                    <th className="text-left p-4 font-semibold">Prima</th>
-                    <th className="text-left p-4 font-semibold">Estatus</th>
+                  <tr className="border-b border-border/50 text-xs text-muted-foreground uppercase">
+                    <th className="text-left p-3 font-semibold">Cliente</th>
+                    <th className="text-left p-3 font-semibold">Póliza</th>
+                    <th className="text-left p-3 font-semibold">Aseguradora</th>
+                    <th className="text-left p-3 font-semibold">Ramo</th>
+                    <th className="text-left p-3 font-semibold">Vigencia</th>
+                    <th className="text-left p-3 font-semibold">Prima</th>
+                    <th className="text-left p-3 font-semibold">Estatus</th>
+                    <th className="text-center p-3 font-semibold">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {polizasFiltradas.map((poliza, index) => {
-                    const cliente = clientes.find((c) => c.id === poliza.clienteId)
-                    const compania = companias.find((c) => c.id === poliza.companiaId)
-
+                  {polizasFiltradas.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="p-8 text-center text-muted-foreground">
+                        {busqueda ? `Sin resultados para "${busqueda}"` : "No hay pólizas registradas"}
+                      </td>
+                    </tr>
+                  ) : polizasFiltradas.map((poliza, index) => {
+                    const cliente = clientes.find(c => c.id === poliza.clienteId)
+                    const compania = companias.find(c => c.id === poliza.companiaId)
                     return (
                       <motion.tr
                         key={poliza.id}
-                        className="border-b border-border/30 hover:bg-muted/50 cursor-pointer transition-colors"
-                        initial={{ opacity: 0, y: 20 }}
+                        className="border-b border-border/30 hover:bg-muted/40 cursor-pointer transition-colors"
+                        initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.03 }}
+                        transition={{ delay: index * 0.02 }}
                         onClick={() => setPolizaSeleccionada(poliza)}
                       >
-                        <td className="p-4">
-                          <div>
-                            <p className="font-medium">{cliente?.nombre}</p>
-                            <p className="text-sm text-muted-foreground">{cliente?.email}</p>
-                          </div>
+                        <td className="p-3">
+                          <p className="font-medium">{poliza.nombreAsegurado || cliente?.nombre || "—"}</p>
+                          <p className="text-xs text-muted-foreground">{cliente?.nombre}</p>
                         </td>
-                        <td className="p-4">
-                          <p className="font-mono text-sm">{poliza.numeroPoliza}</p>
-                        </td>
-                        <td className="p-4">
+                        <td className="p-3 font-mono text-sm">{poliza.numeroPoliza}</td>
+                        <td className="p-3">
                           <Badge variant="outline" style={{ borderColor: compania?.color, color: compania?.color }}>
-                            {compania?.nombre}
+                            {compania?.nombre || "—"}
                           </Badge>
                         </td>
-                        <td className="p-4">
-                          <span className="capitalize">{poliza.ramo.replace("-", " ")}</span>
+                        <td className="p-3 capitalize">{poliza.ramo.replace("-", " ")}</td>
+                        <td className="p-3 text-xs">
+                          <p>{new Date(poliza.vigenciaInicio).toLocaleDateString("es-MX")}</p>
+                          <p className="text-muted-foreground">{new Date(poliza.vigenciaFin).toLocaleDateString("es-MX")}</p>
                         </td>
-                        <td className="p-4">
-                          <div className="text-sm">
-                            <p>{new Date(poliza.vigenciaInicio).toLocaleDateString()}</p>
-                            <p className="text-muted-foreground">{new Date(poliza.vigenciaFin).toLocaleDateString()}</p>
-                          </div>
-                        </td>
-                        <td className="p-4">
+                        <td className="p-3">
                           <p className="font-semibold">${poliza.prima.toLocaleString()}</p>
                           <p className="text-xs text-muted-foreground capitalize">{poliza.formaPago}</p>
                         </td>
-                        <td className="p-4">
-                          <Badge className={estatusColors[poliza.estatus]} variant="outline">
+                        <td className="p-3">
+                          <Badge className={ESTATUS_COLORS[poliza.estatus] || ESTATUS_COLORS.activa} variant="outline">
                             {poliza.estatus}
                           </Badge>
+                        </td>
+                        <td className="p-3 text-center">
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0"
+                            onClick={e => { e.stopPropagation(); abrirEdicion(poliza) }}>
+                            <Edit2 className="w-3 h-3" />
+                          </Button>
                         </td>
                       </motion.tr>
                     )
@@ -382,290 +388,266 @@ function PolizasContent() {
             </div>
           </GlassCard>
 
-          {/* Vista de Cards para Móvil/Tablet */}
+          {/* Cards móvil */}
           <div className="lg:hidden space-y-3">
             {polizasFiltradas.map((poliza, index) => {
-              const cliente = clientes.find((c) => c.id === poliza.clienteId)
-              const compania = companias.find((c) => c.id === poliza.companiaId)
-
+              const cliente = clientes.find(c => c.id === poliza.clienteId)
+              const compania = companias.find(c => c.id === poliza.companiaId)
               return (
-                <motion.div
-                  key={poliza.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.03 }}
-                  onClick={() => setPolizaSeleccionada(poliza)}
-                >
-                  <GlassCard className="p-4 cursor-pointer hover:bg-muted/30 transition-colors">
+                <motion.div key={poliza.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.03 }}>
+                  <div className="cursor-pointer" onClick={() => setPolizaSeleccionada(poliza)}><GlassCard className="p-4 hover:bg-muted/30 transition-colors">
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{cliente?.nombre}</p>
+                        <p className="font-medium truncate">{poliza.nombreAsegurado || cliente?.nombre}</p>
                         <p className="font-mono text-xs text-muted-foreground">{poliza.numeroPoliza}</p>
                       </div>
-                      <Badge className={estatusColors[poliza.estatus]} variant="outline">
-                        {poliza.estatus}
-                      </Badge>
+                      <div className="flex items-center gap-1">
+                        <Badge className={ESTATUS_COLORS[poliza.estatus] || ESTATUS_COLORS.activa} variant="outline">{poliza.estatus}</Badge>
+                        <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={e => { e.stopPropagation(); abrirEdicion(poliza) }}>
+                          <Edit2 className="w-3 h-3" />
+                        </Button>
+                      </div>
                     </div>
-                    
                     <div className="flex items-center gap-2 mb-2">
-                      <Badge variant="outline" style={{ borderColor: compania?.color, color: compania?.color }}>
-                        {compania?.nombre}
-                      </Badge>
+                      <Badge variant="outline" style={{ borderColor: compania?.color, color: compania?.color }}>{compania?.nombre}</Badge>
                       <span className="text-xs capitalize text-muted-foreground">{poliza.ramo.replace("-", " ")}</span>
                     </div>
-
                     <div className="flex items-center justify-between text-sm">
-                      <div>
-                        <p className="font-semibold">${poliza.prima.toLocaleString()}</p>
-                        <p className="text-xs text-muted-foreground capitalize">{poliza.formaPago}</p>
-                      </div>
-                      <div className="text-right text-xs">
-                        <p>{new Date(poliza.vigenciaInicio).toLocaleDateString()}</p>
-                        <p className="text-muted-foreground">{new Date(poliza.vigenciaFin).toLocaleDateString()}</p>
-                      </div>
+                      <p className="font-semibold">${poliza.prima.toLocaleString()} <span className="text-xs font-normal text-muted-foreground capitalize">/ {poliza.formaPago}</span></p>
+                      <p className="text-xs text-muted-foreground">{new Date(poliza.vigenciaFin).toLocaleDateString("es-MX")}</p>
                     </div>
-                  </GlassCard>
+                  </GlassCard></div>
                 </motion.div>
               )
             })}
           </div>
 
-          {/* Modal de detalle */}
+          {/* Modal detalle */}
           <Dialog open={!!polizaSeleccionada} onOpenChange={() => setPolizaSeleccionada(null)}>
             <DialogContent className="glass-strong max-w-2xl">
               <DialogHeader>
                 <DialogTitle className="font-serif text-2xl">Detalle de Póliza</DialogTitle>
-                <DialogDescription>Información completa de la póliza seleccionada</DialogDescription>
+                <DialogDescription>Información completa de la póliza</DialogDescription>
               </DialogHeader>
-
-              {polizaSeleccionada && (
-                <div className="space-y-6 mt-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Cliente</p>
-                      <p className="font-semibold">
-                        {clientes.find((c) => c.id === polizaSeleccionada.clienteId)?.nombre}
-                      </p>
+              {polizaSeleccionada && (() => {
+                const cliente = clientes.find(c => c.id === polizaSeleccionada.clienteId)
+                const compania = companias.find(c => c.id === polizaSeleccionada.companiaId)
+                return (
+                  <div className="space-y-4 mt-2">
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      {[
+                        ["Cliente", cliente?.nombre || "—"],
+                        ["# Póliza", polizaSeleccionada.numeroPoliza],
+                        ["Asegurado", polizaSeleccionada.nombreAsegurado || cliente?.nombre || "—"],
+                        ["Aseguradora", compania?.nombre || "—"],
+                        ["Ramo", polizaSeleccionada.ramo.replace("-", " ")],
+                        ["Prima", `$${polizaSeleccionada.prima.toLocaleString()}`],
+                        ["Forma de Pago", polizaSeleccionada.formaPago],
+                        ["Vigencia Inicio", new Date(polizaSeleccionada.vigenciaInicio).toLocaleDateString("es-MX")],
+                        ["Vigencia Fin", new Date(polizaSeleccionada.vigenciaFin).toLocaleDateString("es-MX")],
+                        ["Último Día Pago", polizaSeleccionada.ultimoDiaPago ? new Date(polizaSeleccionada.ultimoDiaPago).toLocaleDateString("es-MX") : "—"],
+                        ["# Recibo", polizaSeleccionada.numeroRecibo || "1/1"],
+                        ["Agente", polizaSeleccionada.agente || "—"],
+                      ].map(([label, value]) => (
+                        <div key={label} className="space-y-1">
+                          <p className="text-xs text-muted-foreground">{label}</p>
+                          <p className="font-medium capitalize">{value}</p>
+                        </div>
+                      ))}
                     </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Número de Póliza</p>
-                      <p className="font-mono font-semibold">{polizaSeleccionada.numeroPoliza}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Aseguradora</p>
-                      <Badge
-                        variant="outline"
-                        style={{
-                          borderColor: companias.find((c) => c.id === polizaSeleccionada.companiaId)?.color,
-                          color: companias.find((c) => c.id === polizaSeleccionada.companiaId)?.color,
-                        }}
-                      >
-                        {companias.find((c) => c.id === polizaSeleccionada.companiaId)?.nombre}
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Estatus</p>
+                      <Badge className={ESTATUS_COLORS[polizaSeleccionada.estatus] || ESTATUS_COLORS.activa} variant="outline">
+                        {polizaSeleccionada.estatus}
                       </Badge>
                     </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Ramo</p>
-                      <p className="font-semibold capitalize">{polizaSeleccionada.ramo.replace("-", " ")}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Vigencia Inicio</p>
-                      <p className="font-semibold">
-                        {new Date(polizaSeleccionada.vigenciaInicio).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Vigencia Fin</p>
-                      <p className="font-semibold">{new Date(polizaSeleccionada.vigenciaFin).toLocaleDateString()}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Prima</p>
-                      <p className="font-semibold text-lg">${polizaSeleccionada.prima.toLocaleString()}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Forma de Pago</p>
-                      <p className="font-semibold capitalize">{polizaSeleccionada.formaPago}</p>
+                    {polizaSeleccionada.comentarios && (
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Comentarios</p>
+                        <p className="text-sm bg-muted/30 rounded p-3 whitespace-pre-line">{polizaSeleccionada.comentarios}</p>
+                      </div>
+                    )}
+                    <div className="flex justify-end">
+                      <Button variant="outline" onClick={() => abrirEdicion(polizaSeleccionada)}>
+                        <Edit2 className="w-4 h-4 mr-2" />Editar Póliza
+                      </Button>
                     </div>
                   </div>
+                )
+              })()}
+            </DialogContent>
+          </Dialog>
 
-                  {polizaSeleccionada.folios && polizaSeleccionada.folios.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-sm text-muted-foreground">Folios</p>
-                      <div className="flex gap-2 flex-wrap">
-                        {polizaSeleccionada.folios.map((folio) => (
-                          <Badge key={folio} variant="secondary">
-                            {folio}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">Trámites</p>
-                    <p className="font-semibold">{polizaSeleccionada.tramites || 0} trámites registrados</p>
+          {/* Modal Editar Póliza */}
+          <Dialog open={modalEditarPoliza} onOpenChange={setModalEditarPoliza}>
+            <DialogContent className="glass-strong max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="font-serif text-xl">Editar Póliza: {polizaEditar?.numeroPoliza}</DialogTitle>
+                <DialogDescription>Modifica los datos de la póliza</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 mt-2">
+                <div>
+                  <Label className="text-xs">Estatus</Label>
+                  <Select value={editForm.estatus} onValueChange={v => setEditForm(f => ({ ...f, estatus: v as any }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="activa">Activa</SelectItem>
+                      <SelectItem value="vigente">Vigente</SelectItem>
+                      <SelectItem value="en-movimientos">En Movimientos</SelectItem>
+                      <SelectItem value="por-renovar">Por Renovar</SelectItem>
+                      <SelectItem value="gracia">En Período de Gracia</SelectItem>
+                      <SelectItem value="vencida">Vencida</SelectItem>
+                      <SelectItem value="cancelada">Cancelada</SelectItem>
+                      <SelectItem value="cancelada-cliente">Cancelada a Petición del Cliente</SelectItem>
+                      <SelectItem value="cancelada-falta-pago">Cancelada por Falta de Pago</SelectItem>
+                      <SelectItem value="rehabilitada">Rehabilitada</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs">Prima</Label>
+                    <Input type="number" value={editForm.prima} onChange={e => setEditForm(f => ({ ...f, prima: e.target.value }))} className="h-8" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Forma de Pago</Label>
+                    <Select value={editForm.formaPago} onValueChange={v => setEditForm(f => ({ ...f, formaPago: v as any }))}>
+                      <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="mensual">Mensual</SelectItem>
+                        <SelectItem value="trimestral">Trimestral</SelectItem>
+                        <SelectItem value="semestral">Semestral</SelectItem>
+                        <SelectItem value="anual">Anual</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
-              )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs">Vigencia Fin</Label>
+                    <Input type="date" value={editForm.vigenciaFin} onChange={e => setEditForm(f => ({ ...f, vigenciaFin: e.target.value }))} className="h-8" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Último Día de Pago</Label>
+                    <Input type="date" value={editForm.ultimoDiaPago} onChange={e => setEditForm(f => ({ ...f, ultimoDiaPago: e.target.value }))} className="h-8" />
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-xs">Comentarios</Label>
+                  <Textarea value={editForm.comentarios} onChange={e => setEditForm(f => ({ ...f, comentarios: e.target.value }))} className="min-h-[80px] text-sm" />
+                </div>
+                <div>
+                  <Label className="text-xs">Notas</Label>
+                  <Textarea value={editForm.notas} onChange={e => setEditForm(f => ({ ...f, notas: e.target.value }))} className="min-h-[60px] text-sm" />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 mt-2">
+                <Button variant="outline" onClick={() => setModalEditarPoliza(false)}>Cancelar</Button>
+                <Button onClick={guardarEdicion}>Guardar Cambios</Button>
+              </div>
             </DialogContent>
           </Dialog>
 
           {/* Modal Nueva Póliza */}
-          <Dialog open={modalNuevaPoliza} onOpenChange={(open) => {
-            setModalNuevaPoliza(open)
-            if (!open) resetFormulario()
-          }}>
+          <Dialog open={modalNuevaPoliza} onOpenChange={open => { setModalNuevaPoliza(open); if (!open) resetFormulario() }}>
             <DialogContent className="glass-strong max-w-3xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="font-serif text-2xl flex items-center gap-2">
-                  <FileText className="w-6 h-6" />
-                  Nueva Póliza
+                  <FileText className="w-6 h-6" />Nueva Póliza
                 </DialogTitle>
                 <DialogDescription>Ingresa los datos de la nueva póliza</DialogDescription>
               </DialogHeader>
 
-              <div className="space-y-6 mt-4">
-                {/* Selector: Cliente existente o nuevo */}
+              <div className="space-y-5 mt-4">
+                {/* Toggle cliente */}
                 <div className="flex gap-2 p-1 bg-muted rounded-lg">
-                  <button
-                    type="button"
-                    onClick={() => setModoNuevoCliente(false)}
-                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition-all ${
-                      !modoNuevoCliente ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <User className="w-4 h-4" />
-                    Cliente Existente
+                  <button type="button" onClick={() => setModoNuevoCliente(false)}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition-all ${!modoNuevoCliente ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                    <User className="w-4 h-4" />Cliente Existente
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setModoNuevoCliente(true)}
-                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition-all ${
-                      modoNuevoCliente ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <UserPlus className="w-4 h-4" />
-                    Nuevo Cliente
+                  <button type="button" onClick={() => setModoNuevoCliente(true)}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition-all ${modoNuevoCliente ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                    <UserPlus className="w-4 h-4" />Nuevo Cliente
                   </button>
                 </div>
 
-                {/* Cliente existente */}
+                {/* Autocompletar cliente existente */}
                 {!modoNuevoCliente && (
-                  <div className="space-y-2">
-                    <Label htmlFor="cliente">Cliente *</Label>
-                    <Select 
-                      value={nuevaPoliza.clienteId} 
-                      onValueChange={(value) => setNuevaPoliza({...nuevaPoliza, clienteId: value})}
-                    >
-                      <SelectTrigger className="glass">
-                        <SelectValue placeholder="Selecciona un cliente" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {clientes.filter(c => c.estatus === "activo").map((cliente) => (
-                          <SelectItem key={cliente.id} value={cliente.id}>
-                            {cliente.nombre} {cliente.empresa ? `(${cliente.empresa})` : ""}
-                          </SelectItem>
+                  <div className="space-y-2" ref={clienteRef}>
+                    <Label>Cliente *</Label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Escribe el nombre del cliente..."
+                        value={busquedaCliente}
+                        onChange={e => { setBusquedaCliente(e.target.value); setMostrarSugerencias(true); setNuevaPoliza(p => ({ ...p, clienteId: "" })) }}
+                        onFocus={() => setMostrarSugerencias(true)}
+                        className="pl-9"
+                      />
+                      {nuevaPoliza.clienteId && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                          <Badge variant="secondary" className="text-xs">✓ Seleccionado</Badge>
+                        </div>
+                      )}
+                    </div>
+                    {mostrarSugerencias && busquedaCliente && sugerenciasClientes.length > 0 && (
+                      <div className="border rounded-lg bg-background/95 backdrop-blur shadow-lg z-50 max-h-48 overflow-y-auto">
+                        {sugerenciasClientes.map(c => (
+                          <button key={c.id} type="button"
+                            className="w-full text-left px-4 py-2 hover:bg-muted/60 transition-colors text-sm border-b border-border/30 last:border-0"
+                            onClick={() => { setNuevaPoliza(p => ({ ...p, clienteId: c.id })); setBusquedaCliente(c.nombre); setMostrarSugerencias(false) }}>
+                            <p className="font-medium">{c.nombre}</p>
+                            {c.empresa && <p className="text-xs text-muted-foreground">{c.empresa}</p>}
+                          </button>
                         ))}
-                      </SelectContent>
-                    </Select>
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {/* Nuevo cliente */}
                 {modoNuevoCliente && (
                   <div className="space-y-4 p-4 border border-primary/20 rounded-lg bg-primary/5">
-                    <p className="text-sm font-semibold text-primary flex items-center gap-2">
-                      <UserPlus className="w-4 h-4" />
-                      Datos del Nuevo Cliente
-                    </p>
+                    <p className="text-sm font-semibold text-primary flex items-center gap-2"><UserPlus className="w-4 h-4" />Datos del Nuevo Cliente</p>
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Nombre Completo *</Label>
-                        <Input
-                          placeholder="Ej: Juan Pérez García"
-                          value={nuevoCliente.nombre}
-                          onChange={(e) => setNuevoCliente({...nuevoCliente, nombre: e.target.value})}
-                          className="glass"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Teléfono *</Label>
-                        <Input
-                          placeholder="Ej: +52 55 1234 5678"
-                          value={nuevoCliente.telefono}
-                          onChange={(e) => setNuevoCliente({...nuevoCliente, telefono: e.target.value})}
-                          className="glass"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Email</Label>
-                        <Input
-                          type="email"
-                          placeholder="Ej: juan@email.com"
-                          value={nuevoCliente.email}
-                          onChange={(e) => setNuevoCliente({...nuevoCliente, email: e.target.value})}
-                          className="glass"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Empresa</Label>
-                        <Input
-                          placeholder="Ej: Empresa SA de CV"
-                          value={nuevoCliente.empresa}
-                          onChange={(e) => setNuevoCliente({...nuevoCliente, empresa: e.target.value})}
-                          className="glass"
-                        />
-                      </div>
+                      {[
+                        { label: "Nombre Completo *", key: "nombre", placeholder: "Juan Pérez García" },
+                        { label: "Teléfono *", key: "telefono", placeholder: "+52 55 1234 5678" },
+                        { label: "Email", key: "email", placeholder: "juan@email.com" },
+                        { label: "Empresa", key: "empresa", placeholder: "Empresa SA de CV" },
+                      ].map(f => (
+                        <div key={f.key} className="space-y-2">
+                          <Label>{f.label}</Label>
+                          <Input placeholder={f.placeholder} value={(nuevoCliente as any)[f.key]}
+                            onChange={e => setNuevoCliente(n => ({ ...n, [f.key]: e.target.value }))} />
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
 
-                {/* Nombre del asegurado */}
-                <div className="space-y-2 p-4 border border-blue-200 dark:border-blue-800 rounded-lg bg-blue-50 dark:bg-blue-950/20">
-                  <Label htmlFor="nombreAsegurado" className="text-base font-semibold">
-                    Nombre del Asegurado *
-                  </Label>
-                  <p className="text-xs text-muted-foreground mb-2">
-                    Puede ser el mismo cliente o una persona diferente
-                  </p>
-                  <Input
-                    id="nombreAsegurado"
-                    placeholder="Ej: María González López"
-                    value={nuevaPoliza.nombreAsegurado}
-                    onChange={(e) => setNuevaPoliza({...nuevaPoliza, nombreAsegurado: e.target.value})}
-                    className="glass"
-                  />
+                {/* Nombre asegurado */}
+                <div className="space-y-2">
+                  <Label>Nombre del Asegurado</Label>
+                  <Input placeholder="Puede diferir del nombre del cliente" value={nuevaPoliza.nombreAsegurado}
+                    onChange={e => setNuevaPoliza(p => ({ ...p, nombreAsegurado: e.target.value }))} />
                 </div>
 
                 {/* Aseguradora y Ramo */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="compania">Aseguradora *</Label>
-                    <Select 
-                      value={nuevaPoliza.companiaId} 
-                      onValueChange={(value) => setNuevaPoliza({...nuevaPoliza, companiaId: value})}
-                    >
-                      <SelectTrigger className="glass">
-                        <SelectValue placeholder="Selecciona" />
-                      </SelectTrigger>
+                    <Label>Aseguradora *</Label>
+                    <Select value={nuevaPoliza.companiaId} onValueChange={v => setNuevaPoliza(p => ({ ...p, companiaId: v }))}>
+                      <SelectTrigger><SelectValue placeholder="Selecciona" /></SelectTrigger>
                       <SelectContent>
-                        {companias.map((compania) => (
-                          <SelectItem key={compania.id} value={compania.id}>
-                            {compania.nombre}
-                          </SelectItem>
-                        ))}
+                        {companias.map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
-
                   <div className="space-y-2">
-                    <Label htmlFor="ramo">Ramo *</Label>
-                    <Select 
-                      value={nuevaPoliza.ramo} 
-                      onValueChange={(value) => setNuevaPoliza({...nuevaPoliza, ramo: value as Poliza["ramo"]})}
-                    >
-                      <SelectTrigger className="glass">
-                        <SelectValue placeholder="Selecciona" />
-                      </SelectTrigger>
+                    <Label>Ramo *</Label>
+                    <Select value={nuevaPoliza.ramo} onValueChange={v => setNuevaPoliza(p => ({ ...p, ramo: v as any }))}>
+                      <SelectTrigger><SelectValue placeholder="Selecciona" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="autos">Autos</SelectItem>
                         <SelectItem value="vida">Vida</SelectItem>
@@ -678,78 +660,45 @@ function PolizasContent() {
                   </div>
                 </div>
 
-                {/* Número de Póliza e Inciso/Endoso */}
+                {/* # Póliza e Inciso */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="numeroPoliza">Número de Póliza *</Label>
-                    <Input
-                      id="numeroPoliza"
-                      placeholder="Ej: VCI852350000"
-                      value={nuevaPoliza.numeroPoliza}
-                      onChange={(e) => setNuevaPoliza({...nuevaPoliza, numeroPoliza: e.target.value})}
-                      className="glass"
-                    />
+                    <Label>Número de Póliza *</Label>
+                    <Input placeholder="Ej: VCI852350000" value={nuevaPoliza.numeroPoliza}
+                      onChange={e => setNuevaPoliza(p => ({ ...p, numeroPoliza: e.target.value }))} />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="incisoEndoso">Inciso o Endoso</Label>
-                    <Input
-                      id="incisoEndoso"
-                      placeholder="Ej: 652 | AI749377"
-                      value={nuevaPoliza.incisoEndoso}
-                      onChange={(e) => setNuevaPoliza({...nuevaPoliza, incisoEndoso: e.target.value})}
-                      className="glass"
-                    />
+                    <Label>Inciso o Endoso</Label>
+                    <Input placeholder="Ej: 652 | AI749377" value={nuevaPoliza.incisoEndoso}
+                      onChange={e => setNuevaPoliza(p => ({ ...p, incisoEndoso: e.target.value }))} />
                   </div>
                 </div>
 
                 {/* Vigencia */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="vigenciaInicio">Vigencia Inicio *</Label>
-                    <Input
-                      id="vigenciaInicio"
-                      type="date"
-                      value={nuevaPoliza.vigenciaInicio}
-                      onChange={(e) => setNuevaPoliza({...nuevaPoliza, vigenciaInicio: e.target.value})}
-                      className="glass"
-                    />
+                    <Label>Vigencia Inicio *</Label>
+                    <Input type="date" value={nuevaPoliza.vigenciaInicio}
+                      onChange={e => setNuevaPoliza(p => ({ ...p, vigenciaInicio: e.target.value }))} />
                   </div>
-
                   <div className="space-y-2">
-                    <Label htmlFor="vigenciaFin">Vigencia Fin *</Label>
-                    <Input
-                      id="vigenciaFin"
-                      type="date"
-                      value={nuevaPoliza.vigenciaFin}
-                      onChange={(e) => setNuevaPoliza({...nuevaPoliza, vigenciaFin: e.target.value})}
-                      className="glass"
-                    />
+                    <Label>Vigencia Fin *</Label>
+                    <Input type="date" value={nuevaPoliza.vigenciaFin}
+                      onChange={e => setNuevaPoliza(p => ({ ...p, vigenciaFin: e.target.value }))} />
                   </div>
                 </div>
 
-                {/* Prima y Forma de Pago */}
+                {/* Prima y Forma de pago */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="prima">Prima Total (MXN) *</Label>
-                    <Input
-                      id="prima"
-                      type="number"
-                      placeholder="Ej: 12500"
-                      value={nuevaPoliza.prima}
-                      onChange={(e) => setNuevaPoliza({...nuevaPoliza, prima: e.target.value})}
-                      className="glass"
-                    />
+                    <Label>Prima Total (MXN) *</Label>
+                    <Input type="number" placeholder="Ej: 12500" value={nuevaPoliza.prima}
+                      onChange={e => setNuevaPoliza(p => ({ ...p, prima: e.target.value }))} />
                   </div>
-
                   <div className="space-y-2">
-                    <Label htmlFor="formaPago">Forma de Pago *</Label>
-                    <Select 
-                      value={nuevaPoliza.formaPago} 
-                      onValueChange={(value) => setNuevaPoliza({...nuevaPoliza, formaPago: value as Poliza["formaPago"]})}
-                    >
-                      <SelectTrigger className="glass">
-                        <SelectValue placeholder="Selecciona" />
-                      </SelectTrigger>
+                    <Label>Forma de Pago *</Label>
+                    <Select value={nuevaPoliza.formaPago} onValueChange={v => setNuevaPoliza(p => ({ ...p, formaPago: v as any }))}>
+                      <SelectTrigger><SelectValue placeholder="Selecciona" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="mensual">Mensual</SelectItem>
                         <SelectItem value="trimestral">Trimestral</SelectItem>
@@ -760,21 +709,11 @@ function PolizasContent() {
                   </div>
                 </div>
 
-                {/* Tipo de Pago */}
-                <div className="space-y-2 p-4 border border-orange-200 dark:border-orange-800 rounded-lg bg-orange-50 dark:bg-orange-950/20">
-                  <Label htmlFor="tipoPago" className="text-base font-semibold">
-                    Tipo de Pago * <span className="text-xs font-normal text-muted-foreground">(Requerido)</span>
-                  </Label>
-                  <p className="text-xs text-muted-foreground mb-2">
-                    Seleccione cómo realizará el pago el cliente
-                  </p>
-                  <Select 
-                    value={nuevaPoliza.tipoPago} 
-                    onValueChange={(value: any) => setNuevaPoliza({...nuevaPoliza, tipoPago: value})}
-                  >
-                    <SelectTrigger className="glass">
-                      <SelectValue placeholder="Seleccione el tipo de pago" />
-                    </SelectTrigger>
+                {/* Tipo de pago */}
+                <div className="space-y-2">
+                  <Label>Tipo de Pago</Label>
+                  <Select value={nuevaPoliza.tipoPago} onValueChange={v => setNuevaPoliza(p => ({ ...p, tipoPago: v as any }))}>
+                    <SelectTrigger><SelectValue placeholder="Seleccione el tipo de pago" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="efectivo">💵 Efectivo</SelectItem>
                       <SelectItem value="transferencia">🏦 Transferencia Bancaria</SelectItem>
@@ -785,147 +724,58 @@ function PolizasContent() {
                   </Select>
                 </div>
 
-                {/* Años de Vida del Producto - Solo para Seguros de Vida */}
+                {/* Años vida (solo vida) */}
                 {nuevaPoliza.ramo === "vida" && (
                   <div className="space-y-2 p-4 border border-purple-200 dark:border-purple-800 rounded-lg bg-purple-50 dark:bg-purple-950/20">
-                    <Label htmlFor="anosVidaProducto" className="text-base font-semibold">
-                      Años de Vida del Producto * <span className="text-xs font-normal text-muted-foreground">(Solo seguros de vida)</span>
-                    </Label>
-                    <p className="text-xs text-muted-foreground mb-2">
-                      Ingrese la duración del seguro en años. El número de recibos se calculará automáticamente según la forma de pago.
-                    </p>
-                    <Input
-                      id="anosVidaProducto"
-                      type="number"
-                      min="1"
-                      max="100"
-                      placeholder="Ej: 10, 20, 30"
+                    <Label className="font-semibold">Años de Vida del Producto *</Label>
+                    <Input type="number" min="1" max="100" placeholder="Ej: 10, 20, 30"
                       value={nuevaPoliza.anosVidaProducto}
-                      onChange={(e) => setNuevaPoliza({...nuevaPoliza, anosVidaProducto: e.target.value})}
-                      className="glass"
-                    />
-                    {nuevaPoliza.anosVidaProducto && nuevaPoliza.formaPago && (
-                      <div className="mt-2 p-2 bg-purple-100 dark:bg-purple-900/30 rounded text-xs">
-                        <p className="font-semibold text-purple-700 dark:text-purple-300">
-                          📊 Cálculo automático: {nuevaPoliza.numeroRecibo || "Calculando..."}
-                        </p>
-                        <p className="text-purple-600 dark:text-purple-400 mt-1">
-                          {nuevaPoliza.anosVidaProducto} años × {
-                            nuevaPoliza.formaPago === "mensual" ? "12 pagos/año" :
-                            nuevaPoliza.formaPago === "trimestral" ? "4 pagos/año" :
-                            nuevaPoliza.formaPago === "semestral" ? "2 pagos/año" :
-                            "1 pago/año"
-                          }
-                        </p>
-                      </div>
+                      onChange={e => setNuevaPoliza(p => ({ ...p, anosVidaProducto: e.target.value }))} />
+                    {nuevaPoliza.numeroRecibo && (
+                      <p className="text-xs text-purple-600">📊 Recibos calculados: {nuevaPoliza.numeroRecibo}</p>
                     )}
                   </div>
                 )}
 
-                {/* Último día de pago y # Recibo */}
+                {/* Último día y # recibo */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="ultimoDiaPago">Último Día de Pago</Label>
-                    <Input
-                      id="ultimoDiaPago"
-                      type="date"
-                      value={nuevaPoliza.ultimoDiaPago}
-                      onChange={(e) => setNuevaPoliza({...nuevaPoliza, ultimoDiaPago: e.target.value})}
-                      className="glass"
-                    />
+                    <Label>Último Día de Pago</Label>
+                    <Input type="date" value={nuevaPoliza.ultimoDiaPago}
+                      onChange={e => setNuevaPoliza(p => ({ ...p, ultimoDiaPago: e.target.value }))} />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="numeroRecibo"># Recibo</Label>
-                    <Input
-                      id="numeroRecibo"
-                      placeholder="Ej: 1/1, 2/4"
-                      value={nuevaPoliza.numeroRecibo}
-                      onChange={(e) => setNuevaPoliza({...nuevaPoliza, numeroRecibo: e.target.value})}
-                      className="glass"
-                    />
+                    <Label># Recibo</Label>
+                    <Input placeholder="Ej: 1/1, 2/4" value={nuevaPoliza.numeroRecibo}
+                      onChange={e => setNuevaPoliza(p => ({ ...p, numeroRecibo: e.target.value }))} />
                   </div>
                 </div>
 
-                {/* Agente y Registro en sistema */}
+                {/* Agente y registro cobranza */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="agente">ID Agente</Label>
-                    <Input
-                      id="agente"
-                      placeholder="Ej: AG001"
-                      value={nuevaPoliza.agente}
-                      onChange={(e) => setNuevaPoliza({...nuevaPoliza, agente: e.target.value})}
-                      className="glass"
-                    />
+                    <Label>ID Agente</Label>
+                    <Input placeholder="Ej: AG001" value={nuevaPoliza.agente}
+                      onChange={e => setNuevaPoliza(p => ({ ...p, agente: e.target.value }))} />
                   </div>
-                  <div className="space-y-2">
-                    <Label>Registro en Sistema Cobranza</Label>
-                    <div className="flex items-center gap-2 h-9">
-                      <Checkbox
-                        id="registroSistema"
-                        checked={nuevaPoliza.registroSistemaCobranza}
-                        onCheckedChange={(checked) => 
-                          setNuevaPoliza({...nuevaPoliza, registroSistemaCobranza: checked as boolean})
-                        }
-                      />
-                      <label htmlFor="registroSistema" className="text-sm cursor-pointer">
-                        Registrado en sistema de cobranza
-                      </label>
-                    </div>
+                  <div className="flex items-center gap-2 pt-6">
+                    <Checkbox id="reg" checked={nuevaPoliza.registroSistemaCobranza}
+                      onCheckedChange={c => setNuevaPoliza(p => ({ ...p, registroSistemaCobranza: c as boolean }))} />
+                    <label htmlFor="reg" className="text-sm cursor-pointer">Registrado en sistema de cobranza</label>
                   </div>
                 </div>
 
                 {/* Comentarios */}
                 <div className="space-y-2">
-                  <Label htmlFor="comentarios">Comentarios</Label>
-                  <Textarea
-                    id="comentarios"
-                    placeholder="Notas adicionales sobre la póliza..."
+                  <Label>Comentarios</Label>
+                  <Textarea placeholder="Notas adicionales sobre la póliza..."
                     value={nuevaPoliza.comentarios}
-                    onChange={(e) => setNuevaPoliza({...nuevaPoliza, comentarios: e.target.value})}
-                    className="glass min-h-[80px]"
-                  />
+                    onChange={e => setNuevaPoliza(p => ({ ...p, comentarios: e.target.value }))}
+                    className="min-h-[80px]" />
                 </div>
 
-                {/* Notas de Recibos */}
-                <div className="space-y-2">
-                  <Label htmlFor="notas">Notas sobre Recibos del Cliente</Label>
-                  <Textarea
-                    id="notas"
-                    placeholder="Información sobre recibos, número de recibos del cliente, etc..."
-                    value={nuevaPoliza.notas}
-                    onChange={(e) => setNuevaPoliza({...nuevaPoliza, notas: e.target.value})}
-                    className="glass min-h-[80px]"
-                  />
-                </div>
-
-                {/* Marca por Actualización */}
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 h-9">
-                    <Checkbox
-                      id="marcaActualizacion"
-                      checked={nuevaPoliza.marcaActualizacion}
-                      onCheckedChange={(checked) => 
-                        setNuevaPoliza({...nuevaPoliza, marcaActualizacion: checked as boolean})
-                      }
-                    />
-                    <label htmlFor="marcaActualizacion" className="text-sm cursor-pointer">
-                      Marca por Actualización
-                    </label>
-                  </div>
-                </div>
-
-                {/* Botones */}
                 <div className="flex justify-end gap-3 pt-4 border-t border-border/50">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => {
-                      setModalNuevaPoliza(false)
-                      resetFormulario()
-                    }}
-                  >
-                    Cancelar
-                  </Button>
+                  <Button variant="outline" onClick={() => { setModalNuevaPoliza(false); resetFormulario() }}>Cancelar</Button>
                   <Button onClick={handleSubmit}>
                     <Plus className="w-4 h-4 mr-2" />
                     {modoNuevoCliente ? "Crear Cliente y Póliza" : "Crear Póliza"}

@@ -1,18 +1,15 @@
 "use client"
 
-import { Sidebar } from "@/components/sidebar"
-import { PageHeader } from "@/components/page-header"
 import { GlassCard } from "@/components/glass-card"
+import { PageHeader } from "@/components/page-header"
+import { Sidebar } from "@/components/sidebar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ProtectedRoute } from "@/components/protected-route"
 import { WhatsAppReminderButton } from "@/components/whatsapp-reminder-button"
-import { polizas as polizasData, type Poliza } from "@/data/polizas"
-import { clientes } from "@/data/clientes"
-import { companias } from "@/data/companias"
 import { motion } from "framer-motion"
-import { AlertCircle, DollarSign, TrendingUp, TrendingDown, MessageSquare, Edit2, Check, X } from "lucide-react"
+import { AlertCircle, DollarSign, TrendingUp, TrendingDown, MessageSquare, Edit2, Check, X, Upload } from "lucide-react"
 import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
@@ -20,131 +17,127 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useSupabase, type Poliza } from "@/contexts/supabase-context"
 
 function PolizasPendientesContent() {
   const searchParams = useSearchParams()
-  const [polizas, setPolizas] = useState<Poliza[]>(polizasData)
-  const [filtroEstatus, setFiltroEstatus] = useState<"todas" | "activa" | "gracia" | "vencida">("todas")
+  const { polizas, clientes, companias, actualizarPoliza, loadingPolizas } = useSupabase()
+
+  const [filtroEstatus, setFiltroEstatus] = useState<"todas" | "activa" | "gracia" | "vencida" | "por-renovar">("todas")
   const [filtroMovimiento, setFiltroMovimiento] = useState<"todas" | "con-movimiento" | "sin-movimiento">("todas")
   const [editandoId, setEditandoId] = useState<string | null>(null)
   const [comentarioTemp, setComentarioTemp] = useState("")
-  
+  const [verComentarioId, setVerComentarioId] = useState<string | null>(null)
+
   // Estados para modales de acción
   const [modalAccion, setModalAccion] = useState(false)
   const [polizaAccion, setPolizaAccion] = useState<Poliza | null>(null)
-  const [tipoAccion, setTipoAccion] = useState<"renovar" | "cancelar" | null>(null)
+  const [tipoAccion, setTipoAccion] = useState<"pagada" | "cancelar" | null>(null)
   const [motivoAccion, setMotivoAccion] = useState("")
-  const [tipoPagoRenovacion, setTipoPagoRenovacion] = useState<"efectivo" | "transferencia" | "tarjeta" | "domiciliacion" | "cheque" | "">("")
+  const [tipoPagoAccion, setTipoPagoAccion] = useState<"efectivo" | "transferencia" | "tarjeta" | "domiciliacion" | "cheque" | "">("")
+  const [comprobante, setComprobante] = useState<File | null>(null)
 
   // Aplicar filtro desde URL si viene de dashboard
   useEffect(() => {
     const filtro = searchParams.get("filtro")
-    if (filtro === "vencidas") {
-      setFiltroEstatus("vencida")
-    }
+    if (filtro === "vencidas") setFiltroEstatus("vencida")
+    if (filtro === "gracia") setFiltroEstatus("gracia")
   }, [searchParams])
 
-  // Filtrar pólizas con prima pendiente
-  let polizasPendientes = polizas.filter(p => {
-    const primaPendiente = p.primaEmitida - p.primaCobrada
-    return primaPendiente > 0 && (p.estatus === "activa" || p.estatus === "gracia" || p.estatus === "por-renovar")
-  })
+  // Filtrar pólizas: mostrar activas, en gracia, por-renovar y vencidas (todo lo no cancelado)
+  let polizasPendientes = polizas.filter(p =>
+    p.estatus === "activa" || p.estatus === "gracia" || p.estatus === "por-renovar" || p.estatus === "vencida"
+  )
 
-  // Aplicar filtro de estatus
   if (filtroEstatus !== "todas") {
     polizasPendientes = polizasPendientes.filter(p => p.estatus === filtroEstatus)
   }
 
-  // Aplicar filtro de movimiento de dinero
   if (filtroMovimiento === "sin-movimiento") {
-    // Pólizas que no mueven dinero a la cartera (sin cobros registrados)
-    polizasPendientes = polizasPendientes.filter(p => p.primaCobrada === 0)
+    polizasPendientes = polizasPendientes.filter(p => (p.primaCobrada || 0) === 0)
   } else if (filtroMovimiento === "con-movimiento") {
-    // Pólizas que tienen al menos algún cobro
-    polizasPendientes = polizasPendientes.filter(p => p.primaCobrada > 0)
+    polizasPendientes = polizasPendientes.filter(p => (p.primaCobrada || 0) > 0)
   }
 
-  const totalPendiente = polizasPendientes.reduce((sum, p) => sum + (p.primaEmitida - p.primaCobrada), 0)
-  const totalEmitido = polizasPendientes.reduce((sum, p) => sum + p.primaEmitida, 0)
-  const totalCobrado = polizasPendientes.reduce((sum, p) => sum + p.primaCobrada, 0)
+  const totalPendiente = polizasPendientes.reduce((sum, p) => sum + ((p.primaEmitida || 0) - (p.primaCobrada || 0)), 0)
+  const totalEmitido = polizasPendientes.reduce((sum, p) => sum + (p.primaEmitida || 0), 0)
+  const totalCobrado = polizasPendientes.reduce((sum, p) => sum + (p.primaCobrada || 0), 0)
 
-  const guardarComentario = (polizaId: string) => {
-    setPolizas(polizas.map(p => 
-      p.id === polizaId ? { ...p, comentarios: comentarioTemp } : p
-    ))
+  const guardarComentario = async (polizaId: string) => {
+    const poliza = polizas.find(p => p.id === polizaId)
+    const comentarioActual = poliza?.comentarios || ""
+    const fecha = new Date().toLocaleDateString('es-MX')
+    const nuevoComentario = comentarioActual
+      ? `${comentarioActual}\n[${fecha}] ${comentarioTemp}`
+      : `[${fecha}] ${comentarioTemp}`
+    await actualizarPoliza(polizaId, { comentarios: nuevoComentario })
     setEditandoId(null)
     setComentarioTemp("")
-    toast.success("Comentario guardado")
   }
 
-  const abrirModalAccion = (poliza: Poliza, tipo: "renovar" | "cancelar") => {
+  const abrirModalAccion = (poliza: Poliza, tipo: "pagada" | "cancelar") => {
     setPolizaAccion(poliza)
     setTipoAccion(tipo)
     setMotivoAccion("")
-    setTipoPagoRenovacion("")
+    setTipoPagoAccion("")
+    setComprobante(null)
     setModalAccion(true)
   }
 
-  const ejecutarAccion = () => {
-    if (!motivoAccion.trim()) {
-      toast.error("El motivo es obligatorio")
+  const ejecutarAccion = async () => {
+    if (tipoAccion === "pagada" && !tipoPagoAccion) {
+      toast.error("Seleccione el tipo de pago")
       return
     }
-
-    if (tipoAccion === "renovar" && !tipoPagoRenovacion) {
-      toast.error("Debe seleccionar el tipo de pago para la renovación")
+    if (tipoAccion === "cancelar" && !motivoAccion.trim()) {
+      toast.error("El motivo de cancelación es obligatorio")
       return
     }
-
     if (!polizaAccion) return
 
-    if (tipoAccion === "renovar") {
-      setPolizas(polizas.map(p => 
-        p.id === polizaAccion.id 
-          ? { 
-              ...p, 
-              estatus: "activa" as const,
-              comentarios: `${p.comentarios || ""} | RENOVADA: ${motivoAccion} | Pago: ${tipoPagoRenovacion}`.trim()
-            } 
-          : p
-      ))
-      toast.success(`Póliza renovada exitosamente con pago por ${tipoPagoRenovacion}`)
+    const fecha = new Date().toLocaleDateString('es-MX')
+
+    if (tipoAccion === "pagada") {
+      const comentarioNuevo = polizaAccion.comentarios
+        ? `${polizaAccion.comentarios}\n[${fecha}] PAGADA: ${tipoPagoAccion}${motivoAccion ? ` - ${motivoAccion}` : ""}`
+        : `[${fecha}] PAGADA: ${tipoPagoAccion}${motivoAccion ? ` - ${motivoAccion}` : ""}`
+      await actualizarPoliza(polizaAccion.id, {
+        estatus: "activa",
+        primaCobrada: polizaAccion.primaEmitida,
+        comentarios: comentarioNuevo,
+        tipoPago: tipoPagoAccion,
+      })
+      toast.success("Póliza marcada como pagada")
     } else if (tipoAccion === "cancelar") {
-      setPolizas(polizas.map(p => 
-        p.id === polizaAccion.id 
-          ? { 
-              ...p, 
-              estatus: "cancelada" as const,
-              cancelacionMotivo: "cliente" as const,
-              comentarios: `${p.comentarios || ""} | CANCELADA: ${motivoAccion}`.trim()
-            } 
-          : p
-      ))
-      toast.success("Póliza cancelada exitosamente")
+      const comentarioNuevo = polizaAccion.comentarios
+        ? `${polizaAccion.comentarios}\n[${fecha}] CANCELADA: ${motivoAccion}`
+        : `[${fecha}] CANCELADA: ${motivoAccion}`
+      await actualizarPoliza(polizaAccion.id, {
+        estatus: "cancelada",
+        cancelacionMotivo: "cliente",
+        comentarios: comentarioNuevo,
+      })
+      toast.success("Póliza cancelada y actualizada")
     }
 
     setModalAccion(false)
     setPolizaAccion(null)
     setTipoAccion(null)
     setMotivoAccion("")
-    setTipoPagoRenovacion("")
+    setTipoPagoAccion("")
+    setComprobante(null)
   }
 
-  const marcarRecordatorio = (polizaId: string, numRecordatorio: 1 | 2 | 3) => {
+  const marcarRecordatorio = async (polizaId: string, numRecordatorio: 1 | 2 | 3) => {
     const hoy = new Date().toISOString().split("T")[0]
-    setPolizas(polizas.map(p => {
-      if (p.id === polizaId) {
-        const fechasActuales = p.fechasRecordatorio || {}
-        return {
-          ...p,
-          fechasRecordatorio: {
-            ...fechasActuales,
-            [`fecha${numRecordatorio}`]: hoy
-          }
-        }
+    const poliza = polizas.find(p => p.id === polizaId)
+    const fechasActuales = poliza?.fechasRecordatorio || {}
+    await actualizarPoliza(polizaId, {
+      fechasRecordatorio: {
+        ...fechasActuales,
+        [`fecha${numRecordatorio}`]: hoy
       }
-      return p
-    }))
+    })
     toast.success(`Recordatorio ${numRecordatorio} registrado`)
   }
 
@@ -412,14 +405,14 @@ function PolizasPendientesContent() {
                             </Button>
                           )}
                         </td>
-                        <td className="p-3 border-r border-pink-200 dark:border-pink-900">
+                        <td className="p-3 border-r border-pink-200 dark:border-pink-900 max-w-[200px]">
                           {editandoId === poliza.id ? (
                             <div className="flex items-center gap-1">
                               <Input
                                 value={comentarioTemp}
                                 onChange={(e) => setComentarioTemp(e.target.value)}
                                 className="h-7 text-xs"
-                                placeholder="Comentario..."
+                                placeholder="Nuevo comentario..."
                               />
                               <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => guardarComentario(poliza.id)}>
                                 <Check className="w-4 h-4 text-green-600" />
@@ -429,22 +422,28 @@ function PolizasPendientesContent() {
                               </Button>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs truncate max-w-[150px]">
-                                {poliza.comentarios || "-"}
-                              </span>
-                              <Button 
-                                size="sm" 
-                                variant="ghost" 
-                                className="h-6 w-6 p-0"
-                                onClick={() => {
-                                  setEditandoId(poliza.id)
-                                  setComentarioTemp(poliza.comentarios || "")
-                                }}
+                            <div className="space-y-1">
+                              <div 
+                                className="text-xs text-muted-foreground cursor-pointer hover:text-foreground whitespace-pre-line line-clamp-2"
+                                onClick={() => setVerComentarioId(poliza.id)}
+                                title="Click para ver comentario completo"
                               >
-                                <Edit2 className="w-3 h-3" />
-                              </Button>
-                              <WhatsAppReminderButton poliza={poliza} />
+                                {poliza.comentarios || <span className="italic">Sin comentarios</span>}
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Button 
+                                  size="sm" 
+                                  variant="ghost" 
+                                  className="h-6 px-2 text-xs"
+                                  onClick={() => {
+                                    setEditandoId(poliza.id)
+                                    setComentarioTemp("")
+                                  }}
+                                >
+                                  <Edit2 className="w-3 h-3 mr-1" />Agregar
+                                </Button>
+                                <WhatsAppReminderButton poliza={poliza} />
+                              </div>
                             </div>
                           )}
                         </td>
@@ -454,9 +453,9 @@ function PolizasPendientesContent() {
                               size="sm" 
                               variant="default"
                               className="h-8 text-xs bg-green-600 hover:bg-green-700"
-                              onClick={() => abrirModalAccion(poliza, "renovar")}
+                              onClick={() => abrirModalAccion(poliza, "pagada")}
                             >
-                              Renovar
+                              ✓ Pagada
                             </Button>
                             <Button 
                               size="sm" 
@@ -608,9 +607,9 @@ function PolizasPendientesContent() {
                           size="sm" 
                           variant="default"
                           className="flex-1 h-8 text-xs bg-green-600 hover:bg-green-700"
-                          onClick={() => abrirModalAccion(poliza, "renovar")}
+                          onClick={() => abrirModalAccion(poliza, "pagada")}
                         >
-                          Renovar
+                          ✓ Pagada
                         </Button>
                         <Button 
                           size="sm" 
@@ -648,16 +647,36 @@ function PolizasPendientesContent() {
         </main>
       </div>
 
+      {/* Modal de Comentario Completo */}
+      <Dialog open={!!verComentarioId} onOpenChange={() => setVerComentarioId(null)}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Comentarios de la Póliza</DialogTitle>
+            <DialogDescription>
+              {polizas.find(p => p.id === verComentarioId)?.numeroPoliza}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="bg-muted rounded-lg p-4 text-sm whitespace-pre-line max-h-[300px] overflow-y-auto">
+              {polizas.find(p => p.id === verComentarioId)?.comentarios || "Sin comentarios"}
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={() => setVerComentarioId(null)}>Cerrar</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Modal de Acción */}
       <Dialog open={modalAccion} onOpenChange={setModalAccion}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>
-              {tipoAccion === "renovar" ? "Renovar Póliza" : "Cancelar Póliza"}
+              {tipoAccion === "pagada" ? "✓ Registrar Pago" : "Cancelar Póliza"}
             </DialogTitle>
             <DialogDescription>
-              {tipoAccion === "renovar" 
-                ? "Ingrese el motivo de renovación y seleccione el tipo de pago"
+              {tipoAccion === "pagada" 
+                ? "Seleccione el tipo de pago y opcionalmente suba el comprobante"
                 : "Ingrese el motivo de cancelación proporcionado por el cliente"}
             </DialogDescription>
           </DialogHeader>
@@ -667,29 +686,16 @@ function PolizasPendientesContent() {
               <div className="p-3 rounded-lg bg-muted">
                 <p className="text-sm font-semibold">{polizaAccion.numeroPoliza}</p>
                 <p className="text-xs text-muted-foreground">
-                  {clientes.find(c => c.id === polizaAccion.clienteId)?.nombre}
+                  {clientes.find(c => c.id === polizaAccion.clienteId)?.nombre} • Prima: ${(polizaAccion.primaEmitida || 0).toLocaleString()}
                 </p>
               </div>
             )}
 
-            <div className="space-y-2">
-              <Label htmlFor="motivo">Motivo *</Label>
-              <Textarea
-                id="motivo"
-                placeholder={tipoAccion === "renovar" 
-                  ? "Ej: Cliente desea continuar con la cobertura..."
-                  : "Ej: Cliente ya no requiere el servicio..."}
-                value={motivoAccion}
-                onChange={(e) => setMotivoAccion(e.target.value)}
-                className="min-h-[100px]"
-              />
-            </div>
-
-            {tipoAccion === "renovar" && (
+            {tipoAccion === "pagada" && (
               <div className="space-y-2">
-                <Label htmlFor="tipoPago">Tipo de Pago *</Label>
-                <Select value={tipoPagoRenovacion} onValueChange={(value: any) => setTipoPagoRenovacion(value)}>
-                  <SelectTrigger id="tipoPago">
+                <Label>Tipo de Pago *</Label>
+                <Select value={tipoPagoAccion} onValueChange={(value: any) => setTipoPagoAccion(value)}>
+                  <SelectTrigger>
                     <SelectValue placeholder="Seleccione el tipo de pago" />
                   </SelectTrigger>
                   <SelectContent>
@@ -702,18 +708,46 @@ function PolizasPendientesContent() {
                 </Select>
               </div>
             )}
+
+            <div className="space-y-2">
+              <Label>{tipoAccion === "cancelar" ? "Motivo de Cancelación *" : "Notas adicionales"}</Label>
+              <Textarea
+                placeholder={tipoAccion === "pagada" 
+                  ? "Ej: Referencia de transferencia, número de cheque..."
+                  : "Ej: Cliente ya no requiere el servicio..."}
+                value={motivoAccion}
+                onChange={(e) => setMotivoAccion(e.target.value)}
+                className="min-h-[80px]"
+              />
+            </div>
+
+            {tipoAccion === "pagada" && (
+              <div className="space-y-2">
+                <Label>Comprobante de Pago (opcional)</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(e) => setComprobante(e.target.files?.[0] || null)}
+                    className="text-xs"
+                  />
+                  <Upload className="w-4 h-4 text-muted-foreground" />
+                </div>
+                {comprobante && <p className="text-xs text-green-600">✓ {comprobante.name}</p>}
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end gap-3">
             <Button variant="outline" onClick={() => setModalAccion(false)}>
-              Cancelar
+              Cerrar
             </Button>
             <Button 
               onClick={ejecutarAccion}
-              className={tipoAccion === "renovar" ? "bg-green-600 hover:bg-green-700" : ""}
+              className={tipoAccion === "pagada" ? "bg-green-600 hover:bg-green-700" : ""}
               variant={tipoAccion === "cancelar" ? "destructive" : "default"}
             >
-              {tipoAccion === "renovar" ? "Renovar Póliza" : "Cancelar Póliza"}
+              {tipoAccion === "pagada" ? "✓ Confirmar Pago" : "Cancelar Póliza"}
             </Button>
           </div>
         </DialogContent>
