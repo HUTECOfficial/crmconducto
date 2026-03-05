@@ -78,7 +78,7 @@ export interface Prospecto {
   origen: string
   interes: string
   prioridad: 'alta' | 'media' | 'baja'
-  estatus: 'nuevo' | 'contactado' | 'en-seguimiento' | 'convertido' | 'perdido'
+  estatus: 'nuevo' | 'contactado' | 'en-seguimiento' | 'convertido' | 'perdido' | 'aprobado' | 'rechazado'
   fechaContacto: string
   notas?: string
   asignadoA?: string

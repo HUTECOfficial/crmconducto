@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Mail, Phone, Building2, Trash2, Edit2, MessageSquare, X, Check, Calendar } from "lucide-react"
+import { Mail, Phone, Building2, Trash2, Edit2, MessageSquare, X, Check, Calendar, UserCheck, UserX } from "lucide-react"
 import { useSupabase, type Prospecto } from "@/contexts/supabase-context"
 import { toast } from "sonner"
 
@@ -19,11 +19,17 @@ const etapas = [
   { id: "contactado", nombre: "Contactado", orden: 2, color: "#60a5fa" },
   { id: "cotizando", nombre: "Cotizando", orden: 3, color: "#fbbf24" },
   { id: "enviado", nombre: "Enviado", orden: 4, color: "#a78bfa" },
-  { id: "emitido", nombre: "Emitido", orden: 5, color: "#34d399" },
+  { id: "aprobado", nombre: "Aprobado", orden: 5, color: "#22c55e" },
+  { id: "rechazado", nombre: "Rechazado", orden: 6, color: "#ef4444" },
 ]
 
 export function KanbanBoard() {
-  const { prospectos, actualizarProspecto, eliminarProspecto, agregarEvento, clientes } = useSupabase()
+  const { prospectos, actualizarProspecto, eliminarProspecto, agregarEvento, agregarCliente } = useSupabase()
+  const [convirtiendo, setConvirtiendo] = useState(false)
+
+  // Modal confirmar conversión a cliente
+  const [modalAprobar, setModalAprobar] = useState(false)
+  const [prospectoAprobar, setProspectoAprobar] = useState<Prospecto | null>(null)
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [editandoId, setEditandoId] = useState<string | null>(null)
   const [comentarioTemp, setComentarioTemp] = useState("")
@@ -58,17 +64,54 @@ export function KanbanBoard() {
     contactado: "contactado",
     cotizando: "en-seguimiento",
     enviado: "convertido",
-    emitido: "perdido",
+    aprobado: "aprobado",
+    rechazado: "rechazado",
   }
 
   const handleDrop = async (etapaId: string) => {
     if (!draggedId) return
     const prospecto = prospectos.find(p => p.id === draggedId)
+    if (!prospecto) { setDraggedId(null); return }
+
+    if (etapaId === "aprobado") {
+      // Abrir modal de confirmación para convertir a cliente
+      setProspectoAprobar(prospecto)
+      setModalAprobar(true)
+      setDraggedId(null)
+      return
+    }
+
     const nuevoEstatus = etapaToEstatus[etapaId]
-    if (prospecto && nuevoEstatus && prospecto.estatus !== nuevoEstatus) {
+    if (nuevoEstatus && prospecto.estatus !== nuevoEstatus) {
       await actualizarProspecto(draggedId, { estatus: nuevoEstatus as any })
     }
     setDraggedId(null)
+  }
+
+  const convertirACliente = async () => {
+    if (!prospectoAprobar) return
+    setConvirtiendo(true)
+    try {
+      await agregarCliente({
+        nombre: prospectoAprobar.nombre,
+        email: prospectoAprobar.email || "",
+        telefono: prospectoAprobar.telefono,
+        empresa: prospectoAprobar.empresa,
+        fechaRegistro: new Date().toISOString().split("T")[0],
+        estatus: "activo",
+        notas: prospectoAprobar.notas
+          ? `Convertido desde prospecto.\n${prospectoAprobar.notas}`
+          : "Convertido desde prospecto.",
+      })
+      await eliminarProspecto(prospectoAprobar.id)
+      toast.success(`✅ ${prospectoAprobar.nombre} ahora es un cliente activo`)
+      setModalAprobar(false)
+      setProspectoAprobar(null)
+    } catch (err) {
+      toast.error("Error al convertir a cliente")
+    } finally {
+      setConvirtiendo(false)
+    }
   }
 
   const guardarComentario = async (prospecto: Prospecto) => {
@@ -133,19 +176,13 @@ export function KanbanBoard() {
 
   // Mapear estatus de Supabase a etapas locales
   const getProspectosByEtapa = (etapaId: string) => {
-    const etapaMap: Record<string, string[]> = {
-      lead: ["nuevo"],
-      contactado: ["contactado"],
-      cotizando: ["en-seguimiento"],
-      enviado: ["convertido"],
-      emitido: ["convertido", "perdido"],
-    }
     return prospectos.filter(p => {
       if (etapaId === "lead") return p.estatus === "nuevo"
       if (etapaId === "contactado") return p.estatus === "contactado"
       if (etapaId === "cotizando") return p.estatus === "en-seguimiento"
       if (etapaId === "enviado") return p.estatus === "convertido"
-      if (etapaId === "emitido") return p.estatus === "perdido"
+      if (etapaId === "aprobado") return p.estatus === "aprobado"
+      if (etapaId === "rechazado") return p.estatus === "rechazado"
       return false
     })
   }
@@ -284,6 +321,28 @@ export function KanbanBoard() {
                           </div>
                         )}
 
+                        {/* Botones Aprobar / Rechazar en columna "enviado" */}
+                        {etapa.id === "enviado" && (
+                          <div className="mt-2 flex gap-1">
+                            <button
+                              className="flex-1 flex items-center justify-center gap-1 py-1 rounded-lg text-xs font-medium bg-green-500/15 hover:bg-green-500/30 text-green-600 border border-green-500/20 transition-colors"
+                              onClick={() => { setProspectoAprobar(prospecto); setModalAprobar(true) }}
+                              title="Aprobar → crear cliente"
+                            >
+                              <UserCheck className="w-3 h-3" />
+                              Aprobar
+                            </button>
+                            <button
+                              className="flex-1 flex items-center justify-center gap-1 py-1 rounded-lg text-xs font-medium bg-red-500/15 hover:bg-red-500/30 text-red-500 border border-red-500/20 transition-colors"
+                              onClick={() => actualizarProspecto(prospecto.id, { estatus: "rechazado" })}
+                              title="Rechazar"
+                            >
+                              <UserX className="w-3 h-3" />
+                              Rechazar
+                            </button>
+                          </div>
+                        )}
+
                         {/* Confirmar borrar */}
                         {confirmarBorrar === prospecto.id && (
                           <div className="mt-2 p-2 rounded bg-red-500/10 border border-red-500/20">
@@ -361,6 +420,48 @@ export function KanbanBoard() {
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setModalEditar(false)}>Cancelar</Button>
             <Button onClick={guardarEdicion}>Guardar Cambios</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Confirmar Aprobar → Nuevo Cliente */}
+      <Dialog open={modalAprobar} onOpenChange={(open) => { if (!open && !convirtiendo) { setModalAprobar(false); setProspectoAprobar(null) } }}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-green-600">
+              <UserCheck className="w-5 h-5" />
+              Convertir a Cliente
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4 space-y-3">
+            <div className="p-4 rounded-xl bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800">
+              <p className="font-semibold text-sm">{prospectoAprobar?.nombre}</p>
+              <p className="text-xs text-muted-foreground">{prospectoAprobar?.email}</p>
+              <p className="text-xs text-muted-foreground">{prospectoAprobar?.telefono}</p>
+              {prospectoAprobar?.empresa && (
+                <p className="text-xs text-muted-foreground">{prospectoAprobar.empresa}</p>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Este prospecto será registrado como <strong>cliente activo</strong> y desaparecerá del embudo de ventas. Sus datos y notas se conservarán.
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <Button
+              className="flex-1 bg-green-600 hover:bg-green-700 text-white gap-2"
+              onClick={convertirACliente}
+              disabled={convirtiendo}
+            >
+              <UserCheck className="w-4 h-4" />
+              {convirtiendo ? "Creando cliente..." : "Confirmar — Crear Cliente"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => { setModalAprobar(false); setProspectoAprobar(null) }}
+              disabled={convirtiendo}
+            >
+              Cancelar
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
