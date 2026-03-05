@@ -36,7 +36,7 @@ export const usuarios: Usuario[] = [
   },
   {
     id: "4",
-    nombre: "Dani",
+    nombre: "Daniela",
     email: "dani@crm.com",
     rol: "gerencia",
     avatar: "/placeholder.svg?height=40&width=40",
