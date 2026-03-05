@@ -14,11 +14,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ProtectedRoute } from "@/components/protected-route"
 import { PdfUploadZone } from "@/components/pdf-upload-zone"
+import { ClienteDocumentos } from "@/components/cliente-documentos"
 import { motion } from "framer-motion"
 import { toast } from "sonner"
 import {
   Plus, Search, X, User, Mail, Phone, Building2, FileText,
-  Edit2, Trash2, Users, CheckCircle, XCircle
+  Edit2, Trash2, Users, CheckCircle, XCircle, FolderOpen
 } from "lucide-react"
 
 const emptyForm = {
@@ -37,6 +38,7 @@ export default function ClientesPage() {
   const [modalEditar, setModalEditar] = useState(false)
   const [modalDetalle, setModalDetalle] = useState(false)
   const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(null)
+  const [editTab, setEditTab] = useState<"datos" | "documentos">("datos")
 
   const [form, setForm] = useState({ ...emptyForm })
   const [loading, setLoading] = useState(false)
@@ -419,14 +421,42 @@ export default function ClientesPage() {
           </Dialog>
 
           {/* Modal Editar */}
-          <Dialog open={modalEditar} onOpenChange={setModalEditar}>
-            <DialogContent className="sm:max-w-[580px] max-h-[90vh] overflow-y-auto">
+          <Dialog open={modalEditar} onOpenChange={open => { setModalEditar(open); if (!open) setEditTab("datos") }}>
+            <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
-                  <Edit2 className="w-5 h-5 text-primary" /> Editar: {clienteSeleccionado?.nombre}
+                  <Edit2 className="w-5 h-5 text-primary" /> {clienteSeleccionado?.nombre}
                 </DialogTitle>
               </DialogHeader>
-              <ClienteForm onSubmit={handleEditar} />
+
+              {/* Tabs */}
+              <div className="flex gap-1 p-1 bg-muted rounded-xl mt-1">
+                <button
+                  type="button"
+                  onClick={() => setEditTab("datos")}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
+                    editTab === "datos" ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <User className="w-4 h-4" /> Datos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditTab("documentos")}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
+                    editTab === "documentos" ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <FolderOpen className="w-4 h-4" /> Documentos
+                </button>
+              </div>
+
+              {editTab === "datos" && <ClienteForm onSubmit={handleEditar} />}
+              {editTab === "documentos" && clienteSeleccionado && (
+                <div className="py-2">
+                  <ClienteDocumentos clienteId={clienteSeleccionado.id} />
+                </div>
+              )}
             </DialogContent>
           </Dialog>
 

@@ -84,6 +84,17 @@ export interface Prospecto {
   asignadoA?: string
 }
 
+export interface DocumentoCliente {
+  id: string
+  clienteId: string
+  nombre: string
+  tipo: string
+  tamaño: number
+  url: string
+  storagePath: string
+  creadoEn: string
+}
+
 export interface Evento {
   id: string
   titulo: string
@@ -130,6 +141,11 @@ interface SupabaseContextType {
   actualizarEvento: (id: string, evento: Partial<Evento>) => Promise<void>
   eliminarEvento: (id: string) => Promise<void>
   
+  // Documentos de clientes
+  uploadDocumentoCliente: (clienteId: string, file: File) => Promise<DocumentoCliente | null>
+  getDocumentosCliente: (clienteId: string) => Promise<DocumentoCliente[]>
+  eliminarDocumentoCliente: (doc: DocumentoCliente) => Promise<void>
+
   // Refetch
   refetchAll: () => Promise<void>
 }
@@ -644,6 +660,101 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // ==================== DOCUMENTOS CLIENTES ====================
+  const BUCKET = 'documentos-clientes'
+
+  const uploadDocumentoCliente = async (clienteId: string, file: File): Promise<DocumentoCliente | null> => {
+    try {
+      const ext = file.name.split('.').pop() ?? 'bin'
+      const storagePath = `${clienteId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+
+      const { error: uploadError } = await supabase.storage
+        .from(BUCKET)
+        .upload(storagePath, file, { upsert: false, contentType: file.type || 'application/octet-stream' })
+
+      if (uploadError) throw uploadError
+
+      const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(storagePath)
+
+      const { data, error: dbError } = await supabase
+        .from('cliente_documentos')
+        .insert({
+          cliente_id: clienteId,
+          nombre: file.name,
+          tipo: file.type || ext,
+          tamano: file.size,
+          url: urlData.publicUrl,
+          storage_path: storagePath,
+        })
+        .select()
+        .single()
+
+      if (dbError) throw dbError
+
+      toast.success(`"${file.name}" subido correctamente`)
+      return {
+        id: data.id,
+        clienteId: data.cliente_id,
+        nombre: data.nombre,
+        tipo: data.tipo,
+        tamaño: data.tamano,
+        url: data.url,
+        storagePath: data.storage_path,
+        creadoEn: data.created_at,
+      }
+    } catch (err: any) {
+      toast.error('Error al subir documento: ' + err.message)
+      return null
+    }
+  }
+
+  const getDocumentosCliente = async (clienteId: string): Promise<DocumentoCliente[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('cliente_documentos')
+        .select('*')
+        .eq('cliente_id', clienteId)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+
+      return (data || []).map((d: any) => ({
+        id: d.id,
+        clienteId: d.cliente_id,
+        nombre: d.nombre,
+        tipo: d.tipo,
+        tamaño: d.tamano,
+        url: d.url,
+        storagePath: d.storage_path,
+        creadoEn: d.created_at,
+      }))
+    } catch (err: any) {
+      console.error('Error al obtener documentos:', err.message)
+      return []
+    }
+  }
+
+  const eliminarDocumentoCliente = async (doc: DocumentoCliente): Promise<void> => {
+    try {
+      const { error: storageErr } = await supabase.storage
+        .from(BUCKET)
+        .remove([doc.storagePath])
+
+      if (storageErr) throw storageErr
+
+      const { error: dbErr } = await supabase
+        .from('cliente_documentos')
+        .delete()
+        .eq('id', doc.id)
+
+      if (dbErr) throw dbErr
+
+      toast.success(`"${doc.nombre}" eliminado`)
+    } catch (err: any) {
+      toast.error('Error al eliminar documento: ' + err.message)
+    }
+  }
+
   // ==================== REFETCH ALL ====================
   const refetchAll = async () => {
     await Promise.all([
@@ -689,6 +800,10 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       actualizarEvento,
       eliminarEvento,
       
+      uploadDocumentoCliente,
+      getDocumentosCliente,
+      eliminarDocumentoCliente,
+
       refetchAll,
     }}>
       {children}
