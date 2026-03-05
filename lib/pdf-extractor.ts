@@ -33,14 +33,30 @@ function extractEmpresa(text: string): string | undefined {
   return match?.[1]?.trim()
 }
 
+const TIMEOUT_MS = 8000
+const MAX_PAGES = 3
+const MIN_USEFUL_TEXT = 200
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`Tiempo de espera agotado (${ms / 1000}s) en: ${label}`)), ms)
+    ),
+  ])
+}
+
 export async function extractTextFromPDF(file: File): Promise<ExtractedPDFData> {
   if (typeof window === "undefined") {
     throw new Error("extractTextFromPDF solo puede ejecutarse en el cliente")
   }
 
-  const pdfjsLib = await import("pdfjs-dist")
+  const pdfjsLib = await withTimeout(
+    import("pdfjs-dist"),
+    TIMEOUT_MS,
+    "cargar pdfjs"
+  )
 
-  // Use a pinned worker that matches the installed pdfjs-dist version
   const version = pdfjsLib.version
   pdfjsLib.GlobalWorkerOptions.workerSrc =
     `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${version}/pdf.worker.min.mjs`
@@ -49,20 +65,47 @@ export async function extractTextFromPDF(file: File): Promise<ExtractedPDFData> 
 
   let pdf: any
   try {
-    pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise
-  } catch (err) {
+    pdf = await withTimeout(
+      pdfjsLib.getDocument({
+        data: new Uint8Array(arrayBuffer),
+        useWorkerFetch: false,
+        isEvalSupported: false,
+        useSystemFonts: true,
+      }).promise,
+      TIMEOUT_MS,
+      "abrir PDF"
+    )
+  } catch (err: any) {
     console.error("[pdf-extractor] Error al abrir el PDF:", err)
-    throw new Error("No se pudo abrir el PDF. Asegúrate de que el archivo no esté protegido.")
+    throw new Error(err?.message?.includes("Tiempo") ? err.message : "No se pudo abrir el PDF. Verifica que el archivo no esté protegido.")
   }
 
   let fullText = ""
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i)
-    const content = await page.getTextContent()
-    const pageText = (content.items as any[])
-      .map((item) => item.str ?? "")
-      .join(" ")
-    fullText += pageText + "\n"
+  const pagesToRead = Math.min(pdf.numPages, MAX_PAGES)
+
+  for (let i = 1; i <= pagesToRead; i++) {
+    try {
+      const page = await withTimeout(pdf.getPage(i), 3000, `página ${i}`) as any
+      const content = await withTimeout((page as any).getTextContent(), 3000, `texto página ${i}`) as any
+      const pageText = (content.items as any[])
+        .map((item) => item.str ?? "")
+        .join(" ")
+      fullText += pageText + "\n"
+
+      // Stop early if we already have enough text to extract fields
+      if (fullText.trim().length >= MIN_USEFUL_TEXT) {
+        const candidate = {
+          nombre: extractNombre(fullText),
+          email: extractEmail(fullText),
+          telefono: extractTelefono(fullText),
+          empresa: extractEmpresa(fullText),
+        }
+        if (candidate.nombre && candidate.telefono) break
+      }
+    } catch (pageErr) {
+      console.warn(`[pdf-extractor] Página ${i} falló:`, pageErr)
+      break
+    }
   }
 
   fullText = fullText.trim()
