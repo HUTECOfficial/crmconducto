@@ -211,11 +211,12 @@ INSERT INTO companias (nombre, color) VALUES
 ('Allianz', '#003781')
 ON CONFLICT (nombre) DO NOTHING;
 
--- Insertar Usuario Administrador
+-- Insertar Usuarios del Sistema
 INSERT INTO usuarios (nombre, email, rol, activo) VALUES
 ('Mauricio Portillo', 'admin@crm.com', 'administrador', true),
-('María Asesora', 'maria@crm.com', 'asesor', true),
-('Juan Administrativo', 'juan@crm.com', 'administrativo', true)
+('Javier Garcia', 'javier@crm.com', 'gerencia', true),
+('Monse', 'monse@crm.com', 'gerencia', true),
+('Dani', 'dani@crm.com', 'gerencia', true)
 ON CONFLICT (email) DO NOTHING;
 
 -- Insertar algunos clientes de ejemplo

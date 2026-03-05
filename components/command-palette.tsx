@@ -4,9 +4,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { clientes } from "@/data/clientes"
-import { polizas } from "@/data/polizas"
-import { companias } from "@/data/companias"
+import { useSupabase } from "@/contexts/supabase-context"
 import { Search, FileText, User, Building2, ArrowRight } from "lucide-react"
 import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
@@ -17,6 +15,7 @@ interface CommandPaletteProps {
 }
 
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
+  const { clientes, polizas, companias } = useSupabase()
   const [query, setQuery] = useState("")
   const [selectedIndex, setSelectedIndex] = useState(0)
   const router = useRouter()
@@ -143,7 +142,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                         index === selectedIndex ? "bg-primary-foreground/20" : "bg-muted",
                       )}
                     >
-                      <Icon className="w-4 h-4" style={resultado.color ? { color: resultado.color } : {}} />
+                      <Icon className="w-4 h-4" style={'color' in resultado && resultado.color ? { color: resultado.color } : {}} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold truncate">{resultado.titulo}</p>

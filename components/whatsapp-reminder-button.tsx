@@ -3,8 +3,7 @@
 import { Button } from "@/components/ui/button"
 import { MessageCircle } from "lucide-react"
 import { useState } from "react"
-import { Poliza } from "@/data/polizas"
-import { clientes } from "@/data/clientes"
+import { useSupabase, type Poliza } from "@/contexts/supabase-context"
 
 interface WhatsAppReminderButtonProps {
   poliza: Poliza
@@ -12,6 +11,7 @@ interface WhatsAppReminderButtonProps {
 }
 
 export function WhatsAppReminderButton({ poliza, className }: WhatsAppReminderButtonProps) {
+  const { clientes } = useSupabase()
   const [enviando, setEnviando] = useState(false)
 
   // Obtener datos del cliente

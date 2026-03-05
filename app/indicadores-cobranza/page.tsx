@@ -21,12 +21,23 @@ import {
   RefreshCw,
 } from "lucide-react"
 import { ProtectedRoute } from "@/components/protected-route"
-import { polizas } from "@/data/polizas"
-import { pagos } from "@/data/pagos"
+import { useSupabase } from "@/contexts/supabase-context"
 import { calcularKPIsCobranza } from "@/lib/kpi-calculator"
 
 export default function IndicadoresCobranzaPage() {
-  const kpis = calcularKPIsCobranza(polizas, pagos)
+  const { polizas } = useSupabase()
+  // Generate basic payment data from polizas for KPI calculation
+  const pagosFromPolizas = polizas.map(p => ({
+    id: p.id,
+    polizaId: p.id,
+    monto: p.primaEmitida - p.primaCobrada,
+    fechaVencimiento: p.ultimoDiaPago || p.vigenciaFin,
+    estatus: p.primaCobrada >= p.primaEmitida ? 'pagado' as const : p.estatus === 'gracia' ? 'vencido' as const : 'pendiente' as const,
+    metodoPago: undefined,
+    diasMora: 0,
+    intentosCobranza: 0,
+  }))
+  const kpis = calcularKPIsCobranza(polizas as any, pagosFromPolizas as any)
 
   const getColorTendencia = (valor: number, objetivo: number) => {
     if (valor >= objetivo) return "text-green-600"

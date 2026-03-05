@@ -5,7 +5,8 @@ import { Sidebar } from "@/components/sidebar"
 import { PageHeader } from "@/components/page-header"
 import { GlassCard } from "@/components/glass-card"
 import { etapas } from "@/data/etapas"
-import { companias } from "@/data/companias"
+import { useSupabase } from "@/contexts/supabase-context"
+import { ProtectedRoute } from "@/components/protected-route"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -14,14 +15,16 @@ import { motion } from "framer-motion"
 import { Palette, Layers, Users } from "lucide-react"
 
 export default function AjustesPage() {
+  const { companias } = useSupabase()
   const [blurIntensity, setBlurIntensity] = useState([24])
   const [shadowDepth, setShadowDepth] = useState([8])
   const [borderRadius, setBorderRadius] = useState([24])
 
   return (
+    <ProtectedRoute>
     <div className="min-h-screen bg-background">
       <Sidebar />
-      <main className="ml-64 p-8">
+      <main className="main-content-aligned">
         <PageHeader title="Ajustes" subtitle="Personaliza tu experiencia en el CRM" />
 
         <div className="space-y-6">
@@ -203,5 +206,6 @@ export default function AjustesPage() {
         </div>
       </main>
     </div>
+    </ProtectedRoute>
   )
 }

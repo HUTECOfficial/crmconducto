@@ -40,6 +40,8 @@ export default function LoginPage() {
     switch (rol) {
       case "administrador":
         return <Shield className="w-5 h-5" />
+      case "gerencia":
+        return <Building2 className="w-5 h-5" />
       case "asesor":
         return <User className="w-5 h-5" />
       case "administrativo":
@@ -53,6 +55,8 @@ export default function LoginPage() {
     switch (rol) {
       case "administrador":
         return "from-primary to-secondary"
+      case "gerencia":
+        return "from-blue-500 to-indigo-600"
       case "asesor":
         return "from-accent to-primary"
       case "administrativo":

@@ -673,14 +673,14 @@ export default function CalendarioPage() {
                 <div className="space-y-2">
                   <Label>Cliente (opcional)</Label>
                   <Select 
-                    value={nuevoEvento.clienteId} 
-                    onValueChange={(v) => setNuevoEvento({ ...nuevoEvento, clienteId: v })}
+                    value={nuevoEvento.clienteId || "sin-cliente"} 
+                    onValueChange={(v) => setNuevoEvento({ ...nuevoEvento, clienteId: v === "sin-cliente" ? "" : v })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Seleccionar cliente" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Sin cliente</SelectItem>
+                      <SelectItem value="sin-cliente">Sin cliente</SelectItem>
                       {clientes.map(cliente => (
                         <SelectItem key={cliente.id} value={cliente.id}>
                           {cliente.nombre}

@@ -9,9 +9,7 @@ import { Button } from "@/components/ui/button"
 import { ProtectedRoute } from "@/components/protected-route"
 import { Calendar, Bell, AlertCircle, CheckCircle2, Clock } from "lucide-react"
 import { motion } from "framer-motion"
-import { polizas } from "@/data/polizas"
-import { clientes } from "@/data/clientes"
-import { companias } from "@/data/companias"
+import { useSupabase } from "@/contexts/supabase-context"
 
 type TipoNotificacion = "verde" | "amarillo" | "magenta"
 
@@ -26,6 +24,7 @@ interface Notificacion {
 }
 
 export default function CalendarioNotificacionesPage() {
+  const { polizas, clientes, companias } = useSupabase()
   const [filtroTipo, setFiltroTipo] = useState<TipoNotificacion | "todas">("todas")
 
   // Generar notificaciones basadas en pólizas

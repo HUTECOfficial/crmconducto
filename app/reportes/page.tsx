@@ -4,12 +4,14 @@ import { Sidebar } from "@/components/sidebar"
 import { PageHeader } from "@/components/page-header"
 import { GlassCard } from "@/components/glass-card"
 import { NeoButton } from "@/components/neo-button"
-import { polizas } from "@/data/polizas"
-import { companias } from "@/data/companias"
+import { useSupabase } from "@/contexts/supabase-context"
+import { ProtectedRoute } from "@/components/protected-route"
 import { Download } from "lucide-react"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
 
 export default function ReportesPage() {
+  const { polizas, companias } = useSupabase()
+
   // Producción por aseguradora
   const produccionPorCompania = companias.map((compania) => {
     const polizasCompania = polizas.filter((p) => p.companiaId === compania.id && p.estatus === "activa")
@@ -72,9 +74,10 @@ export default function ReportesPage() {
   }
 
   return (
+    <ProtectedRoute>
     <div className="min-h-screen bg-background">
       <Sidebar />
-      <main className="ml-64 p-8">
+      <main className="main-content-aligned">
         <PageHeader
           title="Reportes"
           subtitle="Análisis y estadísticas de tu cartera"
@@ -197,5 +200,6 @@ export default function ReportesPage() {
         </div>
       </main>
     </div>
+    </ProtectedRoute>
   )
 }

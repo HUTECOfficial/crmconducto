@@ -50,10 +50,14 @@ export default function UsuariosPage() {
     switch (rol) {
       case "administrador":
         return <Shield className="w-5 h-5" />
+      case "gerencia":
+        return <Building2 className="w-5 h-5" />
       case "asesor":
         return <UserIcon className="w-5 h-5" />
       case "administrativo":
         return <Building2 className="w-5 h-5" />
+      default:
+        return <UserIcon className="w-5 h-5" />
     }
   }
 
@@ -61,10 +65,14 @@ export default function UsuariosPage() {
     switch (rol) {
       case "administrador":
         return "from-primary to-secondary"
+      case "gerencia":
+        return "from-blue-500 to-indigo-600"
       case "asesor":
         return "from-accent to-primary"
       case "administrativo":
         return "from-warning to-accent"
+      default:
+        return "from-primary to-secondary"
     }
   }
 
@@ -72,10 +80,14 @@ export default function UsuariosPage() {
     switch (rol) {
       case "administrador":
         return "bg-primary/10 text-primary border-primary/20"
+      case "gerencia":
+        return "bg-blue-500/10 text-blue-600 border-blue-500/20"
       case "asesor":
         return "bg-accent/10 text-accent border-accent/20"
       case "administrativo":
         return "bg-warning/10 text-warning border-warning/20"
+      default:
+        return "bg-primary/10 text-primary border-primary/20"
     }
   }
 
@@ -111,7 +123,7 @@ export default function UsuariosPage() {
     <ProtectedRoute>
       <div className="min-h-screen bg-background">
         <Sidebar />
-        <main className="ml-64 p-8">
+        <main className="main-content-aligned">
           <PageHeader
             title="Gestión de Usuarios"
             subtitle="Administra usuarios, roles y permisos del sistema"
@@ -139,24 +151,24 @@ export default function UsuariosPage() {
 
             <GlassCard className="p-6">
               <div className="flex items-center gap-4">
-                <div className="p-3 rounded-xl bg-gradient-to-br from-accent to-primary text-white">
-                  <UserIcon className="w-6 h-6" />
+                <div className="p-3 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white">
+                  <Building2 className="w-6 h-6" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold">{usuarios.filter((u) => u.rol === "asesor").length}</p>
-                  <p className="text-sm text-muted-foreground">Asesores</p>
+                  <p className="text-2xl font-bold">{usuarios.filter((u) => u.rol === "gerencia").length}</p>
+                  <p className="text-sm text-muted-foreground">Gerencia</p>
                 </div>
               </div>
             </GlassCard>
 
             <GlassCard className="p-6">
               <div className="flex items-center gap-4">
-                <div className="p-3 rounded-xl bg-gradient-to-br from-warning to-accent text-white">
-                  <Building2 className="w-6 h-6" />
+                <div className="p-3 rounded-xl bg-gradient-to-br from-accent to-primary text-white">
+                  <UserIcon className="w-6 h-6" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold">{usuarios.filter((u) => u.rol === "administrativo").length}</p>
-                  <p className="text-sm text-muted-foreground">Administrativos</p>
+                  <p className="text-2xl font-bold">{usuarios.filter((u) => u.rol === "asesor" || u.rol === "administrativo").length}</p>
+                  <p className="text-sm text-muted-foreground">Otros</p>
                 </div>
               </div>
             </GlassCard>
@@ -277,6 +289,7 @@ export default function UsuariosPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="administrador">Administrador</SelectItem>
+                      <SelectItem value="gerencia">Gerencia</SelectItem>
                       <SelectItem value="asesor">Asesor</SelectItem>
                       <SelectItem value="administrativo">Administrativo</SelectItem>
                     </SelectContent>

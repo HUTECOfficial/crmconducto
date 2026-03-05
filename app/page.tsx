@@ -4,7 +4,7 @@ import { Sidebar } from "@/components/sidebar"
 import { PageHeader } from "@/components/page-header"
 import { MetricTile } from "@/components/metric-tile"
 import { GlassCard } from "@/components/glass-card"
-import { ActividadesRealizar } from "@/components/actividades-realizar"
+import { ProximosEventos } from "@/components/proximos-eventos"
 import { Button } from "@/components/ui/button"
 import { FileText, DollarSign, RefreshCw, Calendar, Eye, ArrowRight, AlertCircle } from "lucide-react"
 import { motion } from "framer-motion"
@@ -164,8 +164,8 @@ export default function DashboardPage() {
               </div>
             </GlassCard>
 
-            {/* Actividades a Realizar */}
-            <ActividadesRealizar />
+            {/* Próximos Eventos */}
+            <ProximosEventos />
           </div>
         </main>
       </div>

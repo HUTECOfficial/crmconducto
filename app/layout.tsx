@@ -5,8 +5,6 @@ import "./globals.css"
 import { CommandPaletteProvider } from "@/components/command-palette-provider"
 import { AuthProvider } from "@/contexts/auth-context"
 import { ToastProvider } from "@/components/toast-provider"
-import { ProspectosProvider } from "@/contexts/prospectos-context"
-import { PolizasProvider } from "@/contexts/polizas-context"
 import { SupabaseProvider } from "@/contexts/supabase-context"
 
 const inter = Inter({
@@ -38,11 +36,7 @@ export default function RootLayout({
         <ToastProvider>
           <AuthProvider>
             <SupabaseProvider>
-              <ProspectosProvider>
-                <PolizasProvider>
-                  <CommandPaletteProvider>{children}</CommandPaletteProvider>
-                </PolizasProvider>
-              </ProspectosProvider>
+              <CommandPaletteProvider>{children}</CommandPaletteProvider>
             </SupabaseProvider>
           </AuthProvider>
         </ToastProvider>

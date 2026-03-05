@@ -89,10 +89,14 @@ export function Sidebar() {
     switch (usuario.rol) {
       case "administrador":
         return <Shield className="w-5 h-5" />
+      case "gerencia":
+        return <Building2 className="w-5 h-5" />
       case "asesor":
         return <UserIcon className="w-5 h-5" />
       case "administrativo":
         return <Building2 className="w-5 h-5" />
+      default:
+        return <UserIcon className="w-5 h-5" />
     }
   }
 
@@ -100,6 +104,8 @@ export function Sidebar() {
     switch (usuario.rol) {
       case "administrador":
         return "from-primary to-secondary"
+      case "gerencia":
+        return "from-blue-500 to-indigo-600"
       case "asesor":
         return "from-accent to-primary"
       case "administrativo":

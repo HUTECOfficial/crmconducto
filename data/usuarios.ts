@@ -1,4 +1,4 @@
-export type Rol = "administrador" | "asesor" | "administrativo"
+export type Rol = "administrador" | "gerencia" | "asesor" | "administrativo"
 
 export interface Usuario {
   id: string
@@ -20,35 +20,27 @@ export const usuarios: Usuario[] = [
   },
   {
     id: "2",
-    nombre: "María Asesora",
-    email: "maria@crm.com",
-    rol: "asesor",
+    nombre: "Javier Garcia",
+    email: "javier@crm.com",
+    rol: "gerencia",
     avatar: "/placeholder.svg?height=40&width=40",
     activo: true,
   },
   {
     id: "3",
-    nombre: "Juan Administrativo",
-    email: "juan@crm.com",
-    rol: "administrativo",
+    nombre: "Monse",
+    email: "monse@crm.com",
+    rol: "gerencia",
     avatar: "/placeholder.svg?height=40&width=40",
     activo: true,
   },
   {
     id: "4",
-    nombre: "Ana Asesora",
-    email: "ana@crm.com",
-    rol: "asesor",
+    nombre: "Dani",
+    email: "dani@crm.com",
+    rol: "gerencia",
     avatar: "/placeholder.svg?height=40&width=40",
     activo: true,
-  },
-  {
-    id: "5",
-    nombre: "Pedro Asesor",
-    email: "pedro@crm.com",
-    rol: "asesor",
-    avatar: "/placeholder.svg?height=40&width=40",
-    activo: false,
   },
 ]
 
@@ -71,6 +63,23 @@ export const permisos = {
     autorizaciones: true,
     verTodo: true,
   },
+  gerencia: {
+    dashboard: true,
+    prospeccion: true,
+    polizas: true,
+    "consulta-polizas": true,
+    calendario: true,
+    pagos: true,
+    "pago-semestral": true,
+    documentacion: true,
+    "manejador-cuentas": true,
+    recordatorios: true,
+    reportes: true,
+    ajustes: true,
+    usuarios: true,
+    autorizaciones: false,
+    verTodo: true,
+  },
   asesor: {
     dashboard: true,
     prospeccion: true,
@@ -86,7 +95,7 @@ export const permisos = {
     ajustes: false,
     usuarios: false,
     autorizaciones: false,
-    verTodo: false, // Solo ve sus propios datos
+    verTodo: false,
   },
   administrativo: {
     dashboard: true,
@@ -103,6 +112,6 @@ export const permisos = {
     ajustes: false,
     usuarios: false,
     autorizaciones: false,
-    verTodo: true, // Ve todos los datos administrativos
+    verTodo: true,
   },
 }

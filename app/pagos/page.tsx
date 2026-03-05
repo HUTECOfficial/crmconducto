@@ -1,33 +1,67 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { PageHeader } from "@/components/page-header"
 import { GlassCard } from "@/components/glass-card"
 import { NeoButton } from "@/components/neo-button"
-import { pagos } from "@/data/pagos"
-import { polizas } from "@/data/polizas"
-import { clientes } from "@/data/clientes"
-import { companias } from "@/data/companias"
+import { useSupabase } from "@/contexts/supabase-context"
 import { Badge } from "@/components/ui/badge"
 import { motion } from "framer-motion"
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { ProtectedRoute } from "@/components/protected-route"
+
+interface PagoView {
+  id: string
+  polizaId: string
+  monto: number
+  fechaVencimiento: string
+  estatus: string
+  clienteNombre: string
+  numeroPoliza: string
+  companiaNombre: string
+  companiaColor: string
+}
 
 export default function PagosPage() {
+  const { polizas, clientes, companias } = useSupabase()
   const [vistaActual, setVistaActual] = useState<"mes" | "semana" | "lista">("mes")
   const [mesActual, setMesActual] = useState(new Date())
 
+  // Generar vista de pagos desde pólizas activas
+  const pagosView = useMemo(() => {
+    const items: PagoView[] = []
+    polizas.forEach(poliza => {
+      const cliente = clientes.find(c => c.id === poliza.clienteId)
+      const compania = companias.find(c => c.id === poliza.companiaId)
+      const primaPendiente = poliza.primaEmitida - poliza.primaCobrada
+      if (primaPendiente > 0 && (poliza.estatus === 'activa' || poliza.estatus === 'por-renovar' || poliza.estatus === 'gracia')) {
+        items.push({
+          id: `pago-${poliza.id}`,
+          polizaId: poliza.id,
+          monto: primaPendiente,
+          fechaVencimiento: poliza.ultimoDiaPago || poliza.vigenciaFin,
+          estatus: poliza.estatus === 'gracia' ? 'vencido' : 'pendiente',
+          clienteNombre: cliente?.nombre || 'Cliente',
+          numeroPoliza: poliza.numeroPoliza,
+          companiaNombre: compania?.nombre || 'Compañía',
+          companiaColor: compania?.color || '#6366f1',
+        })
+      }
+    })
+    return items
+  }, [polizas, clientes, companias])
+
   // Agrupar pagos por fecha
-  const pagosPorFecha = pagos.reduce(
-    (acc, pago) => {
+  const pagosPorFecha = useMemo(() => {
+    return pagosView.reduce((acc, pago) => {
       const fecha = pago.fechaVencimiento
       if (!acc[fecha]) acc[fecha] = []
       acc[fecha].push(pago)
       return acc
-    },
-    {} as Record<string, typeof pagos>,
-  )
+    }, {} as Record<string, PagoView[]>)
+  }, [pagosView])
 
   const getDiasDelMes = () => {
     const year = mesActual.getFullYear()
@@ -63,6 +97,7 @@ export default function PagosPage() {
   }
 
   return (
+    <ProtectedRoute>
     <div className="min-h-screen bg-background">
       <Sidebar />
       <main className="main-content-aligned">
@@ -142,15 +177,13 @@ export default function PagosPage() {
                     <div className="text-sm font-semibold mb-1">{dia.fecha.getDate()}</div>
                     <div className="space-y-1">
                       {pagosDia.slice(0, 2).map((pago) => {
-                        const poliza = polizas.find((p) => p.id === pago.polizaId)
-                        const compania = companias.find((c) => c.id === poliza?.companiaId)
                         const diasRestantes = getDiasRestantes(pago.fechaVencimiento)
 
                         return (
                           <div
                             key={pago.id}
                             className="text-xs p-1 rounded bg-muted/50 truncate"
-                            style={{ borderLeft: `3px solid ${compania?.color}` }}
+                            style={{ borderLeft: `3px solid ${pago.companiaColor}` }}
                           >
                             ${pago.monto.toLocaleString()}
                             {diasRestantes <= 7 && diasRestantes > 0 && (
@@ -185,10 +218,7 @@ export default function PagosPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {pagos.map((pago, index) => {
-                    const poliza = polizas.find((p) => p.id === pago.polizaId)
-                    const cliente = clientes.find((c) => c.id === poliza?.clienteId)
-                    const compania = companias.find((c) => c.id === poliza?.companiaId)
+                  {pagosView.map((pago, index) => {
                     const diasRestantes = getDiasRestantes(pago.fechaVencimiento)
 
                     return (
@@ -200,14 +230,14 @@ export default function PagosPage() {
                         transition={{ delay: index * 0.05 }}
                       >
                         <td className="p-4">
-                          <p className="font-medium">{cliente?.nombre}</p>
+                          <p className="font-medium">{pago.clienteNombre}</p>
                         </td>
                         <td className="p-4">
-                          <p className="font-mono text-sm">{poliza?.numeroPoliza}</p>
+                          <p className="font-mono text-sm">{pago.numeroPoliza}</p>
                         </td>
                         <td className="p-4">
-                          <Badge variant="outline" style={{ borderColor: compania?.color, color: compania?.color }}>
-                            {compania?.nombre}
+                          <Badge variant="outline" style={{ borderColor: pago.companiaColor, color: pago.companiaColor }}>
+                            {pago.companiaNombre}
                           </Badge>
                         </td>
                         <td className="p-4">
@@ -250,5 +280,6 @@ export default function PagosPage() {
         )}
       </main>
     </div>
+    </ProtectedRoute>
   )
 }
