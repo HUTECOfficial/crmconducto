@@ -368,7 +368,7 @@ export default function ClientesPage() {
                               </Button>
                               <Button
                                 size="sm" variant="ghost" className="h-7 w-7 p-0 hover:text-destructive hover:bg-destructive/10"
-                                onClick={e => { e.stopPropagation(); setConfirmarBorrar(cliente.id) }}
+                                onClick={e => { e.stopPropagation(); setClienteSeleccionado(cliente); setConfirmarBorrar(cliente.id) }}
                               >
                                 <Trash2 className="w-3 h-3" />
                               </Button>
@@ -382,6 +382,28 @@ export default function ClientesPage() {
               </div>
             )}
           </GlassCard>
+
+          {/* Confirm Borrar — standalone (from table row) */}
+          <Dialog open={!!confirmarBorrar && !modalDetalle} onOpenChange={open => { if (!open) setConfirmarBorrar(null) }}>
+            <DialogContent className="sm:max-w-[380px]">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-destructive">
+                  <Trash2 className="w-5 h-5" /> Eliminar cliente
+                </DialogTitle>
+                <DialogDescription>
+                  ¿Eliminar a <strong>{clienteSeleccionado?.nombre}</strong> permanentemente? Esta acción no se puede deshacer.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex gap-3 pt-2">
+                <Button variant="destructive" className="flex-1" onClick={() => clienteSeleccionado && handleEliminar(clienteSeleccionado.id)}>
+                  Sí, eliminar
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={() => setConfirmarBorrar(null)}>
+                  Cancelar
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           {/* Modal Nuevo Cliente */}
           <Dialog open={modalNuevo} onOpenChange={setModalNuevo}>

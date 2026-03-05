@@ -27,10 +27,16 @@ export function PdfUploadZone({ onExtracted }: PdfUploadZoneProps) {
       const data = await extractTextFromPDF(file)
       onExtracted(data)
       setDone(true)
-      toast.success("Información extraída del PDF")
-    } catch {
-      toast.error("Error al leer el PDF")
-      setPdfFile(null)
+      if (data.fullText.length > 0) {
+        toast.success("Información extraída del PDF")
+      } else {
+        toast.info("PDF procesado — no se detectó texto (puede ser imagen escaneada)")
+      }
+    } catch (err: any) {
+      console.error("[PdfUploadZone]", err)
+      toast.error(err?.message ?? "Error al procesar el PDF")
+      // Keep file visible so user can see what failed
+      setDone(false)
     } finally {
       setLoading(false)
     }

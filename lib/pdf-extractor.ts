@@ -34,24 +34,41 @@ function extractEmpresa(text: string): string | undefined {
 }
 
 export async function extractTextFromPDF(file: File): Promise<ExtractedPDFData> {
+  if (typeof window === "undefined") {
+    throw new Error("extractTextFromPDF solo puede ejecutarse en el cliente")
+  }
+
   const pdfjsLib = await import("pdfjs-dist")
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+
+  // Use a pinned worker that matches the installed pdfjs-dist version
+  const version = pdfjsLib.version
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${version}/pdf.worker.min.mjs`
 
   const arrayBuffer = await file.arrayBuffer()
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+
+  let pdf: any
+  try {
+    pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise
+  } catch (err) {
+    console.error("[pdf-extractor] Error al abrir el PDF:", err)
+    throw new Error("No se pudo abrir el PDF. Asegúrate de que el archivo no esté protegido.")
+  }
 
   let fullText = ""
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i)
     const content = await page.getTextContent()
-    const pageText = content.items
-      .map((item: any) => item.str)
+    const pageText = (content.items as any[])
+      .map((item) => item.str ?? "")
       .join(" ")
     fullText += pageText + "\n"
   }
 
+  fullText = fullText.trim()
+
   return {
-    fullText: fullText.trim(),
+    fullText,
     nombre: extractNombre(fullText),
     email: extractEmail(fullText),
     telefono: extractTelefono(fullText),

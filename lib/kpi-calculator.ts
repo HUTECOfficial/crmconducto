@@ -1,5 +1,19 @@
 import type { Poliza } from "@/contexts/supabase-context"
-import type { Pago } from "@/data/pagos"
+
+type Pago = {
+  id: string
+  polizaId: string
+  monto: number
+  fechaVencimiento: string
+  fechaPago?: string
+  estatus: "pendiente" | "pagado" | "vencido" | "rechazado"
+  metodoPago?: "efectivo" | "transferencia" | "tarjeta" | "cheque" | "domiciliacion"
+  referencia?: string
+  diasMora?: number
+  motivoRechazo?: "fondos-insuficientes" | "tarjeta-vencida" | "bloqueo-seguridad" | "otro"
+  intentosCobranza?: number
+  agente?: string
+}
 
 export interface KPICobranza {
   // 1. Indicadores Financieros (KPIs de Flujo)
