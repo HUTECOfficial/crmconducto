@@ -27,6 +27,7 @@ import {
   Menu,
   X,
   Target,
+  Calculator,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/contexts/auth-context"
@@ -36,6 +37,7 @@ const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard, permiso: "dashboard" as const },
   { name: "Prospección", href: "/prospeccion", icon: Users, permiso: "prospeccion" as const },
   { name: "Clientes", href: "/clientes", icon: UserCheck, permiso: "prospeccion" as const },
+  { name: "Multicotizador", href: "/multicotizador", icon: Calculator, permiso: "prospeccion" as const },
   { name: "Pólizas", href: "/polizas", icon: FileText, permiso: "polizas" as const },
   { name: "Pólizas Pendientes", href: "/polizas-pendientes", icon: AlertCircle, permiso: "polizas" as const },
   { name: "Consulta Pólizas", href: "/consulta-polizas", icon: Search, permiso: "consulta-polizas" as const },
