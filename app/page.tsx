@@ -40,14 +40,14 @@ export default function DashboardPage() {
   const totalPolizas = polizas.length
   const registroMovimientos = totalPolizas
 
-  // Renovaciones ordenadas por urgencia
+  // Pólizas pendientes de pago (primaCobrada < primaEmitida) ordenadas por urgencia
   const renovacionesCercanas = polizas
-    .filter(p => p.estatus === "por-renovar" || p.estatus === "gracia" || p.estatus === "vencida")
+    .filter(p => (p.primaCobrada || 0) < (p.primaEmitida || 0))
     .sort((a, b) => {
       const diasA = Math.ceil((new Date(a.vigenciaFin).getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
       const diasB = Math.ceil((new Date(b.vigenciaFin).getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
       if (diasA !== diasB) return diasA - diasB
-      return b.prima - a.prima
+      return (b.primaEmitida - b.primaCobrada) - (a.primaEmitida - a.primaCobrada)
     })
     .slice(0, 5)
 
