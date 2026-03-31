@@ -23,7 +23,7 @@ function PolizasPendientesContent() {
   const searchParams = useSearchParams()
   const { polizas, clientes, companias, actualizarPoliza, loadingPolizas } = useSupabase()
 
-  const [filtroEstatus, setFiltroEstatus] = useState<"todas" | "activa" | "gracia" | "vencida" | "por-renovar">("todas")
+  const [filtroEstatus, setFiltroEstatus] = useState<"todas" | "activa" | "gracia" | "vencida" | "por-renovar" | "pagadas">("todas")
   const [filtroMovimiento, setFiltroMovimiento] = useState<"todas" | "con-movimiento" | "sin-movimiento">("todas")
   const [editandoId, setEditandoId] = useState<string | null>(null)
   const [comentarioTemp, setComentarioTemp] = useState("")
@@ -50,7 +50,11 @@ function PolizasPendientesContent() {
   )
 
   if (filtroEstatus !== "todas") {
-    polizasPendientes = polizasPendientes.filter(p => p.estatus === filtroEstatus)
+    if (filtroEstatus === "pagadas") {
+      polizasPendientes = polizasPendientes.filter(p => p.primaCobrada >= p.primaEmitida)
+    } else {
+      polizasPendientes = polizasPendientes.filter(p => p.estatus === filtroEstatus)
+    }
   }
 
   if (filtroMovimiento === "sin-movimiento") {
@@ -224,7 +228,7 @@ function PolizasPendientesContent() {
               <div>
                 <p className="text-sm font-medium mb-2">Filtrar por Estatus:</p>
                 <div className="flex gap-2 flex-wrap">
-                  {["todas", "activa", "gracia", "por-renovar"].map((estatus) => (
+                  {["todas", "activa", "gracia", "por-renovar", "pagadas"].map((estatus) => (
                     <button
                       key={estatus}
                       onClick={() => setFiltroEstatus(estatus as typeof filtroEstatus)}
@@ -238,6 +242,7 @@ function PolizasPendientesContent() {
                       {estatus === "activa" && "Activas"}
                       {estatus === "gracia" && "En Gracia"}
                       {estatus === "por-renovar" && "Por Renovar"}
+                      {estatus === "pagadas" && "✓ Pagadas"}
                     </button>
                   ))}
                 </div>
