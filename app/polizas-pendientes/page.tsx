@@ -102,16 +102,45 @@ function PolizasPendientesContent() {
     const fecha = new Date().toLocaleDateString('es-MX')
 
     if (tipoAccion === "pagada") {
+      // Calcular el siguiente número de recibo
+      let nuevoNumeroRecibo = polizaAccion.numeroRecibo || "1/1"
+      let nuevaPrimaCobrada = polizaAccion.primaCobrada || 0
+      
+      // Parsear el número de recibo actual (ej: "1/6" → [1, 6])
+      const partes = nuevoNumeroRecibo.split("/")
+      if (partes.length === 2) {
+        const reciboActual = parseInt(partes[0])
+        const totalRecibos = parseInt(partes[1])
+        
+        // Si no es el último recibo, incrementar al siguiente
+        if (reciboActual < totalRecibos) {
+          const siguienteRecibo = reciboActual + 1
+          nuevoNumeroRecibo = `${siguienteRecibo}/${totalRecibos}`
+          
+          // Calcular prima cobrada basada en recibos subsecuentes
+          const recibosSubsecuentes = parseFloat(polizaAccion.recibosSubsecuentes || "0")
+          nuevaPrimaCobrada = (polizaAccion.primaCobrada || 0) + recibosSubsecuentes
+        } else {
+          // Si es el último recibo, marcar como completamente pagado
+          nuevaPrimaCobrada = polizaAccion.primaEmitida
+        }
+      } else {
+        // Si el formato no es válido, marcar como completamente pagado
+        nuevaPrimaCobrada = polizaAccion.primaEmitida
+      }
+      
       const comentarioNuevo = polizaAccion.comentarios
-        ? `${polizaAccion.comentarios}\n[${fecha}] PAGADA: ${tipoPagoAccion}${motivoAccion ? ` - ${motivoAccion}` : ""}`
-        : `[${fecha}] PAGADA: ${tipoPagoAccion}${motivoAccion ? ` - ${motivoAccion}` : ""}`
+        ? `${polizaAccion.comentarios}\n[${fecha}] PAGADA: ${tipoPagoAccion}${motivoAccion ? ` - ${motivoAccion}` : ""} (Recibo: ${nuevoNumeroRecibo})`
+        : `[${fecha}] PAGADA: ${tipoPagoAccion}${motivoAccion ? ` - ${motivoAccion}` : ""} (Recibo: ${nuevoNumeroRecibo})`
+      
       await actualizarPoliza(polizaAccion.id, {
         estatus: "activa",
-        primaCobrada: polizaAccion.primaEmitida,
+        primaCobrada: nuevaPrimaCobrada,
+        numeroRecibo: nuevoNumeroRecibo,
         comentarios: comentarioNuevo,
         tipoPago: tipoPagoAccion,
       })
-      toast.success("Póliza marcada como pagada")
+      toast.success(`Recibo ${nuevoNumeroRecibo} marcado como pagado`)
     } else if (tipoAccion === "editar-estado") {
       const comentarioNuevo = polizaAccion.comentarios
         ? `${polizaAccion.comentarios}\n[${fecha}] EDICIÓN: Revertido a no pagado${motivoAccion ? ` - ${motivoAccion}` : ""}`

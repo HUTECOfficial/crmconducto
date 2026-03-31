@@ -74,6 +74,11 @@ export interface Poliza {
   marcaActualizacion?: boolean
   anosVidaProducto?: number
   tipoPago?: string
+  primerRecibo?: number
+  recibosSubsecuentes?: number
+  primaTotal?: number
+  diasGracia?: number
+  divisas?: string
 }
 
 export interface Prospecto {
