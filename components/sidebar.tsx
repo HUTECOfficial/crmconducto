@@ -60,7 +60,6 @@ const navigation = [
   },
   { name: "Indicadores Cobranza", href: "/indicadores-cobranza", icon: BarChart3, permiso: "reportes" as const },
   { name: "Tareas", href: "/tareas", icon: CheckSquare, permiso: "dashboard" as const },
-  { name: "Monse", href: "/monse", icon: Users, permiso: "dashboard" as const },
   { name: "Recordatorios", href: "/recordatorios", icon: Bell, permiso: "recordatorios" as const },
   { name: "Reportes", href: "/reportes", icon: BarChart3, permiso: "reportes" as const },
   { name: "Ajustes", href: "/ajustes", icon: Settings, permiso: "ajustes" as const },
