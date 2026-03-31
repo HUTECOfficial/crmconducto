@@ -52,8 +52,6 @@ const navigation = [
     ]
   },
   { name: "Indicadores Cobranza", href: "/indicadores-cobranza", icon: BarChart3, permiso: "reportes" as const },
-  { name: "Objetivos", href: "/objetivos", icon: Target, permiso: "reportes" as const },
-  { name: "Documentación", href: "/documentacion", icon: FolderOpen, permiso: "documentacion" as const },
   { name: "Recordatorios", href: "/recordatorios", icon: Bell, permiso: "recordatorios" as const },
   { name: "Reportes", href: "/reportes", icon: BarChart3, permiso: "reportes" as const },
   { name: "Ajustes", href: "/ajustes", icon: Settings, permiso: "ajustes" as const },

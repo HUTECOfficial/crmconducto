@@ -58,6 +58,67 @@ export default function DashboardPage() {
         <main className="main-content-aligned">
           <PageHeader title="Dashboard" subtitle="Resumen general de tu cartera de seguros" />
 
+          {/* ALERTA DE PAGOS - Prominent Alert Section */}
+          {(() => {
+            const polizasVencidas = polizas.filter(p => {
+              const vigenciaFin = new Date(p.vigenciaFin)
+              const diasDiferencia = Math.ceil((vigenciaFin.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
+              return diasDiferencia < 0 && (p.estatus === "activa" || p.estatus === "gracia")
+            })
+            const polizasEnGracia = polizas.filter(p => p.estatus === "gracia")
+            const polizasPorVencer = polizas.filter(p => {
+              const vigenciaFin = new Date(p.vigenciaFin)
+              const diasDiferencia = Math.ceil((vigenciaFin.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
+              return diasDiferencia > 0 && diasDiferencia <= 7 && p.estatus === "activa"
+            })
+            
+            if (polizasVencidas.length > 0 || polizasEnGracia.length > 0 || polizasPorVencer.length > 0) {
+              return (
+                <motion.div
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mb-8 p-6 rounded-2xl border-2 border-red-500/50 bg-gradient-to-r from-red-500/10 via-orange-500/5 to-red-500/10 shadow-lg"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="p-3 rounded-xl bg-red-500/20 shrink-0">
+                      <AlertCircle className="w-6 h-6 text-red-600 animate-pulse" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-lg font-bold text-red-600 mb-3">⚠️ ALERTA DE PAGOS</h3>
+                      <div className="space-y-2">
+                        {polizasVencidas.length > 0 && (
+                          <div className="flex items-center justify-between p-3 bg-red-500/20 rounded-lg">
+                            <span className="font-semibold text-red-700">{polizasVencidas.length} Pólizas Vencidas</span>
+                            <Button size="sm" variant="destructive" onClick={() => router.push('/polizas-pendientes?filtro=vencidas')}>
+                              Ver
+                            </Button>
+                          </div>
+                        )}
+                        {polizasEnGracia.length > 0 && (
+                          <div className="flex items-center justify-between p-3 bg-orange-500/20 rounded-lg">
+                            <span className="font-semibold text-orange-700">{polizasEnGracia.length} En Período de Gracia</span>
+                            <Button size="sm" variant="outline" onClick={() => router.push('/polizas-pendientes?filtro=gracia')}>
+                              Ver
+                            </Button>
+                          </div>
+                        )}
+                        {polizasPorVencer.length > 0 && (
+                          <div className="flex items-center justify-between p-3 bg-yellow-500/20 rounded-lg">
+                            <span className="font-semibold text-yellow-700">{polizasPorVencer.length} Por Vencer (≤7 días)</span>
+                            <Button size="sm" variant="outline" onClick={() => router.push('/polizas-pendientes?filtro=por-renovar')}>
+                              Ver
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )
+            }
+            return null
+          })()}
+
           {/* KPIs */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <div onClick={() => router.push('/polizas-pendientes?filtro=vencidas')} className="cursor-pointer">
