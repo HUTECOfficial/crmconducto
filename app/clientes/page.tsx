@@ -16,6 +16,7 @@ import { ProtectedRoute } from "@/components/protected-route"
 import { PdfUploadZone } from "@/components/pdf-upload-zone"
 import { ClienteDocumentos } from "@/components/cliente-documentos"
 import { EventoRapidoButton } from "@/components/evento-rapido-button"
+import { WhatsAppShareButton } from "@/components/whatsapp-share-button"
 import { motion } from "framer-motion"
 import { toast } from "sonner"
 import {
@@ -551,10 +552,14 @@ export default function ClientesPage() {
                       </div>
                     </div>
                   ) : (
-                    <div className="flex gap-2 pt-2 border-t border-border/30">
+                    <div className="flex gap-2 pt-2 border-t border-border/30 flex-wrap">
                       <EventoRapidoButton
                         clienteId={clienteSeleccionado.id}
                         clienteNombre={clienteSeleccionado.nombre}
+                      />
+                      <WhatsAppShareButton
+                        clienteNombre={clienteSeleccionado.nombre}
+                        clienteTelefono={clienteSeleccionado.telefono}
                       />
                       <Button className="flex-1" onClick={() => abrirEdicion(clienteSeleccionado)}>
                         <Edit2 className="w-4 h-4 mr-2" /> Editar
