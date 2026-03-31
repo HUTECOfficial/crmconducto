@@ -16,6 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { motion } from "framer-motion"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ProtectedRoute } from "@/components/protected-route"
+import { EventoRapidoButton } from "@/components/evento-rapido-button"
 import { Plus, FileText, UserPlus, User, Search, Edit2, X, RefreshCw, Trash2, MoreVertical } from "lucide-react"
 import { PdfUploadZone } from "@/components/pdf-upload-zone"
 import { toast } from "sonner"
@@ -517,7 +518,12 @@ function PolizasContent() {
                         <p className="text-sm bg-muted/30 rounded p-3 whitespace-pre-line">{polizaSeleccionada.comentarios}</p>
                       </div>
                     )}
-                    <div className="flex justify-end">
+                    <div className="flex gap-2 justify-end">
+                      <EventoRapidoButton
+                        polizaId={polizaSeleccionada.id}
+                        polizaNumero={polizaSeleccionada.numeroPoliza}
+                        clienteNombre={cliente?.nombre}
+                      />
                       <Button variant="outline" onClick={() => abrirEdicion(polizaSeleccionada)}>
                         <Edit2 className="w-4 h-4 mr-2" />Editar Póliza
                       </Button>
