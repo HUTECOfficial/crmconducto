@@ -98,34 +98,50 @@ function PolizasContent() {
 
   // Calcular prima total, recibos subsecuentes y número de recibos automáticamente
   useEffect(() => {
-    if (nuevaPoliza.prima && nuevaPoliza.formaPago && nuevaPoliza.primerRecibo) {
+    if (nuevaPoliza.prima && nuevaPoliza.formaPago && nuevaPoliza.primerRecibo && nuevaPoliza.vigenciaInicio && nuevaPoliza.vigenciaFin) {
       const primaNum = parseFloat(nuevaPoliza.prima)
       const primerReciboNum = parseFloat(nuevaPoliza.primerRecibo)
       
       if (!isNaN(primaNum) && !isNaN(primerReciboNum) && primaNum > 0 && primerReciboNum > 0) {
-        // Determinar cantidad de recibos según forma de pago
-        const recibosFormaPago = {
-          mensual: 12,
-          trimestral: 4,
-          semestral: 2,
-          anual: 1
-        }[nuevaPoliza.formaPago as string] ?? 1
+        try {
+          // Calcular período real entre fecha inicio y fin
+          const fechaInicio = new Date(nuevaPoliza.vigenciaInicio)
+          const fechaFin = new Date(nuevaPoliza.vigenciaFin)
+          
+          // Calcular diferencia en días
+          const diferenciaTiempo = fechaFin.getTime() - fechaInicio.getTime()
+          const diferenciaDias = Math.ceil(diferenciaTiempo / (1000 * 60 * 60 * 24))
+          const diferenciaMeses = diferenciaDias / 30.44 // promedio de días por mes
+          
+          // Determinar cantidad de recibos según forma de pago y período real
+          const recibosFormaPago = {
+            mensual: Math.ceil(diferenciaMeses),
+            trimestral: Math.ceil(diferenciaMeses / 3),
+            semestral: Math.ceil(diferenciaMeses / 6),
+            anual: Math.ceil(diferenciaMeses / 12)
+          }[nuevaPoliza.formaPago as string] ?? 1
 
-        // Calcular prima total (anual)
-        const primaTotalCalculada = primaNum
+          // Asegurar mínimo 1 recibo
+          const totalRecibos = Math.max(1, recibosFormaPago)
 
-        // Calcular recibos subsecuentes
-        const primaRestante = primaTotalCalculada - primerReciboNum
-        const recibosSubsecuentesNum = recibosFormaPago - 1
-        const reciboPorSubsecuente = recibosSubsecuentesNum > 0 ? primaRestante / recibosSubsecuentesNum : 0
+          // Calcular prima total (anual)
+          const primaTotalCalculada = primaNum
 
-        // Actualizar campos
-        setNuevaPoliza(p => ({
-          ...p,
-          primaTotal: primaTotalCalculada.toString(),
-          recibosSubsecuentes: reciboPorSubsecuente > 0 ? reciboPorSubsecuente.toFixed(2) : "0",
-          numeroRecibo: `1/${recibosFormaPago}`
-        }))
+          // Calcular recibos subsecuentes
+          const primaRestante = primaTotalCalculada - primerReciboNum
+          const recibosSubsecuentesNum = totalRecibos - 1
+          const reciboPorSubsecuente = recibosSubsecuentesNum > 0 ? primaRestante / recibosSubsecuentesNum : 0
+
+          // Actualizar campos
+          setNuevaPoliza(p => ({
+            ...p,
+            primaTotal: primaTotalCalculada.toString(),
+            recibosSubsecuentes: reciboPorSubsecuente > 0 ? reciboPorSubsecuente.toFixed(2) : "0",
+            numeroRecibo: `1/${totalRecibos}`
+          }))
+        } catch (error) {
+          console.error("Error al calcular período:", error)
+        }
       }
     }
 
@@ -138,7 +154,7 @@ function PolizasContent() {
         setNuevaPoliza(p => ({ ...p, numeroRecibo: `1/${totalRecibos}` }))
       }
     }
-  }, [nuevaPoliza.prima, nuevaPoliza.formaPago, nuevaPoliza.primerRecibo, nuevaPoliza.ramo, nuevaPoliza.anosVidaProducto])
+  }, [nuevaPoliza.prima, nuevaPoliza.formaPago, nuevaPoliza.primerRecibo, nuevaPoliza.vigenciaInicio, nuevaPoliza.vigenciaFin, nuevaPoliza.ramo, nuevaPoliza.anosVidaProducto])
 
   const resetFormulario = () => {
     setNuevaPoliza({
