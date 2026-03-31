@@ -32,7 +32,7 @@ function PolizasPendientesContent() {
   // Estados para modales de acción
   const [modalAccion, setModalAccion] = useState(false)
   const [polizaAccion, setPolizaAccion] = useState<Poliza | null>(null)
-  const [tipoAccion, setTipoAccion] = useState<"pagada" | "cancelar" | null>(null)
+  const [tipoAccion, setTipoAccion] = useState<"pagada" | "cancelar" | "editar-estado" | null>(null)
   const [motivoAccion, setMotivoAccion] = useState("")
   const [tipoPagoAccion, setTipoPagoAccion] = useState<"efectivo" | "transferencia" | "tarjeta" | "domiciliacion" | "cheque" | "">("")
   const [comprobante, setComprobante] = useState<File | null>(null)
@@ -79,7 +79,7 @@ function PolizasPendientesContent() {
     setComentarioTemp("")
   }
 
-  const abrirModalAccion = (poliza: Poliza, tipo: "pagada" | "cancelar") => {
+  const abrirModalAccion = (poliza: Poliza, tipo: "pagada" | "cancelar" | "editar-estado") => {
     setPolizaAccion(poliza)
     setTipoAccion(tipo)
     setMotivoAccion("")
@@ -112,6 +112,15 @@ function PolizasPendientesContent() {
         tipoPago: tipoPagoAccion,
       })
       toast.success("Póliza marcada como pagada")
+    } else if (tipoAccion === "editar-estado") {
+      const comentarioNuevo = polizaAccion.comentarios
+        ? `${polizaAccion.comentarios}\n[${fecha}] EDICIÓN: Revertido a no pagado${motivoAccion ? ` - ${motivoAccion}` : ""}`
+        : `[${fecha}] EDICIÓN: Revertido a no pagado${motivoAccion ? ` - ${motivoAccion}` : ""}`
+      await actualizarPoliza(polizaAccion.id, {
+        primaCobrada: 0,
+        comentarios: comentarioNuevo,
+      })
+      toast.success("Estado actualizado - Póliza marcada como no pagada")
     } else if (tipoAccion === "cancelar") {
       const comentarioNuevo = polizaAccion.comentarios
         ? `${polizaAccion.comentarios}\n[${fecha}] CANCELADA: ${motivoAccion}`
@@ -453,15 +462,28 @@ function PolizasPendientesContent() {
                           )}
                         </td>
                         <td className="p-3 text-center">
-                          <div className="flex items-center justify-center gap-2">
-                            <Button 
-                              size="sm" 
-                              variant="default"
-                              className="h-8 text-xs bg-green-600 hover:bg-green-700"
-                              onClick={() => abrirModalAccion(poliza, "pagada")}
-                            >
-                              ✓ Pagada
-                            </Button>
+                          <div className="flex items-center justify-center gap-2 flex-wrap">
+                            {poliza.primaCobrada >= poliza.primaEmitida ? (
+                              <>
+                                <Button 
+                                  size="sm" 
+                                  variant="outline"
+                                  className="h-8 text-xs border-green-600 text-green-600"
+                                  onClick={() => abrirModalAccion(poliza, "editar-estado")}
+                                >
+                                  ✓ Editar Estado
+                                </Button>
+                              </>
+                            ) : (
+                              <Button 
+                                size="sm" 
+                                variant="default"
+                                className="h-8 text-xs bg-green-600 hover:bg-green-700"
+                                onClick={() => abrirModalAccion(poliza, "pagada")}
+                              >
+                                ✓ Marcar Pagada
+                              </Button>
+                            )}
                             <Button 
                               size="sm" 
                               variant="destructive"
