@@ -78,6 +78,7 @@ function PolizasContent() {
     tipoPago: "" as "efectivo" | "transferencia" | "tarjeta" | "domiciliacion" | "cheque" | "",
     anosVidaProducto: "", agente: "", ultimoDiaPago: "", numeroRecibo: "",
     registroSistemaCobranza: false, comentarios: "", notas: "", marcaActualizacion: false,
+    divisas: "MXN", primaTotal: "", diasGracia: "", primerRecibo: "", recibosSubsecuentes: "",
   })
 
   const [nuevoCliente, setNuevoCliente] = useState({ nombre: "", email: "", telefono: "", empresa: "" })
@@ -110,6 +111,7 @@ function PolizasContent() {
       nombreAsegurado: "", vigenciaInicio: "", vigenciaFin: "", prima: "", formaPago: "",
       tipoPago: "", anosVidaProducto: "", agente: "", ultimoDiaPago: "", numeroRecibo: "",
       registroSistemaCobranza: false, comentarios: "", notas: "", marcaActualizacion: false,
+      divisas: "MXN", primaTotal: "", diasGracia: "", primerRecibo: "", recibosSubsecuentes: "",
     })
     setNuevoCliente({ nombre: "", email: "", telefono: "", empresa: "" })
     setBusquedaCliente("")
@@ -750,9 +752,31 @@ function PolizasContent() {
                 {/* Prima y Forma de pago */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Prima Total (MXN) *</Label>
+                    <Label>Divisas</Label>
+                    <Select value={nuevaPoliza.divisas} onValueChange={v => setNuevaPoliza(p => ({ ...p, divisas: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="MXN">MXN (Pesos Mexicanos)</SelectItem>
+                        <SelectItem value="USD">USD (Dólares)</SelectItem>
+                        <SelectItem value="EUR">EUR (Euros)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Prima Total *</Label>
                     <Input type="number" placeholder="Ej: 12500" value={nuevaPoliza.prima}
                       onChange={e => setNuevaPoliza(p => ({ ...p, prima: e.target.value }))} />
+                  </div>
+                </div>
+
+                {/* Prima anual y forma de pago */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Prima Anual</Label>
+                    <Input type="number" placeholder="Auto-calculada" value={nuevaPoliza.primaTotal}
+                      onChange={e => setNuevaPoliza(p => ({ ...p, primaTotal: e.target.value }))}
+                      disabled className="bg-muted" />
+                    <p className="text-xs text-muted-foreground">Se calcula automáticamente según forma de pago</p>
                   </div>
                   <div className="space-y-2">
                     <Label>Forma de Pago *</Label>
@@ -765,6 +789,30 @@ function PolizasContent() {
                         <SelectItem value="anual">Anual</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                </div>
+
+                {/* Días de gracia según forma de pago */}
+                {nuevaPoliza.formaPago && (
+                  <div className="space-y-2 p-4 border border-blue-200 dark:border-blue-800 rounded-lg bg-blue-50 dark:bg-blue-950/20">
+                    <Label>Días de Gracia</Label>
+                    <Input type="number" min="0" placeholder="Ej: 15, 30" value={nuevaPoliza.diasGracia}
+                      onChange={e => setNuevaPoliza(p => ({ ...p, diasGracia: e.target.value }))} />
+                    <p className="text-xs text-blue-600">Días adicionales permitidos después de la fecha de vencimiento</p>
+                  </div>
+                )}
+
+                {/* Primer recibo y recibos subsecuentes */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Primer Recibo</Label>
+                    <Input placeholder="Ej: $5,000" value={nuevaPoliza.primerRecibo}
+                      onChange={e => setNuevaPoliza(p => ({ ...p, primerRecibo: e.target.value }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Recibos Subsecuentes</Label>
+                    <Input placeholder="Ej: $2,500" value={nuevaPoliza.recibosSubsecuentes}
+                      onChange={e => setNuevaPoliza(p => ({ ...p, recibosSubsecuentes: e.target.value }))} />
                   </div>
                 </div>
 
@@ -796,18 +844,12 @@ function PolizasContent() {
                   </div>
                 )}
 
-                {/* Último día y # recibo */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Último Día de Pago</Label>
-                    <Input type="date" value={nuevaPoliza.ultimoDiaPago}
-                      onChange={e => setNuevaPoliza(p => ({ ...p, ultimoDiaPago: e.target.value }))} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label># Recibo</Label>
-                    <Input placeholder="Ej: 1/1, 2/4" value={nuevaPoliza.numeroRecibo}
-                      onChange={e => setNuevaPoliza(p => ({ ...p, numeroRecibo: e.target.value }))} />
-                  </div>
+                {/* # Recibo */}
+                <div className="space-y-2">
+                  <Label># Recibo</Label>
+                  <Input placeholder="Ej: 1/1, 2/4" value={nuevaPoliza.numeroRecibo}
+                    onChange={e => setNuevaPoliza(p => ({ ...p, numeroRecibo: e.target.value }))} />
+                  <p className="text-xs text-muted-foreground">Formato: recibo actual / total de recibos</p>
                 </div>
 
                 {/* Agente y registro cobranza */}
