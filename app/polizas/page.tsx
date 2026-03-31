@@ -96,15 +96,49 @@ function PolizasContent() {
     if (filtro === "renovaciones") setFiltroEstatus("por-renovar")
   }, [searchParams])
 
+  // Calcular prima total, recibos subsecuentes y número de recibos automáticamente
   useEffect(() => {
+    if (nuevaPoliza.prima && nuevaPoliza.formaPago && nuevaPoliza.primerRecibo) {
+      const primaNum = parseFloat(nuevaPoliza.prima)
+      const primerReciboNum = parseFloat(nuevaPoliza.primerRecibo)
+      
+      if (!isNaN(primaNum) && !isNaN(primerReciboNum) && primaNum > 0 && primerReciboNum > 0) {
+        // Determinar cantidad de recibos según forma de pago
+        const recibosFormaPago = {
+          mensual: 12,
+          trimestral: 4,
+          semestral: 2,
+          anual: 1
+        }[nuevaPoliza.formaPago as string] ?? 1
+
+        // Calcular prima total (anual)
+        const primaTotalCalculada = primaNum
+
+        // Calcular recibos subsecuentes
+        const primaRestante = primaTotalCalculada - primerReciboNum
+        const recibosSubsecuentesNum = recibosFormaPago - 1
+        const reciboPorSubsecuente = recibosSubsecuentesNum > 0 ? primaRestante / recibosSubsecuentesNum : 0
+
+        // Actualizar campos
+        setNuevaPoliza(p => ({
+          ...p,
+          primaTotal: primaTotalCalculada.toString(),
+          recibosSubsecuentes: reciboPorSubsecuente > 0 ? reciboPorSubsecuente.toFixed(2) : "0",
+          numeroRecibo: `1/${recibosFormaPago}`
+        }))
+      }
+    }
+
+    // Para seguros de vida, calcular recibos según años
     if (nuevaPoliza.ramo === "vida" && nuevaPoliza.anosVidaProducto && nuevaPoliza.formaPago) {
       const anos = parseInt(nuevaPoliza.anosVidaProducto)
       if (!isNaN(anos) && anos > 0) {
         const recibosAnuales = { mensual: 12, trimestral: 4, semestral: 2, anual: 1 }[nuevaPoliza.formaPago as string] ?? 1
-        setNuevaPoliza(p => ({ ...p, numeroRecibo: `1/${anos * recibosAnuales}` }))
+        const totalRecibos = anos * recibosAnuales
+        setNuevaPoliza(p => ({ ...p, numeroRecibo: `1/${totalRecibos}` }))
       }
     }
-  }, [nuevaPoliza.ramo, nuevaPoliza.anosVidaProducto, nuevaPoliza.formaPago])
+  }, [nuevaPoliza.prima, nuevaPoliza.formaPago, nuevaPoliza.primerRecibo, nuevaPoliza.ramo, nuevaPoliza.anosVidaProducto])
 
   const resetFormulario = () => {
     setNuevaPoliza({
