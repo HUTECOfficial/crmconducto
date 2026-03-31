@@ -166,7 +166,7 @@ export default function DashboardPage() {
                   </div>
                   <div>
                     <h2 className="text-xl font-bold font-serif">Renovaciones Pendientes</h2>
-                    <p className="text-sm text-muted-foreground">Pólizas por renovar ordenadas por importancia</p>
+                    <p className="text-sm text-muted-foreground">{renovacionesCercanas.length} pólizas pendientes por renovar</p>
                   </div>
                 </div>
                 <Button 
@@ -181,47 +181,54 @@ export default function DashboardPage() {
               </div>
 
               <div className="space-y-3">
-                {renovacionesCercanas.map((poliza, index) => {
-                  const cliente = clientes.find((c) => c.id === poliza.clienteId)
-                  const compania = companias.find((c) => c.id === poliza.companiaId)
-                  const fechaVencimiento = new Date(poliza.vigenciaFin)
-                  const diasDiferencia = Math.ceil(
-                    (fechaVencimiento.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24),
-                  )
-                  const yaVencida = diasDiferencia < 0
+                {renovacionesCercanas.length > 0 ? (
+                  renovacionesCercanas.map((poliza, index) => {
+                    const cliente = clientes.find((c) => c.id === poliza.clienteId)
+                    const compania = companias.find((c) => c.id === poliza.companiaId)
+                    const fechaVencimiento = new Date(poliza.vigenciaFin)
+                    const diasDiferencia = Math.ceil(
+                      (fechaVencimiento.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24),
+                    )
+                    const yaVencida = diasDiferencia < 0
 
-                  return (
-                    <motion.div
-                      key={poliza.id}
-                      className="p-4 rounded-2xl bg-muted/50 hover:bg-muted transition-colors cursor-pointer"
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: index * 0.1 }}
-                      onClick={() => router.push('/polizas?filtro=renovaciones')}
-                    >
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex-1">
-                          <p className="font-semibold">{cliente?.nombre}</p>
-                          <p className="text-sm text-muted-foreground">{poliza.numeroPoliza}</p>
+                    return (
+                      <motion.div
+                        key={poliza.id}
+                        className="p-4 rounded-2xl bg-muted/50 hover:bg-muted transition-colors cursor-pointer"
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: index * 0.1 }}
+                        onClick={() => router.push('/polizas?filtro=renovaciones')}
+                      >
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex-1">
+                            <p className="font-semibold">{cliente?.nombre}</p>
+                            <p className="text-sm text-muted-foreground">{poliza.numeroPoliza}</p>
+                          </div>
+                          <Badge
+                            variant={yaVencida ? "destructive" : diasDiferencia <= 7 ? "default" : "secondary"}
+                          >
+                            {yaVencida ? `Vencida ${Math.abs(diasDiferencia)}d` : `${diasDiferencia}d restantes`}
+                          </Badge>
                         </div>
-                        <Badge
-                          variant={yaVencida ? "destructive" : diasDiferencia <= 7 ? "default" : "secondary"}
-                        >
-                          {yaVencida ? `Vencida ${Math.abs(diasDiferencia)}d` : `${diasDiferencia}d restantes`}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <Badge variant="outline" style={{ borderColor: compania?.color, color: compania?.color }}>
-                          {compania?.nombre}
-                        </Badge>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">${poliza.prima.toLocaleString()}</span>
-                          <ArrowRight className="w-4 h-4 text-muted-foreground" />
+                        <div className="flex items-center justify-between">
+                          <Badge variant="outline" style={{ borderColor: compania?.color, color: compania?.color }}>
+                            {compania?.nombre}
+                          </Badge>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">${poliza.prima.toLocaleString()}</span>
+                            <ArrowRight className="w-4 h-4 text-muted-foreground" />
+                          </div>
                         </div>
-                      </div>
-                    </motion.div>
-                  )
-                })}
+                      </motion.div>
+                    )
+                  })
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Calendar className="w-10 h-10 mx-auto mb-3 opacity-40" />
+                    <p className="text-sm">No hay pólizas pendientes por renovar</p>
+                  </div>
+                )}
               </div>
             </GlassCard>
 
