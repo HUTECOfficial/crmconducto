@@ -17,7 +17,9 @@ interface ConsultaResult {
   id: string
   numeroPoliza: string
   cliente: string
+  asegurado: string
   compania: string
+  ramo: string
   estatus: string
   vigenciaInicio: string
   vigenciaFin: string
@@ -62,7 +64,9 @@ export default function ConsultaPolizasPage() {
         id: poliza.id,
         numeroPoliza: poliza.numeroPoliza,
         cliente: cliente?.nombre || "Cliente no encontrado",
+        asegurado: poliza.nombreAsegurado || cliente?.nombre || "No especificado",
         compania: compania?.nombre || "Compañía no encontrada",
+        ramo: poliza.ramo.replace("-", " "),
         estatus: poliza.estatus,
         vigenciaInicio: poliza.vigenciaInicio,
         vigenciaFin: poliza.vigenciaFin,
@@ -251,9 +255,15 @@ export default function ConsultaPolizasPage() {
                         className="glass rounded-2xl p-4 hover:scale-[1.01] transition-all"
                       >
                         <div className="flex items-start justify-between mb-3">
-                          <div>
-                            <h4 className="font-semibold">{resultado.numeroPoliza}</h4>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <h4 className="font-mono font-bold text-lg">{resultado.numeroPoliza}</h4>
+                              <Badge variant="outline" className="text-xs capitalize">
+                                {resultado.ramo}
+                              </Badge>
+                            </div>
                             <p className="text-sm text-muted-foreground">{resultado.cliente}</p>
+                            <p className="text-xs text-muted-foreground">Asegurado: {resultado.asegurado}</p>
                           </div>
                           <div className="flex items-center gap-2">
                             <Badge 
