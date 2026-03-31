@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ProtectedRoute } from "@/components/protected-route"
 import { PdfUploadZone } from "@/components/pdf-upload-zone"
 import { ClienteDocumentos } from "@/components/cliente-documentos"
+import { EventoRapidoButton } from "@/components/evento-rapido-button"
 import { motion } from "framer-motion"
 import { toast } from "sonner"
 import {
@@ -551,6 +552,10 @@ export default function ClientesPage() {
                     </div>
                   ) : (
                     <div className="flex gap-2 pt-2 border-t border-border/30">
+                      <EventoRapidoButton
+                        clienteId={clienteSeleccionado.id}
+                        clienteNombre={clienteSeleccionado.nombre}
+                      />
                       <Button className="flex-1" onClick={() => abrirEdicion(clienteSeleccionado)}>
                         <Edit2 className="w-4 h-4 mr-2" /> Editar
                       </Button>
