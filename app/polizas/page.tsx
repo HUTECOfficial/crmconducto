@@ -16,7 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { motion } from "framer-motion"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ProtectedRoute } from "@/components/protected-route"
-import { Plus, FileText, UserPlus, User, Search, Edit2, X } from "lucide-react"
+import { Plus, FileText, UserPlus, User, Search, Edit2, X, RefreshCw, Trash2, MoreVertical } from "lucide-react"
 import { PdfUploadZone } from "@/components/pdf-upload-zone"
 import { toast } from "sonner"
 
@@ -46,6 +46,10 @@ function PolizasContent() {
   const [modalEditarPoliza, setModalEditarPoliza] = useState(false)
   const [polizaEditar, setPolizaEditar] = useState<SPoliza | null>(null)
   const [modoNuevoCliente, setModoNuevoCliente] = useState(false)
+  const [modalRenovar, setModalRenovar] = useState(false)
+  const [modalCancelar, setModalCancelar] = useState(false)
+  const [polizaAccion, setPolizaAccion] = useState<SPoliza | null>(null)
+  const [motivoCancelacion, setMotivoCancelacion] = useState("")
 
   // Autocompletar cliente
   const [busquedaCliente, setBusquedaCliente] = useState("")
@@ -214,6 +218,39 @@ function PolizasContent() {
     setPolizaEditar(null)
   }
 
+  const handleRenovar = (poliza: SPoliza) => {
+    setPolizaAccion(poliza)
+    setModalRenovar(true)
+  }
+
+  const handleCancelar = (poliza: SPoliza) => {
+    setPolizaAccion(poliza)
+    setMotivoCancelacion("")
+    setModalCancelar(true)
+  }
+
+  const confirmarRenovacion = async () => {
+    if (!polizaAccion) return
+    setModalNuevaPoliza(true)
+    setModalRenovar(false)
+    toast.success("Abre el formulario de nueva póliza para renovar")
+  }
+
+  const confirmarCancelacion = async () => {
+    if (!polizaAccion || !motivoCancelacion.trim()) {
+      toast.error("Debes indicar el motivo de cancelación")
+      return
+    }
+    await actualizarPoliza(polizaAccion.id, {
+      estatus: "cancelada",
+      notas: `Cancelación: ${motivoCancelacion}`,
+    })
+    setModalCancelar(false)
+    setPolizaAccion(null)
+    setMotivoCancelacion("")
+    toast.success("Póliza cancelada correctamente")
+  }
+
   // Filtrar y buscar
   const polizasFiltradas = polizas.filter(p => {
     if (filtroCompania !== "todas" && p.companiaId !== filtroCompania) return false
@@ -376,10 +413,20 @@ function PolizasContent() {
                           </Badge>
                         </td>
                         <td className="p-3 text-center">
-                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0"
-                            onClick={e => { e.stopPropagation(); abrirEdicion(poliza) }}>
-                            <Edit2 className="w-3 h-3" />
-                          </Button>
+                          <div className="flex items-center justify-center gap-1">
+                            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs"
+                              onClick={e => { e.stopPropagation(); handleRenovar(poliza) }}>
+                              <RefreshCw className="w-3 h-3 mr-1" /> Renovar
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                              onClick={e => { e.stopPropagation(); handleCancelar(poliza) }}>
+                              <Trash2 className="w-3 h-3 mr-1" /> Cancelar
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0"
+                              onClick={e => { e.stopPropagation(); abrirEdicion(poliza) }}>
+                              <Edit2 className="w-3 h-3" />
+                            </Button>
+                          </div>
                         </td>
                       </motion.tr>
                     )
@@ -793,6 +840,89 @@ function PolizasContent() {
                     {modoNuevoCliente ? "Crear Cliente y Póliza" : "Crear Póliza"}
                   </Button>
                 </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Modal Renovar */}
+          <Dialog open={modalRenovar} onOpenChange={setModalRenovar}>
+            <DialogContent className="sm:max-w-[450px]">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <RefreshCw className="w-5 h-5 text-primary" /> Renovar Póliza
+                </DialogTitle>
+                <DialogDescription>
+                  Inicia el proceso de renovación para {polizaAccion?.numeroPoliza}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="p-4 rounded-xl bg-muted/50 space-y-2">
+                  <p className="text-sm text-muted-foreground">Póliza actual</p>
+                  <p className="font-semibold">{polizaAccion?.numeroPoliza}</p>
+                  <p className="text-sm text-muted-foreground">
+                    Vigencia: {polizaAccion?.vigenciaInicio} a {polizaAccion?.vigenciaFin}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Prima: ${polizaAccion?.prima.toLocaleString()}
+                  </p>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Se abrirá el formulario de nueva póliza para crear la renovación. Los datos de la póliza actual se usarán como referencia.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <Button variant="outline" className="flex-1" onClick={() => setModalRenovar(false)}>
+                  Cancelar
+                </Button>
+                <Button className="flex-1" onClick={confirmarRenovacion}>
+                  <RefreshCw className="w-4 h-4 mr-2" /> Continuar
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Modal Cancelar */}
+          <Dialog open={modalCancelar} onOpenChange={setModalCancelar}>
+            <DialogContent className="sm:max-w-[450px]">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-destructive">
+                  <Trash2 className="w-5 h-5" /> Cancelar Póliza
+                </DialogTitle>
+                <DialogDescription>
+                  Indica el motivo de cancelación para {polizaAccion?.numeroPoliza}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/20 space-y-2">
+                  <p className="text-sm text-muted-foreground">Póliza a cancelar</p>
+                  <p className="font-semibold">{polizaAccion?.numeroPoliza}</p>
+                  <p className="text-sm text-muted-foreground">
+                    Prima: ${polizaAccion?.prima.toLocaleString()}
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="motivo" className="text-sm font-semibold">
+                    Motivo de cancelación *
+                  </Label>
+                  <Textarea
+                    id="motivo"
+                    placeholder="Ej: Solicitud del cliente, falta de pago, cambio de asegurador..."
+                    value={motivoCancelacion}
+                    onChange={e => setMotivoCancelacion(e.target.value)}
+                    className="min-h-[100px]"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Esta acción marcará la póliza como cancelada y registrará el motivo en las notas.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <Button variant="outline" className="flex-1" onClick={() => setModalCancelar(false)}>
+                  Atrás
+                </Button>
+                <Button variant="destructive" className="flex-1" onClick={confirmarCancelacion}>
+                  <Trash2 className="w-4 h-4 mr-2" /> Cancelar Póliza
+                </Button>
               </div>
             </DialogContent>
           </Dialog>

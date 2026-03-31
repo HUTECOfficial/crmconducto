@@ -85,11 +85,11 @@ export default function DashboardPage() {
                 trend="neutral" 
               />
             </div>
-            <div onClick={() => router.push('/pagos')} className="cursor-pointer">
+            <div onClick={() => router.push('/polizas')} className="cursor-pointer">
               <MetricTile
-                title="Registro de Movimiento"
-                value={registroMovimientos}
-                icon={DollarSign}
+                title="Trámite en Proceso"
+                value={polizas.filter(p => p.estatus === "por-renovar").length}
+                icon={RefreshCw}
                 trend="neutral"
               />
             </div>
@@ -164,7 +164,66 @@ export default function DashboardPage() {
               </div>
             </GlassCard>
 
-            {/* Próximos Eventos */}
+            {/* Seguimiento */}
+            <GlassCard className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-blue-500/10">
+                    <AlertCircle className="w-5 h-5 text-blue-500" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold font-serif">Seguimiento</h2>
+                    <p className="text-sm text-muted-foreground">Trámites y gestiones en proceso</p>
+                  </div>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => router.push('/polizas')}
+                  className="gap-2"
+                >
+                  <Eye className="w-4 h-4" />
+                  Ver Más
+                </Button>
+              </div>
+
+              <div className="space-y-3">
+                {polizas.filter(p => p.estatus === "por-renovar").slice(0, 5).map((poliza, index) => {
+                  const cliente = clientes.find((c) => c.id === poliza.clienteId)
+                  const compania = companias.find((c) => c.id === poliza.companiaId)
+                  
+                  return (
+                    <motion.div
+                      key={poliza.id}
+                      className="p-4 rounded-2xl bg-muted/50 hover:bg-muted transition-colors"
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.1 }}
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex-1">
+                          <p className="font-semibold">{cliente?.nombre}</p>
+                          <p className="text-sm text-muted-foreground">{poliza.numeroPoliza}</p>
+                        </div>
+                        <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-200">
+                          En Trámite
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{compania?.nombre}</p>
+                    </motion.div>
+                  )
+                })}
+                {polizas.filter(p => p.estatus === "por-renovar").length === 0 && (
+                  <div className="text-center py-6 text-muted-foreground">
+                    <p className="text-sm">Sin trámites en proceso</p>
+                  </div>
+                )}
+              </div>
+            </GlassCard>
+          </div>
+
+          {/* Próximos Eventos */}
+          <div className="mt-6">
             <ProximosEventos />
           </div>
         </main>
