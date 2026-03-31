@@ -29,6 +29,9 @@ import {
   Target,
   Calculator,
   CheckSquare,
+  Layers,
+  Zap,
+  TrendingDown,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/contexts/auth-context"
@@ -42,6 +45,9 @@ const navigation = [
   { name: "Pólizas", href: "/polizas", icon: FileText, permiso: "polizas" as const },
   { name: "Pólizas Pendientes", href: "/polizas-pendientes", icon: AlertCircle, permiso: "polizas" as const },
   { name: "Consulta Pólizas", href: "/consulta-polizas", icon: Search, permiso: "consulta-polizas" as const },
+  { name: "Folios", href: "/folios", icon: FolderOpen, permiso: "polizas" as const },
+  { name: "Siniestros", href: "/siniestros", icon: AlertCircle, permiso: "polizas" as const },
+  { name: "Movimientos", href: "/movimientos", icon: Layers, permiso: "polizas" as const },
   { 
     name: "Calendario", 
     icon: Calendar, 

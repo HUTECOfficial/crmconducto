@@ -10,6 +10,7 @@ import { ProtectedRoute } from "@/components/protected-route"
 import { Calendar, Bell, AlertCircle, CheckCircle2, Clock } from "lucide-react"
 import { motion } from "framer-motion"
 import { useSupabase } from "@/contexts/supabase-context"
+import { toast } from "sonner"
 
 type TipoNotificacion = "verde" | "amarillo" | "magenta"
 
@@ -26,6 +27,7 @@ interface Notificacion {
 export default function CalendarioNotificacionesPage() {
   const { polizas, clientes, companias } = useSupabase()
   const [filtroTipo, setFiltroTipo] = useState<TipoNotificacion | "todas">("todas")
+  const [notificacionesLeidas, setNotificacionesLeidas] = useState<Set<string>>(new Set())
 
   // Generar notificaciones basadas en pólizas
   const generarNotificaciones = (): Notificacion[] => {
@@ -113,8 +115,19 @@ export default function CalendarioNotificacionesPage() {
 
   const notificaciones = generarNotificaciones()
   const notificacionesFiltradas = filtroTipo === "todas" 
-    ? notificaciones 
-    : notificaciones.filter(n => n.tipo === filtroTipo)
+    ? notificaciones.filter(n => !notificacionesLeidas.has(n.id))
+    : notificaciones.filter(n => n.tipo === filtroTipo && !notificacionesLeidas.has(n.id))
+
+  const marcarComoLeida = (id: string) => {
+    setNotificacionesLeidas(prev => new Set([...prev, id]))
+    toast.success("Notificación marcada como leída")
+  }
+
+  const marcarTodasComoLeidas = () => {
+    const ids = notificaciones.map(n => n.id)
+    setNotificacionesLeidas(prev => new Set([...prev, ...ids]))
+    toast.success("Todas las notificaciones marcadas como leídas")
+  }
 
   const contadores = {
     verde: notificaciones.filter(n => n.tipo === "verde").length,
@@ -201,38 +214,51 @@ export default function CalendarioNotificacionesPage() {
           </div>
 
           {/* Filtros */}
-          <div className="flex gap-2 mb-6 flex-wrap">
-            <Button
-              onClick={() => setFiltroTipo("todas")}
-              variant={filtroTipo === "todas" ? "default" : "outline"}
-              size="sm"
-            >
-              Todas ({notificaciones.length})
-            </Button>
-            <Button
-              onClick={() => setFiltroTipo("verde")}
-              variant={filtroTipo === "verde" ? "default" : "outline"}
-              size="sm"
-              className={filtroTipo === "verde" ? "bg-green-600 hover:bg-green-700" : ""}
-            >
-              Verde ({contadores.verde})
-            </Button>
-            <Button
-              onClick={() => setFiltroTipo("amarillo")}
-              variant={filtroTipo === "amarillo" ? "default" : "outline"}
-              size="sm"
-              className={filtroTipo === "amarillo" ? "bg-yellow-600 hover:bg-yellow-700" : ""}
-            >
-              Amarillo ({contadores.amarillo})
-            </Button>
-            <Button
-              onClick={() => setFiltroTipo("magenta")}
-              variant={filtroTipo === "magenta" ? "default" : "outline"}
-              size="sm"
-              className={filtroTipo === "magenta" ? "bg-fuchsia-600 hover:bg-fuchsia-700" : ""}
-            >
-              Magenta ({contadores.magenta})
-            </Button>
+          <div className="flex gap-2 mb-6 flex-wrap items-center justify-between">
+            <div className="flex gap-2 flex-wrap">
+              <Button
+                onClick={() => setFiltroTipo("todas")}
+                variant={filtroTipo === "todas" ? "default" : "outline"}
+                size="sm"
+              >
+                Todas ({notificaciones.length - notificacionesLeidas.size})
+              </Button>
+              <Button
+                onClick={() => setFiltroTipo("verde")}
+                variant={filtroTipo === "verde" ? "default" : "outline"}
+                size="sm"
+                className={filtroTipo === "verde" ? "bg-green-600 hover:bg-green-700" : ""}
+              >
+                Verde ({contadores.verde})
+              </Button>
+              <Button
+                onClick={() => setFiltroTipo("amarillo")}
+                variant={filtroTipo === "amarillo" ? "default" : "outline"}
+                size="sm"
+                className={filtroTipo === "amarillo" ? "bg-yellow-600 hover:bg-yellow-700" : ""}
+              >
+                Amarillo ({contadores.amarillo})
+              </Button>
+              <Button
+                onClick={() => setFiltroTipo("magenta")}
+                variant={filtroTipo === "magenta" ? "default" : "outline"}
+                size="sm"
+                className={filtroTipo === "magenta" ? "bg-fuchsia-600 hover:bg-fuchsia-700" : ""}
+              >
+                Magenta ({contadores.magenta})
+              </Button>
+            </div>
+            {notificaciones.length > 0 && notificacionesLeidas.size < notificaciones.length && (
+              <Button
+                onClick={marcarTodasComoLeidas}
+                variant="outline"
+                size="sm"
+                className="gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                Marcar todas leídas
+              </Button>
+            )}
           </div>
 
           {/* Lista de Notificaciones */}
@@ -274,7 +300,13 @@ export default function CalendarioNotificacionesPage() {
                         </p>
                       </div>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="ghost">
+                        <Button 
+                          size="sm" 
+                          variant="ghost"
+                          onClick={() => marcarComoLeida(notificacion.id)}
+                          title="Marcar como leída"
+                          className="hover:bg-green-500/10 hover:text-green-600 transition-colors"
+                        >
                           <Bell className="w-4 h-4" />
                         </Button>
                       </div>
@@ -288,7 +320,21 @@ export default function CalendarioNotificacionesPage() {
           {notificacionesFiltradas.length === 0 && (
             <GlassCard className="p-8 text-center">
               <Calendar className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
-              <p className="text-muted-foreground">No hay notificaciones en esta categoría</p>
+              <p className="text-muted-foreground">
+                {notificacionesLeidas.size > 0 && notificaciones.length > 0
+                  ? "Todas las notificaciones han sido marcadas como leídas"
+                  : "No hay notificaciones en esta categoría"}
+              </p>
+              {notificacionesLeidas.size > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setNotificacionesLeidas(new Set())}
+                  className="mt-4"
+                >
+                  Mostrar notificaciones leídas
+                </Button>
+              )}
             </GlassCard>
           )}
 

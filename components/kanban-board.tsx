@@ -307,16 +307,18 @@ export function KanbanBoard() {
                         ) : (
                           <div className="mt-2">
                             {prospecto.notas && (
-                              <p className="text-xs text-muted-foreground line-clamp-2 italic mb-1">
-                                {prospecto.notas.split('\n').pop()}
-                              </p>
+                              <div className="bg-muted/40 rounded p-2 mb-2 max-h-[80px] overflow-y-auto">
+                                <p className="text-xs text-muted-foreground whitespace-pre-wrap">
+                                  {prospecto.notas}
+                                </p>
+                              </div>
                             )}
                             <button
                               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
                               onClick={() => { setEditandoId(prospecto.id); setComentarioTemp("") }}
                             >
                               <MessageSquare className="w-3 h-3" />
-                              Comentar
+                              {prospecto.notas ? "Agregar comentario" : "Comentar"}
                             </button>
                           </div>
                         )}

@@ -329,15 +329,15 @@ function PolizasPendientesContent() {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ delay: index * 0.02 }}
-                        className="bg-pink-100 dark:bg-pink-950/30 border-b border-pink-200 dark:border-pink-900 hover:bg-pink-200 dark:hover:bg-pink-900/40 transition-colors"
+                        className="bg-pink-100 dark:bg-pink-950/30 border-b border-pink-200 dark:border-pink-900 hover:bg-pink-200 dark:hover:bg-pink-900/40 transition-colors align-top"
                       >
-                        <td className="p-3 font-mono font-bold border-r border-pink-200 dark:border-pink-900">
+                        <td className="p-4 font-mono font-bold border-r border-pink-200 dark:border-pink-900 align-top">
                           {poliza.numeroPoliza}
                         </td>
-                        <td className="p-3 border-r border-pink-200 dark:border-pink-900">
+                        <td className="p-4 border-r border-pink-200 dark:border-pink-900 align-top">
                           {poliza.incisoEndoso || "-"}
                         </td>
-                        <td className="p-3 border-r border-pink-200 dark:border-pink-900">
+                        <td className="p-4 border-r border-pink-200 dark:border-pink-900 align-top">
                           <Badge 
                             variant="outline" 
                             style={{ borderColor: compania?.color, color: compania?.color }}
@@ -345,33 +345,33 @@ function PolizasPendientesContent() {
                             {compania?.nombre || poliza.companiaId.toUpperCase()}
                           </Badge>
                         </td>
-                        <td className="p-3 border-r border-pink-200 dark:border-pink-900 capitalize font-medium">
+                        <td className="p-4 border-r border-pink-200 dark:border-pink-900 capitalize font-medium align-top">
                           {poliza.ramo.replace("-", " ")}
                         </td>
-                        <td className="p-3 border-r border-pink-200 dark:border-pink-900">
+                        <td className="p-4 border-r border-pink-200 dark:border-pink-900 align-top">
                           <div>
                             <p className="font-medium">{poliza.nombreAsegurado || cliente?.nombre}</p>
                           </div>
                         </td>
-                        <td className="p-3 border-r border-pink-200 dark:border-pink-900 font-medium">
+                        <td className="p-4 border-r border-pink-200 dark:border-pink-900 font-medium align-top">
                           {poliza.ultimoDiaPago 
                             ? new Date(poliza.ultimoDiaPago).toLocaleDateString() 
                             : new Date(poliza.vigenciaFin).toLocaleDateString()}
                         </td>
-                        <td className="p-3 border-r border-pink-200 dark:border-pink-900 text-center font-medium">
+                        <td className="p-4 border-r border-pink-200 dark:border-pink-900 text-center align-top">
                           {poliza.numeroRecibo || "1/1"}
                         </td>
-                        <td className="p-3 border-r border-pink-200 dark:border-pink-900 font-bold text-right">
+                        <td className="p-4 border-r border-pink-200 dark:border-pink-900 font-bold text-right align-top">
                           ${(poliza.primaTotalRecibo || primaPendiente).toLocaleString()}
                         </td>
-                        <td className="p-3 border-r border-pink-200 dark:border-pink-900 text-center">
+                        <td className="p-4 border-r border-pink-200 dark:border-pink-900 text-center align-top">
                           {poliza.registroSistemaCobranza ? (
                             <span className="text-green-600 font-bold">SÍ</span>
                           ) : (
                             <span className="text-muted-foreground">NO</span>
                           )}
                         </td>
-                        <td className="p-3 border-r border-pink-200 dark:border-pink-900 text-center">
+                        <td className="p-4 border-r border-pink-200 dark:border-pink-900 text-center align-top">
                           {poliza.fechasRecordatorio?.fecha1 ? (
                             <span className="text-xs font-medium text-green-600">
                               {new Date(poliza.fechasRecordatorio.fecha1).toLocaleDateString()}
@@ -387,7 +387,7 @@ function PolizasPendientesContent() {
                             </Button>
                           )}
                         </td>
-                        <td className="p-3 border-r border-pink-200 dark:border-pink-900 text-center">
+                        <td className="p-4 border-r border-pink-200 dark:border-pink-900 text-center align-top">
                           {poliza.fechasRecordatorio?.fecha2 ? (
                             <span className="text-xs font-medium text-yellow-600">
                               {new Date(poliza.fechasRecordatorio.fecha2).toLocaleDateString()}
@@ -403,7 +403,7 @@ function PolizasPendientesContent() {
                             </Button>
                           )}
                         </td>
-                        <td className="p-3 border-r border-pink-200 dark:border-pink-900 text-center">
+                        <td className="p-4 border-r border-pink-200 dark:border-pink-900 text-center align-top">
                           {poliza.fechasRecordatorio?.fecha3 ? (
                             <span className="text-xs font-medium text-red-600">
                               {new Date(poliza.fechasRecordatorio.fecha3).toLocaleDateString()}
@@ -419,7 +419,7 @@ function PolizasPendientesContent() {
                             </Button>
                           )}
                         </td>
-                        <td className="p-3 border-r border-pink-200 dark:border-pink-900 max-w-[200px]">
+                        <td className="p-4 border-r border-pink-200 dark:border-pink-900 max-w-[220px] align-top">
                           {editandoId === poliza.id ? (
                             <div className="flex items-center gap-1">
                               <Input
@@ -436,15 +436,15 @@ function PolizasPendientesContent() {
                               </Button>
                             </div>
                           ) : (
-                            <div className="space-y-1">
+                            <div className="space-y-2">
                               <div 
-                                className="text-xs text-muted-foreground cursor-pointer hover:text-foreground whitespace-pre-line line-clamp-2"
+                                className="text-xs text-muted-foreground cursor-pointer hover:text-foreground whitespace-pre-line line-clamp-3 min-h-[40px]"
                                 onClick={() => setVerComentarioId(poliza.id)}
                                 title="Click para ver comentario completo"
                               >
                                 {poliza.comentarios || <span className="italic">Sin comentarios</span>}
                               </div>
-                              <div className="flex items-center gap-1">
+                              <div className="flex items-center gap-1 flex-wrap">
                                 <Button 
                                   size="sm" 
                                   variant="ghost" 
@@ -461,14 +461,14 @@ function PolizasPendientesContent() {
                             </div>
                           )}
                         </td>
-                        <td className="p-3 text-center">
+                        <td className="p-4 text-center align-top">
                           <div className="flex items-center justify-center gap-2 flex-wrap">
                             {poliza.primaCobrada >= poliza.primaEmitida ? (
                               <>
                                 <Button 
                                   size="sm" 
                                   variant="outline"
-                                  className="h-8 text-xs border-green-600 text-green-600"
+                                  className="h-8 text-xs border-green-600 text-green-600 whitespace-nowrap"
                                   onClick={() => abrirModalAccion(poliza, "editar-estado")}
                                 >
                                   ✓ Editar Estado
@@ -478,7 +478,7 @@ function PolizasPendientesContent() {
                               <Button 
                                 size="sm" 
                                 variant="default"
-                                className="h-8 text-xs bg-green-600 hover:bg-green-700"
+                                className="h-8 text-xs bg-green-600 hover:bg-green-700 whitespace-nowrap"
                                 onClick={() => abrirModalAccion(poliza, "pagada")}
                               >
                                 ✓ Marcar Pagada
@@ -487,7 +487,7 @@ function PolizasPendientesContent() {
                             <Button 
                               size="sm" 
                               variant="destructive"
-                              className="h-8 text-xs"
+                              className="h-8 text-xs whitespace-nowrap"
                               onClick={() => abrirModalAccion(poliza, "cancelar")}
                             >
                               Cancelar

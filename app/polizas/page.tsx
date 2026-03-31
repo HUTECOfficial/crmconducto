@@ -858,18 +858,12 @@ function PolizasContent() {
                   <p className="text-xs text-muted-foreground">Formato: recibo actual / total de recibos</p>
                 </div>
 
-                {/* Agente y registro cobranza */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>ID Agente</Label>
-                    <Input placeholder="Ej: AG001" value={nuevaPoliza.agente}
-                      onChange={e => setNuevaPoliza(p => ({ ...p, agente: e.target.value }))} />
-                  </div>
-                  <div className="flex items-center gap-2 pt-6">
-                    <Checkbox id="reg" checked={nuevaPoliza.registroSistemaCobranza}
-                      onCheckedChange={c => setNuevaPoliza(p => ({ ...p, registroSistemaCobranza: c as boolean }))} />
-                    <label htmlFor="reg" className="text-sm cursor-pointer">Registrado en sistema de cobranza</label>
-                  </div>
+                {/* Agente */}
+                <div className="space-y-2">
+                  <Label>ID Agente</Label>
+                  <Input placeholder="Ej: AG001" value={nuevaPoliza.agente}
+                    onChange={e => setNuevaPoliza(p => ({ ...p, agente: e.target.value }))} />
+                  <p className="text-xs text-muted-foreground">El registro en sistema de cobranza se realiza automáticamente</p>
                 </div>
 
                 {/* Comentarios */}
