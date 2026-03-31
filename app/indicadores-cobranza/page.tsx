@@ -128,43 +128,6 @@ export default function IndicadoresCobranzaPage() {
 
               {/* KPIs Secundarios */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Cancelación por Falta de Pago */}
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.1 }}
-                >
-                  <GlassCard className="p-6">
-                    <div className="flex items-start justify-between mb-4">
-                      <div>
-                        <p className="text-sm font-medium text-muted-foreground mb-2">
-                          Lapse Ratio (Cancelación por Mora)
-                        </p>
-                        <p className={`text-3xl font-bold ${getColorTendencia(kpis.lapseRatio, 5)}`}>
-                          {kpis.lapseRatio}%
-                        </p>
-                      </div>
-                      <div className="p-3 rounded-xl bg-red-500/10">
-                        <AlertCircle className="w-6 h-6 text-red-600" />
-                      </div>
-                    </div>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Pólizas Activas:</span>
-                        <span className="font-medium">{kpis.polizasActivas}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Canceladas por Mora:</span>
-                        <span className="font-medium text-red-600">{kpis.polizasCanceladasPorMora}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">En Período de Gracia:</span>
-                        <span className="font-medium text-orange-600">{kpis.polizasEnGracia}</span>
-                      </div>
-                    </div>
-                  </GlassCard>
-                </motion.div>
-
                 {/* Rehabilitaciones */}
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
@@ -209,7 +172,7 @@ export default function IndicadoresCobranzaPage() {
                   <div>
                     <h3 className="text-lg font-semibold">Antigüedad de Saldos (Aging)</h3>
                     <p className="text-sm text-muted-foreground">
-                      Clasificación de pagos pendientes por días de mora
+                      Clasificación de pagos pendientes por período
                     </p>
                   </div>
                 </div>
@@ -224,7 +187,7 @@ export default function IndicadoresCobranzaPage() {
                   >
                     <p className="text-xs font-medium text-green-700 mb-2">CORRIENTE</p>
                     <p className="text-2xl font-bold text-green-600">${kpis.agingCorriente.toLocaleString()}</p>
-                    <p className="text-xs text-muted-foreground mt-2">0 días de mora</p>
+                    <p className="text-xs text-muted-foreground mt-2">Al día</p>
                   </motion.div>
 
                   {/* 1-30 */}
@@ -453,21 +416,6 @@ export default function IndicadoresCobranzaPage() {
                   </GlassCard>
                 </motion.div>
 
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.2 }}
-                >
-                  <GlassCard className="p-6">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="p-2 rounded-xl bg-red-500/10">
-                        <AlertCircle className="w-5 h-5 text-red-600" />
-                      </div>
-                      <p className="text-sm font-medium text-muted-foreground">Canceladas por Mora</p>
-                    </div>
-                    <p className="text-3xl font-bold text-red-600">{kpis.polizasCanceladasPorMora}</p>
-                  </GlassCard>
-                </motion.div>
               </div>
             </TabsContent>
           </Tabs>
