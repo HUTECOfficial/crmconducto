@@ -98,7 +98,7 @@ export default function MulticotizadorPage() {
 
   const resetear = () => {
     setTipoActivo(null)
-    setPasos(1)
+    setPaso(1)
     setSolicitante({ nombre: "", email: "", telefono: "", cp: "", direccion: "", edad: "", sexo: "" })
     setCotizacionGenerada(false)
     setResponsableAsignado(null)
