@@ -28,7 +28,6 @@ const TIPOS_COTIZACION = [
 // Responsables (del sistema)
 const RESPONSABLES = [
   { id: "javier", nombre: "Javier Garcia", email: "javier@crm.com" },
-  { id: "monse", nombre: "Monse", email: "monse@crm.com" },
   { id: "daniela", nombre: "Daniela", email: "dani@crm.com" },
 ]
 
