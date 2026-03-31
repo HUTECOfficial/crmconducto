@@ -172,7 +172,7 @@ export default function DashboardPage() {
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  onClick={() => router.push('/polizas?filtro=renovaciones')}
+                  onClick={() => router.push('/polizas-pendientes')}
                   className="gap-2"
                 >
                   <Eye className="w-4 h-4" />

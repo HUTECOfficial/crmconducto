@@ -63,6 +63,14 @@ function PolizasPendientesContent() {
     polizasPendientes = polizasPendientes.filter(p => (p.primaCobrada || 0) > 0)
   }
 
+  // Ordenar por fecha de vencimiento (más cercanas o vencidas primero)
+  const hoy = new Date()
+  polizasPendientes = polizasPendientes.sort((a, b) => {
+    const fechaVencimientoA = new Date(a.vigenciaFin)
+    const fechaVencimientoB = new Date(b.vigenciaFin)
+    return fechaVencimientoA.getTime() - fechaVencimientoB.getTime()
+  })
+
   const totalPendiente = polizasPendientes.reduce((sum, p) => sum + ((p.primaEmitida || 0) - (p.primaCobrada || 0)), 0)
   const totalEmitido = polizasPendientes.reduce((sum, p) => sum + (p.primaEmitida || 0), 0)
   const totalCobrado = polizasPendientes.reduce((sum, p) => sum + (p.primaCobrada || 0), 0)
@@ -118,7 +126,9 @@ function PolizasPendientesContent() {
           nuevoNumeroRecibo = `${siguienteRecibo}/${totalRecibos}`
           
           // Calcular prima cobrada basada en recibos subsecuentes
-          const recibosSubsecuentes = parseFloat(polizaAccion.recibosSubsecuentes || "0")
+          const recibosSubsecuentes = typeof polizaAccion.recibosSubsecuentes === 'number' 
+            ? polizaAccion.recibosSubsecuentes 
+            : parseFloat(String(polizaAccion.recibosSubsecuentes || "0"))
           nuevaPrimaCobrada = (polizaAccion.primaCobrada || 0) + recibosSubsecuentes
         } else {
           // Si es el último recibo, marcar como completamente pagado
