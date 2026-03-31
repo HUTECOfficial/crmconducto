@@ -5,11 +5,18 @@ import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
 
 // Tipos
+export interface ClienteTelefono {
+  canal: 'whatsapp' | 'telegram' | 'celular' | 'fijo' | 'otro'
+  numero: string
+  principal?: boolean
+}
+
 export interface Cliente {
   id: string
   nombre: string
   email: string
   telefono: string
+  telefonos?: ClienteTelefono[]
   empresa?: string
   rfc?: string
   direccion?: string
@@ -185,6 +192,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         nombre: c.nombre,
         email: c.email || '',
         telefono: c.telefono,
+        telefonos: c.telefonos || [],
         empresa: c.empresa || undefined,
         rfc: c.rfc || undefined,
         direccion: c.direccion || undefined,
@@ -212,6 +220,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
           nombre: cliente.nombre,
           email: cliente.email || null,
           telefono: cliente.telefono,
+          telefonos: cliente.telefonos || null,
           empresa: cliente.empresa || null,
           rfc: cliente.rfc || null,
           direccion: cliente.direccion || null,
@@ -242,6 +251,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       if (cliente.nombre !== undefined) updateData.nombre = cliente.nombre
       if (cliente.email !== undefined) updateData.email = cliente.email || null
       if (cliente.telefono !== undefined) updateData.telefono = cliente.telefono
+      if (cliente.telefonos !== undefined) updateData.telefonos = cliente.telefonos || null
       if (cliente.empresa !== undefined) updateData.empresa = cliente.empresa || null
       if (cliente.rfc !== undefined) updateData.rfc = cliente.rfc || null
       if (cliente.direccion !== undefined) updateData.direccion = cliente.direccion || null
