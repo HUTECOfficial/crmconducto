@@ -198,7 +198,7 @@ export default function DashboardPage() {
                         initial={{ opacity: 0, x: -20 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: index * 0.1 }}
-                        onClick={() => router.push('/polizas?filtro=renovaciones')}
+                        onClick={() => router.push('/polizas-pendientes')}
                       >
                         <div className="flex items-start justify-between mb-2">
                           <div className="flex-1">
