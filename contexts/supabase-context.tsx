@@ -493,7 +493,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       if (poliza.fechasRecordatorio !== undefined) updateData.fechas_recordatorio = poliza.fechasRecordatorio
       if (poliza.comentarios !== undefined) updateData.comentarios = poliza.comentarios
       if (poliza.notas !== undefined) updateData.notas = poliza.notas
-      if (poliza.marcaActualizacion !== undefined) updateData.marca_actualizacion = poliza.marcaActualizacion      if (poliza.cancelacionMotivo !== undefined) updateData.cancelacion_motivo = poliza.cancelacionMotivo || null
+      if (poliza.marcaActualizacion !== undefined) updateData.marca_actualizacion = poliza.marcaActualizacion
+      if (poliza.cancelacionMotivo !== undefined) updateData.cancelacion_motivo = poliza.cancelacionMotivo || null
       if (poliza.tipoPago !== undefined) updateData.tipo_pago = poliza.tipoPago || null
       if (poliza.numeroRecibo !== undefined) updateData.numero_recibo = poliza.numeroRecibo || null
       if (poliza.ultimoDiaPago !== undefined) updateData.ultimo_dia_pago = poliza.ultimoDiaPago || null
