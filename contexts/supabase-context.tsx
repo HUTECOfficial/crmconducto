@@ -77,8 +77,34 @@ export interface Poliza {
   primerRecibo?: number
   recibosSubsecuentes?: number
   primaTotal?: number
-  diasGracia?: number
+  diasGraciaPrimerRecibo?: number
+  diasGraciaSubsecuentes?: number
   divisas?: string
+}
+
+export interface FolioRegistro {
+  id: string
+  numeroFolio: string
+  categoria: string
+  subcategoria: string
+  movimiento: 'indiv' | 'colectivo'
+  fechaIngreso: string
+  compania: string
+  comentarios?: string
+  responsable?: string
+}
+
+export interface SiniestroRegistro {
+  id: string
+  numeroFolio: string
+  tipo: 'membresia' | 'programacion' | 'autos' | 'vida'
+  movimiento: 'indiv' | 'colectivo'
+  fechaIngreso: string
+  compania: string
+  comentarios?: string
+  responsable?: string
+  vistoBueno: boolean
+  fechaVistoBueno?: string
 }
 
 export interface Prospecto {
@@ -145,6 +171,21 @@ interface SupabaseContextType {
   agregarProspecto: (prospecto: Omit<Prospecto, 'id'>) => Promise<string | null>
   actualizarProspecto: (id: string, prospecto: Partial<Prospecto>) => Promise<void>
   eliminarProspecto: (id: string) => Promise<void>
+
+  // Folios
+  foliosRegistro: FolioRegistro[]
+  loadingFolios: boolean
+  agregarFolio: (folio: Omit<FolioRegistro, 'id'>) => Promise<string | null>
+  actualizarFolio: (id: string, folio: Partial<FolioRegistro>) => Promise<void>
+  eliminarFolio: (id: string) => Promise<void>
+
+  // Siniestros
+  siniestrosRegistro: SiniestroRegistro[]
+  loadingSiniestros: boolean
+  agregarSiniestro: (siniestro: Omit<SiniestroRegistro, 'id'>) => Promise<string | null>
+  actualizarSiniestro: (id: string, siniestro: Partial<SiniestroRegistro>) => Promise<void>
+  eliminarSiniestro: (id: string) => Promise<void>
+  darVistoBueno: (id: string) => Promise<void>
   
   // Eventos del calendario
   eventos: Evento[]
@@ -180,6 +221,12 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   
   const [eventos, setEventos] = useState<Evento[]>([])
   const [loadingEventos, setLoadingEventos] = useState(true)
+
+  const [foliosRegistro, setFoliosRegistro] = useState<FolioRegistro[]>([])
+  const [loadingFolios, setLoadingFolios] = useState(true)
+
+  const [siniestrosRegistro, setSiniestrosRegistro] = useState<SiniestroRegistro[]>([])
+  const [loadingSiniestros, setLoadingSiniestros] = useState(true)
 
   // ==================== CLIENTES ====================
   const fetchClientes = async () => {
@@ -225,7 +272,6 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
           nombre: cliente.nombre,
           email: cliente.email || null,
           telefono: cliente.telefono,
-          telefonos: cliente.telefonos || null,
           empresa: cliente.empresa || null,
           rfc: cliente.rfc || null,
           direccion: cliente.direccion || null,
@@ -362,6 +408,10 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         notas: p.notas || undefined,
         marcaActualizacion: p.marca_actualizacion || false,
         anosVidaProducto: p.anos_vida_producto || undefined,
+        primerRecibo: p.primer_recibo ?? undefined,
+        recibosSubsecuentes: p.recibos_subsecuentes ?? undefined,
+        diasGraciaPrimerRecibo: p.dias_gracia_primer_recibo ?? undefined,
+        diasGraciaSubsecuentes: p.dias_gracia_subsecuentes ?? undefined,
         tipoPago: p.tipo_pago || undefined,
       }))
 
@@ -408,6 +458,10 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
           marca_actualizacion: poliza.marcaActualizacion || false,
           anos_vida_producto: poliza.anosVidaProducto || null,
           tipo_pago: poliza.tipoPago || null,
+          primer_recibo: poliza.primerRecibo ?? null,
+          recibos_subsecuentes: poliza.recibosSubsecuentes ?? null,
+          dias_gracia_primer_recibo: poliza.diasGraciaPrimerRecibo ?? null,
+          dias_gracia_subsecuentes: poliza.diasGraciaSubsecuentes ?? null,
         }])
         .select()
         .single()
@@ -439,8 +493,15 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       if (poliza.fechasRecordatorio !== undefined) updateData.fechas_recordatorio = poliza.fechasRecordatorio
       if (poliza.comentarios !== undefined) updateData.comentarios = poliza.comentarios
       if (poliza.notas !== undefined) updateData.notas = poliza.notas
-      if (poliza.marcaActualizacion !== undefined) updateData.marca_actualizacion = poliza.marcaActualizacion
-
+      if (poliza.marcaActualizacion !== undefined) updateData.marca_actualizacion = poliza.marcaActualizacion      if (poliza.cancelacionMotivo !== undefined) updateData.cancelacion_motivo = poliza.cancelacionMotivo || null
+      if (poliza.tipoPago !== undefined) updateData.tipo_pago = poliza.tipoPago || null
+      if (poliza.numeroRecibo !== undefined) updateData.numero_recibo = poliza.numeroRecibo || null
+      if (poliza.ultimoDiaPago !== undefined) updateData.ultimo_dia_pago = poliza.ultimoDiaPago || null
+      if (poliza.periodoGracia !== undefined) updateData.periodo_gracia = poliza.periodoGracia || null
+      if (poliza.primerRecibo !== undefined) updateData.primer_recibo = poliza.primerRecibo ?? null
+      if (poliza.recibosSubsecuentes !== undefined) updateData.recibos_subsecuentes = poliza.recibosSubsecuentes ?? null
+      if (poliza.diasGraciaPrimerRecibo !== undefined) updateData.dias_gracia_primer_recibo = poliza.diasGraciaPrimerRecibo ?? null
+      if (poliza.diasGraciaSubsecuentes !== undefined) updateData.dias_gracia_subsecuentes = poliza.diasGraciaSubsecuentes ?? null
       const { error } = await supabase
         .from('polizas')
         .update(updateData)
@@ -567,6 +628,206 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       await fetchProspectos()
     } catch (err: any) {
       toast.error('Error al eliminar prospecto: ' + err.message)
+    }
+  }
+
+  // ==================== FOLIOS ====================
+  const fetchFolios = async () => {
+    try {
+      setLoadingFolios(true)
+      const { data, error } = await supabase
+        .from('folios')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        if (error.code === '42P01') { setFoliosRegistro([]); return }
+        throw error
+      }
+
+      const mapped: FolioRegistro[] = (data || []).map((f: any) => ({
+        id: f.id,
+        numeroFolio: f.numero_folio,
+        categoria: f.categoria,
+        subcategoria: f.subcategoria,
+        movimiento: f.movimiento as FolioRegistro['movimiento'],
+        fechaIngreso: f.fecha_ingreso,
+        compania: f.compania,
+        comentarios: f.comentarios || undefined,
+        responsable: f.responsable || undefined,
+      }))
+      setFoliosRegistro(mapped)
+    } catch (err: any) {
+      console.error('Error fetching folios:', err.message)
+      setFoliosRegistro([])
+    } finally {
+      setLoadingFolios(false)
+    }
+  }
+
+  const agregarFolio = async (folio: Omit<FolioRegistro, 'id'>): Promise<string | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('folios')
+        .insert([{
+          numero_folio: folio.numeroFolio,
+          categoria: folio.categoria,
+          subcategoria: folio.subcategoria,
+          movimiento: folio.movimiento,
+          fecha_ingreso: folio.fechaIngreso,
+          compania: folio.compania,
+          comentarios: folio.comentarios || null,
+          responsable: folio.responsable || null,
+        }])
+        .select()
+        .single()
+      if (error) throw error
+      toast.success('Folio creado exitosamente')
+      await fetchFolios()
+      return data.id
+    } catch (err: any) {
+      toast.error('Error al crear folio: ' + err.message)
+      return null
+    }
+  }
+
+  const actualizarFolio = async (id: string, folio: Partial<FolioRegistro>) => {
+    try {
+      const u: any = {}
+      if (folio.numeroFolio !== undefined) u.numero_folio = folio.numeroFolio
+      if (folio.categoria !== undefined) u.categoria = folio.categoria
+      if (folio.subcategoria !== undefined) u.subcategoria = folio.subcategoria
+      if (folio.movimiento !== undefined) u.movimiento = folio.movimiento
+      if (folio.fechaIngreso !== undefined) u.fecha_ingreso = folio.fechaIngreso
+      if (folio.compania !== undefined) u.compania = folio.compania
+      if (folio.comentarios !== undefined) u.comentarios = folio.comentarios || null
+      if (folio.responsable !== undefined) u.responsable = folio.responsable || null
+      const { error } = await supabase.from('folios').update(u).eq('id', id)
+      if (error) throw error
+      toast.success('Folio actualizado')
+      await fetchFolios()
+    } catch (err: any) {
+      toast.error('Error al actualizar folio: ' + err.message)
+    }
+  }
+
+  const eliminarFolio = async (id: string) => {
+    try {
+      const { error } = await supabase.from('folios').delete().eq('id', id)
+      if (error) throw error
+      toast.success('Folio eliminado')
+      await fetchFolios()
+    } catch (err: any) {
+      toast.error('Error al eliminar folio: ' + err.message)
+    }
+  }
+
+  // ==================== SINIESTROS ====================
+  const fetchSiniestros = async () => {
+    try {
+      setLoadingSiniestros(true)
+      const { data, error } = await supabase
+        .from('siniestros')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        if (error.code === '42P01') { setSiniestrosRegistro([]); return }
+        throw error
+      }
+
+      const mapped: SiniestroRegistro[] = (data || []).map((s: any) => ({
+        id: s.id,
+        numeroFolio: s.numero_folio,
+        tipo: s.tipo as SiniestroRegistro['tipo'],
+        movimiento: s.movimiento as SiniestroRegistro['movimiento'],
+        fechaIngreso: s.fecha_ingreso,
+        compania: s.compania,
+        comentarios: s.comentarios || undefined,
+        responsable: s.responsable || undefined,
+        vistoBueno: s.visto_bueno || false,
+        fechaVistoBueno: s.fecha_visto_bueno || undefined,
+      }))
+      setSiniestrosRegistro(mapped)
+    } catch (err: any) {
+      console.error('Error fetching siniestros:', err.message)
+      setSiniestrosRegistro([])
+    } finally {
+      setLoadingSiniestros(false)
+    }
+  }
+
+  const agregarSiniestro = async (siniestro: Omit<SiniestroRegistro, 'id'>): Promise<string | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('siniestros')
+        .insert([{
+          numero_folio: siniestro.numeroFolio,
+          tipo: siniestro.tipo,
+          movimiento: siniestro.movimiento,
+          fecha_ingreso: siniestro.fechaIngreso,
+          compania: siniestro.compania,
+          comentarios: siniestro.comentarios || null,
+          responsable: siniestro.responsable || null,
+          visto_bueno: siniestro.vistoBueno || false,
+          fecha_visto_bueno: siniestro.fechaVistoBueno || null,
+        }])
+        .select()
+        .single()
+      if (error) throw error
+      toast.success('Siniestro registrado exitosamente')
+      await fetchSiniestros()
+      return data.id
+    } catch (err: any) {
+      toast.error('Error al registrar siniestro: ' + err.message)
+      return null
+    }
+  }
+
+  const actualizarSiniestro = async (id: string, siniestro: Partial<SiniestroRegistro>) => {
+    try {
+      const u: any = {}
+      if (siniestro.numeroFolio !== undefined) u.numero_folio = siniestro.numeroFolio
+      if (siniestro.tipo !== undefined) u.tipo = siniestro.tipo
+      if (siniestro.movimiento !== undefined) u.movimiento = siniestro.movimiento
+      if (siniestro.fechaIngreso !== undefined) u.fecha_ingreso = siniestro.fechaIngreso
+      if (siniestro.compania !== undefined) u.compania = siniestro.compania
+      if (siniestro.comentarios !== undefined) u.comentarios = siniestro.comentarios || null
+      if (siniestro.responsable !== undefined) u.responsable = siniestro.responsable || null
+      if (siniestro.vistoBueno !== undefined) u.visto_bueno = siniestro.vistoBueno
+      if (siniestro.fechaVistoBueno !== undefined) u.fecha_visto_bueno = siniestro.fechaVistoBueno || null
+      const { error } = await supabase.from('siniestros').update(u).eq('id', id)
+      if (error) throw error
+      toast.success('Siniestro actualizado')
+      await fetchSiniestros()
+    } catch (err: any) {
+      toast.error('Error al actualizar siniestro: ' + err.message)
+    }
+  }
+
+  const eliminarSiniestro = async (id: string) => {
+    try {
+      const { error } = await supabase.from('siniestros').delete().eq('id', id)
+      if (error) throw error
+      toast.success('Siniestro eliminado')
+      await fetchSiniestros()
+    } catch (err: any) {
+      toast.error('Error al eliminar siniestro: ' + err.message)
+    }
+  }
+
+  const darVistoBueno = async (id: string) => {
+    try {
+      const hoy = new Date().toISOString().split('T')[0]
+      const { error } = await supabase
+        .from('siniestros')
+        .update({ visto_bueno: true, fecha_visto_bueno: hoy })
+        .eq('id', id)
+      if (error) throw error
+      toast.success('Visto bueno registrado correctamente')
+      await fetchSiniestros()
+    } catch (err: any) {
+      toast.error('Error al registrar visto bueno: ' + err.message)
     }
   }
 
@@ -778,6 +1039,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       fetchPolizas(),
       fetchProspectos(),
       fetchEventos(),
+      fetchFolios(),
+      fetchSiniestros(),
     ])
   }
 
@@ -808,6 +1071,19 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       agregarProspecto,
       actualizarProspecto,
       eliminarProspecto,
+
+      foliosRegistro,
+      loadingFolios,
+      agregarFolio,
+      actualizarFolio,
+      eliminarFolio,
+
+      siniestrosRegistro,
+      loadingSiniestros,
+      agregarSiniestro,
+      actualizarSiniestro,
+      eliminarSiniestro,
+      darVistoBueno,
       
       eventos,
       loadingEventos,

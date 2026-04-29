@@ -79,7 +79,7 @@ function PolizasContent() {
     tipoPago: "" as "efectivo" | "transferencia" | "tarjeta" | "domiciliacion" | "cheque" | "",
     anosVidaProducto: "", agente: "", ultimoDiaPago: "", numeroRecibo: "",
     registroSistemaCobranza: false, comentarios: "", notas: "", marcaActualizacion: false,
-    divisas: "MXN", primaTotal: "", diasGracia: "", primerRecibo: "", recibosSubsecuentes: "",
+    divisas: "MXN", primaTotal: "", diasGraciaPrimerRecibo: "", diasGraciaSubsecuentes: "", primerRecibo: "", recibosSubsecuentes: "",
   })
 
   const [nuevoCliente, setNuevoCliente] = useState({ nombre: "", email: "", telefono: "", empresa: "" })
@@ -162,7 +162,7 @@ function PolizasContent() {
       nombreAsegurado: "", vigenciaInicio: "", vigenciaFin: "", prima: "", formaPago: "",
       tipoPago: "", anosVidaProducto: "", agente: "", ultimoDiaPago: "", numeroRecibo: "",
       registroSistemaCobranza: false, comentarios: "", notas: "", marcaActualizacion: false,
-      divisas: "MXN", primaTotal: "", diasGracia: "", primerRecibo: "", recibosSubsecuentes: "",
+      divisas: "MXN", primaTotal: "", diasGraciaPrimerRecibo: "", diasGraciaSubsecuentes: "", primerRecibo: "", recibosSubsecuentes: "",
     })
     setNuevoCliente({ nombre: "", email: "", telefono: "", empresa: "" })
     setBusquedaCliente("")
@@ -234,6 +234,10 @@ function PolizasContent() {
       notas: nuevaPoliza.notas || undefined,
       marcaActualizacion: nuevaPoliza.marcaActualizacion,
       anosVidaProducto: nuevaPoliza.anosVidaProducto ? parseInt(nuevaPoliza.anosVidaProducto) : undefined,
+      primerRecibo: nuevaPoliza.primerRecibo ? parseFloat(nuevaPoliza.primerRecibo) : undefined,
+      recibosSubsecuentes: nuevaPoliza.recibosSubsecuentes ? parseFloat(nuevaPoliza.recibosSubsecuentes) : undefined,
+      diasGraciaPrimerRecibo: nuevaPoliza.diasGraciaPrimerRecibo ? parseInt(nuevaPoliza.diasGraciaPrimerRecibo) : undefined,
+      diasGraciaSubsecuentes: nuevaPoliza.diasGraciaSubsecuentes ? parseInt(nuevaPoliza.diasGraciaSubsecuentes) : undefined,
     })
 
     setModalNuevaPoliza(false)
@@ -848,13 +852,34 @@ function PolizasContent() {
                   </div>
                 </div>
 
-                {/* Días de gracia según forma de pago */}
+                {/* Días de gracia según tipo de recibo */}
                 {nuevaPoliza.formaPago && (
-                  <div className="space-y-2 p-4 border border-blue-200 dark:border-blue-800 rounded-lg bg-blue-50 dark:bg-blue-950/20">
-                    <Label>Días de Gracia</Label>
-                    <Input type="number" min="0" placeholder="Ej: 15, 30" value={nuevaPoliza.diasGracia}
-                      onChange={e => setNuevaPoliza(p => ({ ...p, diasGracia: e.target.value }))} />
-                    <p className="text-xs text-blue-600">Días adicionales permitidos después de la fecha de vencimiento</p>
+                  <div className="space-y-3 p-4 border border-blue-200 dark:border-blue-800 rounded-lg bg-blue-50 dark:bg-blue-950/20">
+                    <Label className="font-semibold text-blue-700 dark:text-blue-400">Días de Gracia</Label>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <Label className="text-xs text-blue-600">Día de Gracia — Primer Recibo</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          placeholder="Ej: 30"
+                          value={nuevaPoliza.diasGraciaPrimerRecibo}
+                          onChange={e => setNuevaPoliza(p => ({ ...p, diasGraciaPrimerRecibo: e.target.value }))}
+                        />
+                        <p className="text-xs text-muted-foreground">Días de gracia para el primer pago</p>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-blue-600">Día de Gracia — Recibos Subsecuentes</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          placeholder="Ej: 15"
+                          value={nuevaPoliza.diasGraciaSubsecuentes}
+                          onChange={e => setNuevaPoliza(p => ({ ...p, diasGraciaSubsecuentes: e.target.value }))}
+                        />
+                        <p className="text-xs text-muted-foreground">Días de gracia para pagos siguientes</p>
+                      </div>
+                    </div>
                   </div>
                 )}
 

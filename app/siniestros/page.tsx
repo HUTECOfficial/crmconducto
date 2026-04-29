@@ -12,76 +12,87 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { motion } from "framer-motion"
-import { Plus, Trash2, Edit2, Search } from "lucide-react"
+import { Plus, Trash2, Edit2, Search, Loader2, CheckCircle2, Clock } from "lucide-react"
 import { ProtectedRoute } from "@/components/protected-route"
 import { useSupabase } from "@/contexts/supabase-context"
-import { toast } from "sonner"
+import type { SiniestroRegistro } from "@/contexts/supabase-context"
 
 type TipoSiniestro = "membresia" | "programacion" | "autos" | "vida"
 type TipoMovimiento = "indiv" | "colectivo"
-type TipoOperacion = "cambios" | "altas" | "bajas"
-
-interface Siniestro {
-  id: string
-  numeroFolio: string
-  tipo: TipoSiniestro
-  movimiento: TipoMovimiento
-  operacion: TipoOperacion
-  fechaIngreso: string
-  compania: string
-  comentarios: string
-  responsable: string
-}
 
 export default function SiniestrosPage() {
-  const { companias } = useSupabase()
-  const [siniestros, setSiniestros] = useState<Siniestro[]>([])
+  const { companias, siniestrosRegistro, loadingSiniestros, agregarSiniestro, actualizarSiniestro, eliminarSiniestro, darVistoBueno } = useSupabase()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [filtroTipo, setFiltroTipo] = useState<TipoSiniestro | "todos">("todos")
   const [filtroMovimiento, setFiltroMovimiento] = useState<TipoMovimiento | "todos">("todos")
-  const [filtroOperacion, setFiltroOperacion] = useState<TipoOperacion | "todos">("todos")
+  const [filtroVistoBueno, setFiltroVistoBueno] = useState<"todos" | "pendiente" | "aprobado">("todos")
   const [busqueda, setBusqueda] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [dandoVB, setDandoVB] = useState<string | null>(null)
 
   const [form, setForm] = useState({
     numeroFolio: "",
     tipo: "membresia" as TipoSiniestro,
     movimiento: "indiv" as TipoMovimiento,
-    operacion: "cambios" as TipoOperacion,
     fechaIngreso: new Date().toISOString().split("T")[0],
     compania: "",
     comentarios: "",
     responsable: "",
+    vistoBueno: false,
+    fechaVistoBueno: "",
   })
 
   const siniestrosFiltrados = useMemo(() => {
-    return siniestros.filter(siniestro => {
-      const matchTipo = filtroTipo === "todos" || siniestro.tipo === filtroTipo
-      const matchMovimiento = filtroMovimiento === "todos" || siniestro.movimiento === filtroMovimiento
-      const matchOperacion = filtroOperacion === "todos" || siniestro.operacion === filtroOperacion
-      const matchBusqueda = siniestro.numeroFolio.toLowerCase().includes(busqueda.toLowerCase()) ||
-                           siniestro.compania.toLowerCase().includes(busqueda.toLowerCase())
-      return matchTipo && matchMovimiento && matchOperacion && matchBusqueda
+    return siniestrosRegistro.filter(s => {
+      const matchTipo = filtroTipo === "todos" || s.tipo === filtroTipo
+      const matchMov = filtroMovimiento === "todos" || s.movimiento === filtroMovimiento
+      const matchVB =
+        filtroVistoBueno === "todos" ||
+        (filtroVistoBueno === "aprobado" && s.vistoBueno) ||
+        (filtroVistoBueno === "pendiente" && !s.vistoBueno)
+      const matchBusqueda =
+        s.numeroFolio.toLowerCase().includes(busqueda.toLowerCase()) ||
+        s.compania.toLowerCase().includes(busqueda.toLowerCase())
+      return matchTipo && matchMov && matchVB && matchBusqueda
     })
-  }, [siniestros, filtroTipo, filtroMovimiento, filtroOperacion, busqueda])
+  }, [siniestrosRegistro, filtroTipo, filtroMovimiento, filtroVistoBueno, busqueda])
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!form.numeroFolio || !form.compania) {
-      toast.error("Número de folio y compañía son obligatorios")
+      alert("Número de folio y compañía son obligatorios")
       return
     }
-
-    if (editingId) {
-      setSiniestros(prev => prev.map(s => s.id === editingId ? { ...form, id: editingId } : s))
-      toast.success("Siniestro actualizado")
-      setEditingId(null)
-    } else {
-      setSiniestros(prev => [...prev, { ...form, id: Date.now().toString() }])
-      toast.success("Siniestro creado")
+    setSaving(true)
+    try {
+      if (editingId) {
+        await actualizarSiniestro(editingId, {
+          numeroFolio: form.numeroFolio,
+          tipo: form.tipo,
+          movimiento: form.movimiento,
+          fechaIngreso: form.fechaIngreso,
+          compania: form.compania,
+          comentarios: form.comentarios || undefined,
+          responsable: form.responsable || undefined,
+        })
+        setEditingId(null)
+      } else {
+        await agregarSiniestro({
+          numeroFolio: form.numeroFolio,
+          tipo: form.tipo,
+          movimiento: form.movimiento,
+          fechaIngreso: form.fechaIngreso,
+          compania: form.compania,
+          comentarios: form.comentarios || undefined,
+          responsable: form.responsable || undefined,
+          vistoBueno: false,
+        })
+      }
+      resetForm()
+      setIsModalOpen(false)
+    } finally {
+      setSaving(false)
     }
-
-    resetForm()
-    setIsModalOpen(false)
   }
 
   const resetForm = () => {
@@ -89,23 +100,38 @@ export default function SiniestrosPage() {
       numeroFolio: "",
       tipo: "membresia",
       movimiento: "indiv",
-      operacion: "cambios",
       fechaIngreso: new Date().toISOString().split("T")[0],
       compania: "",
       comentarios: "",
       responsable: "",
+      vistoBueno: false,
+      fechaVistoBueno: "",
     })
   }
 
-  const handleEdit = (siniestro: Siniestro) => {
-    setForm(siniestro)
-    setEditingId(siniestro.id)
+  const handleEdit = (s: SiniestroRegistro) => {
+    setForm({
+      numeroFolio: s.numeroFolio,
+      tipo: s.tipo,
+      movimiento: s.movimiento,
+      fechaIngreso: s.fechaIngreso,
+      compania: s.compania,
+      comentarios: s.comentarios || "",
+      responsable: s.responsable || "",
+      vistoBueno: s.vistoBueno,
+      fechaVistoBueno: s.fechaVistoBueno || "",
+    })
+    setEditingId(s.id)
     setIsModalOpen(true)
   }
 
-  const handleDelete = (id: string) => {
-    setSiniestros(prev => prev.filter(s => s.id !== id))
-    toast.success("Siniestro eliminado")
+  const handleVistoBueno = async (id: string) => {
+    setDandoVB(id)
+    try {
+      await darVistoBueno(id)
+    } finally {
+      setDandoVB(null)
+    }
   }
 
   const getTipoLabel = (tipo: TipoSiniestro) => {
@@ -113,19 +139,13 @@ export default function SiniestrosPage() {
       membresia: "Membresía",
       programacion: "Programación",
       autos: "Siniestros Autos",
-      vida: "Siniestros Vida"
+      vida: "Siniestros Vida",
     }
     return labels[tipo]
   }
 
-  const getMovimientoLabel = (mov: TipoMovimiento) => {
-    return mov === "indiv" ? "Individual" : "Colectivo"
-  }
-
-  const getOperacionLabel = (op: TipoOperacion) => {
-    const labels = { cambios: "Cambios", altas: "Altas", bajas: "Bajas" }
-    return labels[op]
-  }
+  const pendientes = siniestrosRegistro.filter(s => !s.vistoBueno).length
+  const aprobados = siniestrosRegistro.filter(s => s.vistoBueno).length
 
   return (
     <ProtectedRoute>
@@ -143,14 +163,39 @@ export default function SiniestrosPage() {
             }
           />
 
+          {/* Resumen */}
+          {siniestrosRegistro.length > 0 && (
+            <div className="grid grid-cols-3 gap-4 mb-6">
+              <button
+                onClick={() => setFiltroVistoBueno("todos")}
+                className={`p-4 rounded-lg border text-left transition-all bg-muted/30 hover:bg-muted/50 ${filtroVistoBueno === "todos" ? "ring-2 ring-primary" : ""}`}
+              >
+                <p className="text-xs text-muted-foreground mb-1">Total</p>
+                <p className="text-2xl font-bold">{siniestrosRegistro.length}</p>
+              </button>
+              <button
+                onClick={() => setFiltroVistoBueno("pendiente")}
+                className={`p-4 rounded-lg border text-left transition-all bg-yellow-500/5 border-yellow-500/20 hover:bg-yellow-500/10 ${filtroVistoBueno === "pendiente" ? "ring-2 ring-yellow-500" : ""}`}
+              >
+                <p className="text-xs text-yellow-600 mb-1 flex items-center gap-1"><Clock className="w-3 h-3" />Pendientes VB</p>
+                <p className="text-2xl font-bold text-yellow-600">{pendientes}</p>
+              </button>
+              <button
+                onClick={() => setFiltroVistoBueno("aprobado")}
+                className={`p-4 rounded-lg border text-left transition-all bg-green-500/5 border-green-500/20 hover:bg-green-500/10 ${filtroVistoBueno === "aprobado" ? "ring-2 ring-green-500" : ""}`}
+              >
+                <p className="text-xs text-green-600 mb-1 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />Visto Bueno</p>
+                <p className="text-2xl font-bold text-green-600">{aprobados}</p>
+              </button>
+            </div>
+          )}
+
           {/* Filtros */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div>
               <Label className="text-xs mb-2 block">Tipo</Label>
               <Select value={filtroTipo} onValueChange={(v: any) => setFiltroTipo(v)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todos</SelectItem>
                   <SelectItem value="membresia">Membresía</SelectItem>
@@ -160,13 +205,10 @@ export default function SiniestrosPage() {
                 </SelectContent>
               </Select>
             </div>
-
             <div>
               <Label className="text-xs mb-2 block">Movimiento</Label>
               <Select value={filtroMovimiento} onValueChange={(v: any) => setFiltroMovimiento(v)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todos</SelectItem>
                   <SelectItem value="indiv">Individual</SelectItem>
@@ -174,39 +216,45 @@ export default function SiniestrosPage() {
                 </SelectContent>
               </Select>
             </div>
-
             <div>
-              <Label className="text-xs mb-2 block">Operación</Label>
-              <Select value={filtroOperacion} onValueChange={(v: any) => setFiltroOperacion(v)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
+              <Label className="text-xs mb-2 block">Estatus VB</Label>
+              <Select value={filtroVistoBueno} onValueChange={(v: any) => setFiltroVistoBueno(v)}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todos</SelectItem>
-                  <SelectItem value="cambios">Cambios</SelectItem>
-                  <SelectItem value="altas">Altas</SelectItem>
-                  <SelectItem value="bajas">Bajas</SelectItem>
+                  <SelectItem value="pendiente">Pendiente VB</SelectItem>
+                  <SelectItem value="aprobado">Con Visto Bueno</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-
             <div>
               <Label className="text-xs mb-2 block">Buscar</Label>
-              <Input
-                placeholder="Folio o compañía..."
-                value={busqueda}
-                onChange={(e) => setBusqueda(e.target.value)}
-                className="h-9"
-              />
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Folio o compañía..."
+                  value={busqueda}
+                  onChange={(e) => setBusqueda(e.target.value)}
+                  className="h-9 pl-9"
+                />
+              </div>
             </div>
           </div>
 
-          {/* Lista de Siniestros */}
+          {/* Lista */}
           <div className="space-y-3">
-            {siniestrosFiltrados.length === 0 ? (
+            {loadingSiniestros ? (
               <GlassCard className="p-12 text-center">
-                <Search className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin opacity-50" />
+                <p className="text-muted-foreground text-sm">Cargando siniestros...</p>
+              </GlassCard>
+            ) : siniestrosFiltrados.length === 0 ? (
+              <GlassCard className="p-12 text-center">
+                <Search className="w-12 h-12 mx-auto mb-4 opacity-30" />
                 <p className="text-muted-foreground">No hay siniestros registrados</p>
+                <Button variant="outline" className="mt-4" onClick={() => { resetForm(); setIsModalOpen(true) }}>
+                  <Plus className="w-4 h-4 mr-2" /> Registrar siniestro
+                </Button>
               </GlassCard>
             ) : (
               siniestrosFiltrados.map((siniestro, index) => (
@@ -214,65 +262,78 @@ export default function SiniestrosPage() {
                   key={siniestro.id}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.05 }}
+                  transition={{ delay: index * 0.04 }}
                 >
-                  <GlassCard className="p-4">
+                  <GlassCard className={`p-4 ${siniestro.vistoBueno ? "border-green-500/30" : ""}`}>
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
+                        <div className="flex items-center flex-wrap gap-2 mb-2">
                           <h3 className="font-mono font-bold text-lg">{siniestro.numeroFolio}</h3>
-                          <Badge variant="outline" className="text-xs">
-                            {getTipoLabel(siniestro.tipo)}
-                          </Badge>
+                          <Badge variant="outline" className="text-xs">{getTipoLabel(siniestro.tipo)}</Badge>
                           <Badge variant="secondary" className="text-xs">
-                            {getMovimientoLabel(siniestro.movimiento)}
+                            {siniestro.movimiento === "indiv" ? "Individual" : "Colectivo"}
                           </Badge>
-                          <Badge variant="outline" className="text-xs">
-                            {getOperacionLabel(siniestro.operacion)}
-                          </Badge>
+                          {siniestro.vistoBueno ? (
+                            <Badge className="text-xs bg-green-500/10 text-green-600 border-green-500/30 border gap-1">
+                              <CheckCircle2 className="w-3 h-3" />
+                              Visto Bueno
+                              {siniestro.fechaVistoBueno && (
+                                <span className="opacity-70">
+                                  · {new Date(siniestro.fechaVistoBueno).toLocaleDateString("es-MX")}
+                                </span>
+                              )}
+                            </Badge>
+                          ) : (
+                            <Badge className="text-xs bg-yellow-500/10 text-yellow-600 border-yellow-500/30 border gap-1">
+                              <Clock className="w-3 h-3" /> Pendiente VB
+                            </Badge>
+                          )}
                         </div>
-
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-3">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                           <div>
-                            <span className="text-muted-foreground">Compañía:</span>
+                            <span className="text-muted-foreground text-xs">Compañía</span>
                             <p className="font-medium">{siniestro.compania}</p>
                           </div>
                           <div>
-                            <span className="text-muted-foreground">Fecha Ingreso:</span>
+                            <span className="text-muted-foreground text-xs">Fecha Ingreso</span>
                             <p className="font-medium">{new Date(siniestro.fechaIngreso).toLocaleDateString("es-MX")}</p>
                           </div>
                           <div>
-                            <span className="text-muted-foreground">Responsable:</span>
-                            <p className="font-medium">{siniestro.responsable || "-"}</p>
+                            <span className="text-muted-foreground text-xs">Responsable</span>
+                            <p className="font-medium">{siniestro.responsable || "—"}</p>
                           </div>
-                          <div>
-                            <span className="text-muted-foreground">Comentarios:</span>
-                            <p className="font-medium text-xs line-clamp-1">{siniestro.comentarios || "-"}</p>
-                          </div>
+                          {siniestro.comentarios && (
+                            <div>
+                              <span className="text-muted-foreground text-xs">Comentarios</span>
+                              <p className="font-medium text-xs line-clamp-1">{siniestro.comentarios}</p>
+                            </div>
+                          )}
                         </div>
-
-                        {siniestro.comentarios && (
-                          <p className="text-xs text-muted-foreground italic">{siniestro.comentarios}</p>
-                        )}
                       </div>
-
-                      <div className="flex gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleEdit(siniestro)}
-                          className="gap-1"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDelete(siniestro.id)}
-                          className="gap-1 text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+                      <div className="flex flex-col gap-1 shrink-0">
+                        {!siniestro.vistoBueno && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs text-green-600 border-green-500/40 hover:bg-green-500/10 gap-1"
+                            disabled={dandoVB === siniestro.id}
+                            onClick={() => handleVistoBueno(siniestro.id)}
+                          >
+                            {dandoVB === siniestro.id
+                              ? <Loader2 className="w-3 h-3 animate-spin" />
+                              : <CheckCircle2 className="w-3 h-3" />
+                            }
+                            Visto Bueno
+                          </Button>
+                        )}
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="sm" onClick={() => handleEdit(siniestro)}>
+                            <Edit2 className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => eliminarSiniestro(siniestro.id)} className="text-destructive hover:text-destructive">
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   </GlassCard>
@@ -282,46 +343,34 @@ export default function SiniestrosPage() {
           </div>
 
           {/* Modal */}
-          <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+          <Dialog open={isModalOpen} onOpenChange={(open) => { setIsModalOpen(open); if (!open) { resetForm(); setEditingId(null) } }}>
             <DialogContent className="sm:max-w-[600px]">
               <DialogHeader>
                 <DialogTitle>{editingId ? "Editar Siniestro" : "Nuevo Siniestro"}</DialogTitle>
               </DialogHeader>
-
               <div className="space-y-4 py-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Número de Folio *</Label>
-                    <Input
-                      value={form.numeroFolio}
-                      onChange={(e) => setForm({ ...form, numeroFolio: e.target.value })}
-                      placeholder="SIN-2024-001"
-                    />
+                    <Input value={form.numeroFolio} onChange={(e) => setForm({ ...form, numeroFolio: e.target.value })} placeholder="SIN-2024-001" />
                   </div>
                   <div className="space-y-2">
                     <Label>Compañía *</Label>
                     <Select value={form.compania} onValueChange={(v) => setForm({ ...form, compania: v })}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
+                      <SelectTrigger><SelectValue placeholder="Selecciona" /></SelectTrigger>
                       <SelectContent>
                         {companias.map(c => (
-                          <SelectItem key={c.id} value={c.nombre}>
-                            {c.nombre}
-                          </SelectItem>
+                          <SelectItem key={c.id} value={c.nombre}>{c.nombre}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
-
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Tipo</Label>
                     <Select value={form.tipo} onValueChange={(v: any) => setForm({ ...form, tipo: v })}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="membresia">Membresía</SelectItem>
                         <SelectItem value="programacion">Programación</SelectItem>
@@ -333,66 +382,34 @@ export default function SiniestrosPage() {
                   <div className="space-y-2">
                     <Label>Movimiento</Label>
                     <Select value={form.movimiento} onValueChange={(v: any) => setForm({ ...form, movimiento: v })}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="indiv">Individual</SelectItem>
                         <SelectItem value="colectivo">Colectivo</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
-                    <Label>Operación</Label>
-                    <Select value={form.operacion} onValueChange={(v: any) => setForm({ ...form, operacion: v })}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="cambios">Cambios</SelectItem>
-                        <SelectItem value="altas">Altas</SelectItem>
-                        <SelectItem value="bajas">Bajas</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
                 </div>
-
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Fecha de Ingreso</Label>
-                    <Input
-                      type="date"
-                      value={form.fechaIngreso}
-                      onChange={(e) => setForm({ ...form, fechaIngreso: e.target.value })}
-                    />
+                    <Input type="date" value={form.fechaIngreso} onChange={(e) => setForm({ ...form, fechaIngreso: e.target.value })} />
                   </div>
                   <div className="space-y-2">
                     <Label>Responsable</Label>
-                    <Input
-                      value={form.responsable}
-                      onChange={(e) => setForm({ ...form, responsable: e.target.value })}
-                      placeholder="Nombre del responsable"
-                    />
+                    <Input value={form.responsable} onChange={(e) => setForm({ ...form, responsable: e.target.value })} placeholder="Nombre del responsable" />
                   </div>
                 </div>
-
                 <div className="space-y-2">
                   <Label>Comentarios</Label>
-                  <Textarea
-                    value={form.comentarios}
-                    onChange={(e) => setForm({ ...form, comentarios: e.target.value })}
-                    placeholder="Notas adicionales..."
-                    rows={3}
-                  />
+                  <Textarea value={form.comentarios} onChange={(e) => setForm({ ...form, comentarios: e.target.value })} placeholder="Notas adicionales..." rows={3} />
                 </div>
               </div>
-
               <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setIsModalOpen(false)}>
-                  Cancelar
-                </Button>
-                <Button onClick={handleSubmit}>
-                  {editingId ? "Actualizar" : "Crear"}
+                <Button variant="outline" onClick={() => { setIsModalOpen(false); resetForm(); setEditingId(null) }}>Cancelar</Button>
+                <Button onClick={handleSubmit} disabled={saving}>
+                  {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  {editingId ? "Actualizar" : "Registrar"}
                 </Button>
               </div>
             </DialogContent>

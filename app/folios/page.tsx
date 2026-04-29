@@ -12,84 +12,83 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { motion } from "framer-motion"
-import { Plus, Trash2, Edit2, Search } from "lucide-react"
+import { Plus, Trash2, Edit2, Search, Loader2 } from "lucide-react"
 import { ProtectedRoute } from "@/components/protected-route"
 import { useSupabase } from "@/contexts/supabase-context"
-import { toast } from "sonner"
+import type { FolioRegistro } from "@/contexts/supabase-context"
 
-type TipoFolio = "devoluciones" | "aplicaciones"
-type TipoMovimiento = "indiv" | "colectivo"
-type TipoOperacion = "cambios" | "altas" | "bajas"
-
-interface Folio {
-  id: string
-  numeroFolio: string
-  tipo: TipoFolio
-  movimiento: TipoMovimiento
-  operacion: TipoOperacion
-  fechaIngreso: string
-  compania: string
-  comentarios: string
-  responsable: string
+const CATEGORIAS_FOLIOS: Record<string, string[]> = {
+  "Cobranza": ["Devoluciones", "Aplicaciones", "Conciliaciones", "Cartera Vencida"],
+  "Movimientos": ["Altas", "Bajas", "Cambios de Datos", "Endosos", "Rehabilitaciones"],
+  "Emisión": ["Nuevas Emisiones", "Renovaciones", "Reexpediciones"],
+  "Cancelaciones": ["Por Falta de Pago", "Por Solicitud del Cliente", "Por Vencimiento", "Anulaciones"],
+  "Trámites": ["Consultas", "Aclaraciones", "Trámites Especiales", "Reclamaciones"],
+  "Siniestros": ["Reportes", "Liquidaciones", "Seguimiento"],
 }
 
+type TipoMovimiento = "indiv" | "colectivo"
+
 export default function FoliosPage() {
-  const { companias } = useSupabase()
-  const [folios, setFolios] = useState<Folio[]>([])
+  const { companias, foliosRegistro, loadingFolios, agregarFolio, actualizarFolio, eliminarFolio } = useSupabase()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [filtroTipo, setFiltroTipo] = useState<TipoFolio | "todos">("todos")
+  const [filtroCategoria, setFiltroCategoria] = useState<string>("todas")
   const [filtroMovimiento, setFiltroMovimiento] = useState<TipoMovimiento | "todos">("todos")
-  const [filtroOperacion, setFiltroOperacion] = useState<TipoOperacion | "todos">("todos")
   const [busqueda, setBusqueda] = useState("")
+  const [saving, setSaving] = useState(false)
 
   const [form, setForm] = useState({
     numeroFolio: "",
-    tipo: "devoluciones" as TipoFolio,
+    categoria: "",
+    subcategoria: "",
     movimiento: "indiv" as TipoMovimiento,
-    operacion: "cambios" as TipoOperacion,
     fechaIngreso: new Date().toISOString().split("T")[0],
     compania: "",
     comentarios: "",
     responsable: "",
   })
 
-  const foliosFiltrados = useMemo(() => {
-    return folios.filter(folio => {
-      const matchTipo = filtroTipo === "todos" || folio.tipo === filtroTipo
-      const matchMovimiento = filtroMovimiento === "todos" || folio.movimiento === filtroMovimiento
-      const matchOperacion = filtroOperacion === "todos" || folio.operacion === filtroOperacion
-      const matchBusqueda = folio.numeroFolio.toLowerCase().includes(busqueda.toLowerCase()) ||
-                           folio.compania.toLowerCase().includes(busqueda.toLowerCase())
-      return matchTipo && matchMovimiento && matchOperacion && matchBusqueda
-    })
-  }, [folios, filtroTipo, filtroMovimiento, filtroOperacion, busqueda])
+  const subcategoriasDisponibles = form.categoria ? (CATEGORIAS_FOLIOS[form.categoria] || []) : []
 
-  const handleSubmit = () => {
-    if (!form.numeroFolio || !form.compania) {
-      toast.error("Número de folio y compañía son obligatorios")
+  const foliosFiltrados = useMemo(() => {
+    return foliosRegistro.filter(folio => {
+      const matchCat = filtroCategoria === "todas" || folio.categoria === filtroCategoria
+      const matchMov = filtroMovimiento === "todos" || folio.movimiento === filtroMovimiento
+      const matchBusqueda =
+        folio.numeroFolio.toLowerCase().includes(busqueda.toLowerCase()) ||
+        folio.compania.toLowerCase().includes(busqueda.toLowerCase()) ||
+        folio.categoria.toLowerCase().includes(busqueda.toLowerCase()) ||
+        folio.subcategoria.toLowerCase().includes(busqueda.toLowerCase())
+      return matchCat && matchMov && matchBusqueda
+    })
+  }, [foliosRegistro, filtroCategoria, filtroMovimiento, busqueda])
+
+  const handleSubmit = async () => {
+    if (!form.numeroFolio || !form.compania || !form.categoria || !form.subcategoria) {
+      alert("Número de folio, compañía, categoría y subcategoría son obligatorios")
       return
     }
-
-    if (editingId) {
-      setFolios(prev => prev.map(f => f.id === editingId ? { ...form, id: editingId } : f))
-      toast.success("Folio actualizado")
-      setEditingId(null)
-    } else {
-      setFolios(prev => [...prev, { ...form, id: Date.now().toString() }])
-      toast.success("Folio creado")
+    setSaving(true)
+    try {
+      if (editingId) {
+        await actualizarFolio(editingId, form)
+        setEditingId(null)
+      } else {
+        await agregarFolio(form)
+      }
+      resetForm()
+      setIsModalOpen(false)
+    } finally {
+      setSaving(false)
     }
-
-    resetForm()
-    setIsModalOpen(false)
   }
 
   const resetForm = () => {
     setForm({
       numeroFolio: "",
-      tipo: "devoluciones",
+      categoria: "",
+      subcategoria: "",
       movimiento: "indiv",
-      operacion: "cambios",
       fechaIngreso: new Date().toISOString().split("T")[0],
       compania: "",
       comentarios: "",
@@ -97,28 +96,35 @@ export default function FoliosPage() {
     })
   }
 
-  const handleEdit = (folio: Folio) => {
-    setForm(folio)
+  const handleEdit = (folio: FolioRegistro) => {
+    setForm({
+      numeroFolio: folio.numeroFolio,
+      categoria: folio.categoria,
+      subcategoria: folio.subcategoria,
+      movimiento: folio.movimiento,
+      fechaIngreso: folio.fechaIngreso,
+      compania: folio.compania,
+      comentarios: folio.comentarios || "",
+      responsable: folio.responsable || "",
+    })
     setEditingId(folio.id)
     setIsModalOpen(true)
   }
 
-  const handleDelete = (id: string) => {
-    setFolios(prev => prev.filter(f => f.id !== id))
-    toast.success("Folio eliminado")
+  const handleDelete = async (id: string) => {
+    await eliminarFolio(id)
   }
 
-  const getTipoLabel = (tipo: TipoFolio) => {
-    return tipo === "devoluciones" ? "Devoluciones" : "Aplicaciones"
-  }
-
-  const getMovimientoLabel = (mov: TipoMovimiento) => {
-    return mov === "indiv" ? "Individual" : "Colectivo"
-  }
-
-  const getOperacionLabel = (op: TipoOperacion) => {
-    const labels = { cambios: "Cambios", altas: "Altas", bajas: "Bajas" }
-    return labels[op]
+  const getCategoriaColor = (categoria: string) => {
+    const colors: Record<string, string> = {
+      "Cobranza": "bg-blue-500/10 text-blue-600 border-blue-500/20",
+      "Movimientos": "bg-green-500/10 text-green-600 border-green-500/20",
+      "Emisión": "bg-purple-500/10 text-purple-600 border-purple-500/20",
+      "Cancelaciones": "bg-red-500/10 text-red-600 border-red-500/20",
+      "Trámites": "bg-orange-500/10 text-orange-600 border-orange-500/20",
+      "Siniestros": "bg-yellow-500/10 text-yellow-700 border-yellow-500/20",
+    }
+    return colors[categoria] || "bg-gray-500/10 text-gray-600 border-gray-500/20"
   }
 
   return (
@@ -128,7 +134,7 @@ export default function FoliosPage() {
         <main className="main-content-aligned">
           <PageHeader
             title="Folios"
-            subtitle="Gestión de Cobranza - Devoluciones y Aplicaciones"
+            subtitle="Gestión y Registro de Folios"
             action={
               <Button onClick={() => { resetForm(); setIsModalOpen(true) }} className="gap-2">
                 <Plus className="w-4 h-4" />
@@ -140,25 +146,21 @@ export default function FoliosPage() {
           {/* Filtros */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div>
-              <Label className="text-xs mb-2 block">Tipo</Label>
-              <Select value={filtroTipo} onValueChange={(v: any) => setFiltroTipo(v)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
+              <Label className="text-xs mb-2 block">Categoría</Label>
+              <Select value={filtroCategoria} onValueChange={setFiltroCategoria}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="todos">Todos</SelectItem>
-                  <SelectItem value="devoluciones">Devoluciones</SelectItem>
-                  <SelectItem value="aplicaciones">Aplicaciones</SelectItem>
+                  <SelectItem value="todas">Todas</SelectItem>
+                  {Object.keys(CATEGORIAS_FOLIOS).map(cat => (
+                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
-
             <div>
               <Label className="text-xs mb-2 block">Movimiento</Label>
               <Select value={filtroMovimiento} onValueChange={(v: any) => setFiltroMovimiento(v)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todos</SelectItem>
                   <SelectItem value="indiv">Individual</SelectItem>
@@ -166,39 +168,54 @@ export default function FoliosPage() {
                 </SelectContent>
               </Select>
             </div>
-
-            <div>
-              <Label className="text-xs mb-2 block">Operación</Label>
-              <Select value={filtroOperacion} onValueChange={(v: any) => setFiltroOperacion(v)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos</SelectItem>
-                  <SelectItem value="cambios">Cambios</SelectItem>
-                  <SelectItem value="altas">Altas</SelectItem>
-                  <SelectItem value="bajas">Bajas</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
+            <div className="md:col-span-2">
               <Label className="text-xs mb-2 block">Buscar</Label>
-              <Input
-                placeholder="Folio o compañía..."
-                value={busqueda}
-                onChange={(e) => setBusqueda(e.target.value)}
-                className="h-9"
-              />
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Folio, compañía, categoría..."
+                  value={busqueda}
+                  onChange={(e) => setBusqueda(e.target.value)}
+                  className="h-9 pl-9"
+                />
+              </div>
             </div>
           </div>
 
-          {/* Lista de Folios */}
+          {/* Resumen por categoría */}
+          {!loadingFolios && foliosRegistro.length > 0 && (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+              {Object.keys(CATEGORIAS_FOLIOS).map(cat => {
+                const count = foliosRegistro.filter(f => f.categoria === cat).length
+                if (count === 0) return null
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => setFiltroCategoria(filtroCategoria === cat ? "todas" : cat)}
+                    className={`p-3 rounded-lg border text-left transition-all hover:scale-105 ${getCategoriaColor(cat)} ${filtroCategoria === cat ? "ring-2 ring-offset-1 ring-primary" : ""}`}
+                  >
+                    <p className="text-xs font-medium">{cat}</p>
+                    <p className="text-xl font-bold">{count}</p>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Lista */}
           <div className="space-y-3">
-            {foliosFiltrados.length === 0 ? (
+            {loadingFolios ? (
               <GlassCard className="p-12 text-center">
-                <Search className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin opacity-50" />
+                <p className="text-muted-foreground text-sm">Cargando folios...</p>
+              </GlassCard>
+            ) : foliosFiltrados.length === 0 ? (
+              <GlassCard className="p-12 text-center">
+                <Search className="w-12 h-12 mx-auto mb-4 opacity-30" />
                 <p className="text-muted-foreground">No hay folios registrados</p>
+                <Button variant="outline" className="mt-4" onClick={() => { resetForm(); setIsModalOpen(true) }}>
+                  <Plus className="w-4 h-4 mr-2" /> Crear primer folio
+                </Button>
               </GlassCard>
             ) : (
               foliosFiltrados.map((folio, index) => (
@@ -206,63 +223,47 @@ export default function FoliosPage() {
                   key={folio.id}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.05 }}
+                  transition={{ delay: index * 0.04 }}
                 >
                   <GlassCard className="p-4">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
+                        <div className="flex items-center flex-wrap gap-2 mb-2">
                           <h3 className="font-mono font-bold text-lg">{folio.numeroFolio}</h3>
-                          <Badge variant="outline" className="text-xs">
-                            {getTipoLabel(folio.tipo)}
+                          <Badge className={`text-xs border ${getCategoriaColor(folio.categoria)}`} variant="outline">
+                            {folio.categoria}
                           </Badge>
-                          <Badge variant="secondary" className="text-xs">
-                            {getMovimientoLabel(folio.movimiento)}
-                          </Badge>
+                          <Badge variant="secondary" className="text-xs">{folio.subcategoria}</Badge>
                           <Badge variant="outline" className="text-xs">
-                            {getOperacionLabel(folio.operacion)}
+                            {folio.movimiento === "indiv" ? "Individual" : "Colectivo"}
                           </Badge>
                         </div>
-
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-3">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                           <div>
-                            <span className="text-muted-foreground">Compañía:</span>
+                            <span className="text-muted-foreground text-xs">Compañía</span>
                             <p className="font-medium">{folio.compania}</p>
                           </div>
                           <div>
-                            <span className="text-muted-foreground">Fecha Ingreso:</span>
+                            <span className="text-muted-foreground text-xs">Fecha Ingreso</span>
                             <p className="font-medium">{new Date(folio.fechaIngreso).toLocaleDateString("es-MX")}</p>
                           </div>
                           <div>
-                            <span className="text-muted-foreground">Responsable:</span>
-                            <p className="font-medium">{folio.responsable || "-"}</p>
+                            <span className="text-muted-foreground text-xs">Responsable</span>
+                            <p className="font-medium">{folio.responsable || "—"}</p>
                           </div>
-                          <div>
-                            <span className="text-muted-foreground">Comentarios:</span>
-                            <p className="font-medium text-xs line-clamp-1">{folio.comentarios || "-"}</p>
-                          </div>
+                          {folio.comentarios && (
+                            <div>
+                              <span className="text-muted-foreground text-xs">Comentarios</span>
+                              <p className="font-medium text-xs line-clamp-1">{folio.comentarios}</p>
+                            </div>
+                          )}
                         </div>
-
-                        {folio.comentarios && (
-                          <p className="text-xs text-muted-foreground italic">{folio.comentarios}</p>
-                        )}
                       </div>
-
-                      <div className="flex gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleEdit(folio)}
-                          className="gap-1"
-                        >
+                      <div className="flex gap-1 shrink-0">
+                        <Button variant="ghost" size="sm" onClick={() => handleEdit(folio)}>
                           <Edit2 className="w-4 h-4" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDelete(folio.id)}
-                          className="gap-1 text-destructive hover:text-destructive"
-                        >
+                        <Button variant="ghost" size="sm" onClick={() => handleDelete(folio.id)} className="text-destructive hover:text-destructive">
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       </div>
@@ -274,58 +275,62 @@ export default function FoliosPage() {
           </div>
 
           {/* Modal */}
-          <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+          <Dialog open={isModalOpen} onOpenChange={(open) => { setIsModalOpen(open); if (!open) { resetForm(); setEditingId(null) } }}>
             <DialogContent className="sm:max-w-[600px]">
               <DialogHeader>
                 <DialogTitle>{editingId ? "Editar Folio" : "Nuevo Folio"}</DialogTitle>
               </DialogHeader>
-
               <div className="space-y-4 py-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Número de Folio *</Label>
-                    <Input
-                      value={form.numeroFolio}
-                      onChange={(e) => setForm({ ...form, numeroFolio: e.target.value })}
-                      placeholder="FOL-2024-001"
-                    />
+                    <Input value={form.numeroFolio} onChange={(e) => setForm({ ...form, numeroFolio: e.target.value })} placeholder="FOL-2024-001" />
                   </div>
                   <div className="space-y-2">
                     <Label>Compañía *</Label>
                     <Select value={form.compania} onValueChange={(v) => setForm({ ...form, compania: v })}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
+                      <SelectTrigger><SelectValue placeholder="Selecciona" /></SelectTrigger>
                       <SelectContent>
                         {companias.map(c => (
-                          <SelectItem key={c.id} value={c.nombre}>
-                            {c.nombre}
-                          </SelectItem>
+                          <SelectItem key={c.id} value={c.nombre}>{c.nombre}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Tipo</Label>
-                    <Select value={form.tipo} onValueChange={(v: any) => setForm({ ...form, tipo: v })}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
+                    <Label>Categoría *</Label>
+                    <Select value={form.categoria} onValueChange={(v) => setForm({ ...form, categoria: v, subcategoria: "" })}>
+                      <SelectTrigger><SelectValue placeholder="Selecciona categoría" /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="devoluciones">Devoluciones</SelectItem>
-                        <SelectItem value="aplicaciones">Aplicaciones</SelectItem>
+                        {Object.keys(CATEGORIAS_FOLIOS).map(cat => (
+                          <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
+                    <Label>Subcategoría *</Label>
+                    <Select value={form.subcategoria} onValueChange={(v) => setForm({ ...form, subcategoria: v })} disabled={!form.categoria}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={form.categoria ? "Selecciona subcategoría" : "Primero elige categoría"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {subcategoriasDisponibles.map(sub => (
+                          <SelectItem key={sub} value={sub}>{sub}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
                     <Label>Movimiento</Label>
                     <Select value={form.movimiento} onValueChange={(v: any) => setForm({ ...form, movimiento: v })}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="indiv">Individual</SelectItem>
                         <SelectItem value="colectivo">Colectivo</SelectItem>
@@ -333,55 +338,25 @@ export default function FoliosPage() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Operación</Label>
-                    <Select value={form.operacion} onValueChange={(v: any) => setForm({ ...form, operacion: v })}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="cambios">Cambios</SelectItem>
-                        <SelectItem value="altas">Altas</SelectItem>
-                        <SelectItem value="bajas">Bajas</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
                     <Label>Fecha de Ingreso</Label>
-                    <Input
-                      type="date"
-                      value={form.fechaIngreso}
-                      onChange={(e) => setForm({ ...form, fechaIngreso: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Responsable</Label>
-                    <Input
-                      value={form.responsable}
-                      onChange={(e) => setForm({ ...form, responsable: e.target.value })}
-                      placeholder="Nombre del responsable"
-                    />
+                    <Input type="date" value={form.fechaIngreso} onChange={(e) => setForm({ ...form, fechaIngreso: e.target.value })} />
                   </div>
                 </div>
 
                 <div className="space-y-2">
+                  <Label>Responsable</Label>
+                  <Input value={form.responsable} onChange={(e) => setForm({ ...form, responsable: e.target.value })} placeholder="Nombre del responsable" />
+                </div>
+
+                <div className="space-y-2">
                   <Label>Comentarios</Label>
-                  <Textarea
-                    value={form.comentarios}
-                    onChange={(e) => setForm({ ...form, comentarios: e.target.value })}
-                    placeholder="Notas adicionales..."
-                    rows={3}
-                  />
+                  <Textarea value={form.comentarios} onChange={(e) => setForm({ ...form, comentarios: e.target.value })} placeholder="Notas adicionales..." rows={3} />
                 </div>
               </div>
-
               <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setIsModalOpen(false)}>
-                  Cancelar
-                </Button>
-                <Button onClick={handleSubmit}>
+                <Button variant="outline" onClick={() => { setIsModalOpen(false); resetForm(); setEditingId(null) }}>Cancelar</Button>
+                <Button onClick={handleSubmit} disabled={saving}>
+                  {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                   {editingId ? "Actualizar" : "Crear"}
                 </Button>
               </div>
