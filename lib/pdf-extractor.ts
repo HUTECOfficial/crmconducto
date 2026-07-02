@@ -13,11 +13,20 @@ export interface ExtractedPDFData {
   compania?: string
   ramo?: string
   prima?: string
+  primaTotal?: string
   formaPago?: string
+  tipoPago?: string
   vigenciaInicio?: string
   vigenciaFin?: string
   agente?: string
   numeroRecibo?: string
+  incisoEndoso?: string
+  ultimoDiaPago?: string
+  diasGraciaPrimerRecibo?: string
+  diasGraciaSubsecuentes?: string
+  primerRecibo?: string
+  recibosSubsecuentes?: string
+  divisas?: string
 }
 
 export async function extractTextFromPDF(file: File): Promise<ExtractedPDFData> {

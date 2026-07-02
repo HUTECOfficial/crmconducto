@@ -780,12 +780,21 @@ function PolizasContent() {
                           numeroPoliza: data.numeroPoliza && !p.numeroPoliza ? data.numeroPoliza : p.numeroPoliza,
                           nombreAsegurado: data.nombre && !p.nombreAsegurado ? data.nombre : p.nombreAsegurado,
                           prima: data.prima && !p.prima ? data.prima : p.prima,
+                          primaTotal: data.primaTotal && !p.primaTotal ? data.primaTotal : p.primaTotal,
                           vigenciaInicio: data.vigenciaInicio && !p.vigenciaInicio ? data.vigenciaInicio : p.vigenciaInicio,
                           vigenciaFin: data.vigenciaFin && !p.vigenciaFin ? data.vigenciaFin : p.vigenciaFin,
                           agente: data.agente && !p.agente ? data.agente : p.agente,
                           numeroRecibo: data.numeroRecibo && !p.numeroRecibo ? data.numeroRecibo : p.numeroRecibo,
+                          incisoEndoso: data.incisoEndoso && !p.incisoEndoso ? data.incisoEndoso : p.incisoEndoso,
+                          ultimoDiaPago: data.ultimoDiaPago && !p.ultimoDiaPago ? data.ultimoDiaPago : p.ultimoDiaPago,
                           formaPago: (data.formaPago as any) && !p.formaPago ? data.formaPago as any : p.formaPago,
+                          tipoPago: (data.tipoPago as any) && !p.tipoPago ? data.tipoPago as any : p.tipoPago,
                           ramo: (data.ramo as any) && !p.ramo ? data.ramo as any : p.ramo,
+                          divisas: data.divisas && p.divisas === "MXN" ? data.divisas : p.divisas,
+                          diasGraciaPrimerRecibo: data.diasGraciaPrimerRecibo && !p.diasGraciaPrimerRecibo ? data.diasGraciaPrimerRecibo : p.diasGraciaPrimerRecibo,
+                          diasGraciaSubsecuentes: data.diasGraciaSubsecuentes && !p.diasGraciaSubsecuentes ? data.diasGraciaSubsecuentes : p.diasGraciaSubsecuentes,
+                          primerRecibo: data.primerRecibo && !p.primerRecibo ? data.primerRecibo : p.primerRecibo,
+                          recibosSubsecuentes: data.recibosSubsecuentes && !p.recibosSubsecuentes ? data.recibosSubsecuentes : p.recibosSubsecuentes,
                         }))
                         if (data.compania) {
                           const match = companias.find(c => c.nombre.toLowerCase().includes(data.compania!.toLowerCase()))
