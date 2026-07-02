@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-
-// pdf-parse uses export= which doesn't work well with ESM imports
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdf = require("pdf-parse")
+import { PDFParse } from "pdf-parse"
 
 export interface ExtractedData {
   nombre?: string
@@ -93,8 +90,9 @@ export async function POST(req: NextRequest) {
 
     let pdfText: string
     try {
-      const data = await pdf(buffer)
-      pdfText = data.text
+      const parser = new PDFParse({ data: buffer })
+      const result = await parser.getText()
+      pdfText = result.text
     } catch (err: any) {
       console.error("[extract-pdf] Error parsing PDF:", err)
       return NextResponse.json({ error: "No se pudo leer el PDF. Puede estar protegido o corrupto." }, { status: 422 })
