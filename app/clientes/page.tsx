@@ -165,6 +165,11 @@ export default function ClientesPage() {
             email: data.email && !prev.email ? data.email : prev.email,
             telefono: data.telefono && !prev.telefono ? data.telefono : prev.telefono,
             empresa: data.empresa && !prev.empresa ? data.empresa : prev.empresa,
+            rfc: data.rfc && !prev.rfc ? data.rfc : prev.rfc,
+            direccion: data.direccion && !prev.direccion ? data.direccion : prev.direccion,
+            ciudad: data.ciudad && !prev.ciudad ? data.ciudad : prev.ciudad,
+            estado: data.estado && !prev.estado ? data.estado : prev.estado,
+            codigoPostal: data.codigoPostal && !prev.codigoPostal ? data.codigoPostal : prev.codigoPostal,
             notas: data.fullText
               ? (prev.notas ? prev.notas + "\n\n" : "") + "--- PDF ---\n" + data.fullText.slice(0, 800)
               : prev.notas,

@@ -761,6 +761,22 @@ function PolizasContent() {
                           telefono: data.telefono && !n.telefono ? data.telefono : n.telefono,
                           empresa: data.empresa && !n.empresa ? data.empresa : n.empresa,
                         }))
+                        setNuevaPoliza(p => ({
+                          ...p,
+                          numeroPoliza: data.numeroPoliza && !p.numeroPoliza ? data.numeroPoliza : p.numeroPoliza,
+                          nombreAsegurado: data.nombre && !p.nombreAsegurado ? data.nombre : p.nombreAsegurado,
+                          prima: data.prima && !p.prima ? data.prima : p.prima,
+                          vigenciaInicio: data.vigenciaInicio && !p.vigenciaInicio ? data.vigenciaInicio : p.vigenciaInicio,
+                          vigenciaFin: data.vigenciaFin && !p.vigenciaFin ? data.vigenciaFin : p.vigenciaFin,
+                          agente: data.agente && !p.agente ? data.agente : p.agente,
+                          numeroRecibo: data.numeroRecibo && !p.numeroRecibo ? data.numeroRecibo : p.numeroRecibo,
+                          formaPago: (data.formaPago as any) && !p.formaPago ? data.formaPago as any : p.formaPago,
+                          ramo: (data.ramo as any) && !p.ramo ? data.ramo as any : p.ramo,
+                        }))
+                        if (data.compania) {
+                          const match = companias.find(c => c.nombre.toLowerCase().includes(data.compania!.toLowerCase()))
+                          if (match) setNuevaPoliza(p => ({ ...p, companiaId: match.id }))
+                        }
                       }}
                     />
                     <div className="grid grid-cols-2 gap-4">
