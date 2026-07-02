@@ -80,6 +80,22 @@ export interface Poliza {
   diasGraciaPrimerRecibo?: number
   diasGraciaSubsecuentes?: number
   divisas?: string
+  vehiculoAmis?: string
+  vehiculoClave?: string
+  vehiculoDescripcion?: string
+  vehiculoModelo?: string
+}
+
+export interface VehiculoAxa {
+  id: string
+  amis?: string
+  claveCot?: string
+  marcaDescripcion?: string
+  modelos?: string
+  tipo?: string
+  ocupantes?: string
+  equipamiento?: string
+  descripcionDetallada?: string
 }
 
 export interface FolioRegistro {
@@ -164,6 +180,9 @@ interface SupabaseContextType {
   agregarPoliza: (poliza: Omit<Poliza, 'id'>) => Promise<string | null>
   actualizarPoliza: (id: string, poliza: Partial<Poliza>) => Promise<void>
   eliminarPoliza: (id: string) => Promise<void>
+  
+  // Vehículos AXA
+  buscarVehiculos: (query: string) => Promise<VehiculoAxa[]>
   
   // Prospectos
   prospectos: Prospecto[]
@@ -418,6 +437,10 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         tipoPago: p.tipo_pago || undefined,
         primaTotal: p.prima_total ?? undefined,
         divisas: p.divisas || undefined,
+        vehiculoAmis: p.vehiculo_amis || undefined,
+        vehiculoClave: p.vehiculo_clave || undefined,
+        vehiculoDescripcion: p.vehiculo_descripcion || undefined,
+        vehiculoModelo: p.vehiculo_modelo || undefined,
       }))
 
       setPolizas(mapped)
@@ -469,6 +492,10 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
           dias_gracia_subsecuentes: poliza.diasGraciaSubsecuentes ?? null,
           prima_total: poliza.primaTotal ?? null,
           divisas: poliza.divisas || null,
+          vehiculo_amis: poliza.vehiculoAmis || null,
+          vehiculo_clave: poliza.vehiculoClave || null,
+          vehiculo_descripcion: poliza.vehiculoDescripcion || null,
+          vehiculo_modelo: poliza.vehiculoModelo || null,
         }])
         .select()
         .single()
@@ -512,6 +539,10 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       if (poliza.diasGraciaSubsecuentes !== undefined) updateData.dias_gracia_subsecuentes = poliza.diasGraciaSubsecuentes ?? null
       if (poliza.primaTotal !== undefined) updateData.prima_total = poliza.primaTotal ?? null
       if (poliza.divisas !== undefined) updateData.divisas = poliza.divisas || null
+      if (poliza.vehiculoAmis !== undefined) updateData.vehiculo_amis = poliza.vehiculoAmis || null
+      if (poliza.vehiculoClave !== undefined) updateData.vehiculo_clave = poliza.vehiculoClave || null
+      if (poliza.vehiculoDescripcion !== undefined) updateData.vehiculo_descripcion = poliza.vehiculoDescripcion || null
+      if (poliza.vehiculoModelo !== undefined) updateData.vehiculo_modelo = poliza.vehiculoModelo || null
       const { error } = await supabase
         .from('polizas')
         .update(updateData)
@@ -534,6 +565,38 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       await fetchPolizas()
     } catch (err: any) {
       toast.error('Error al eliminar póliza: ' + err.message)
+    }
+  }
+
+  // ==================== VEHÍCULOS AXA ====================
+  const buscarVehiculos = async (query: string): Promise<VehiculoAxa[]> => {
+    if (!query || query.trim().length < 2) return []
+    try {
+      const { data, error } = await supabase
+        .from('vehiculos_axa')
+        .select('*')
+        .or(`marca_descripcion.ilike.%${query}%,amis.ilike.%${query}%,clave_cot.ilike.%${query}%`)
+        .limit(50)
+
+      if (error) {
+        if (error.code === '42P01') return []
+        throw error
+      }
+
+      return (data || []).map((v: any) => ({
+        id: v.id,
+        amis: v.amis || undefined,
+        claveCot: v.clave_cot || undefined,
+        marcaDescripcion: v.marca_descripcion || undefined,
+        modelos: v.modelos || undefined,
+        tipo: v.tipo || undefined,
+        ocupantes: v.ocupantes || undefined,
+        equipamiento: v.equipamiento || undefined,
+        descripcionDetallada: v.descripcion_detallada || undefined,
+      }))
+    } catch (err: any) {
+      console.error('Error buscando vehículos:', err.message)
+      return []
     }
   }
 
@@ -1094,6 +1157,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       agregarPoliza,
       actualizarPoliza,
       eliminarPoliza,
+      buscarVehiculos,
       
       prospectos,
       loadingProspectos,

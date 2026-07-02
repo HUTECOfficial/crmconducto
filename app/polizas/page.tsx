@@ -19,6 +19,8 @@ import { ProtectedRoute } from "@/components/protected-route"
 import { EventoRapidoButton } from "@/components/evento-rapido-button"
 import { Plus, FileText, UserPlus, User, Search, Edit2, X, RefreshCw, Trash2, MoreVertical, Loader2 } from "lucide-react"
 import { PdfUploadZone } from "@/components/pdf-upload-zone"
+import { VehiculoSelector } from "@/components/vehiculo-selector"
+import type { VehiculoAxa } from "@/contexts/supabase-context"
 import { toast } from "sonner"
 
 const ESTATUS_COLORS: Record<string, string> = {
@@ -54,6 +56,7 @@ function PolizasContent() {
   const [polizaAccion, setPolizaAccion] = useState<SPoliza | null>(null)
   const [motivoCancelacion, setMotivoCancelacion] = useState("")
   const [savingPoliza, setSavingPoliza] = useState(false)
+  const [vehiculoSeleccionado, setVehiculoSeleccionado] = useState<VehiculoAxa | null>(null)
 
   // Autocompletar cliente
   const [busquedaCliente, setBusquedaCliente] = useState("")
@@ -170,6 +173,7 @@ function PolizasContent() {
     })
     setNuevoCliente({ nombre: "", email: "", telefono: "", empresa: "" })
     setBusquedaCliente("")
+    setVehiculoSeleccionado(null)
     setModoNuevoCliente(false)
   }
 
@@ -246,6 +250,10 @@ function PolizasContent() {
         diasGraciaSubsecuentes: nuevaPoliza.diasGraciaSubsecuentes ? parseInt(nuevaPoliza.diasGraciaSubsecuentes) : undefined,
         primaTotal: nuevaPoliza.primaTotal ? parseFloat(nuevaPoliza.primaTotal) : undefined,
         divisas: nuevaPoliza.divisas || undefined,
+        vehiculoAmis: vehiculoSeleccionado?.amis || undefined,
+        vehiculoClave: vehiculoSeleccionado?.claveCot || undefined,
+        vehiculoDescripcion: vehiculoSeleccionado?.marcaDescripcion || undefined,
+        vehiculoModelo: vehiculoSeleccionado?.modelos || undefined,
       })
       if (polizaId) {
         setModalNuevaPoliza(false)
@@ -574,6 +582,12 @@ function PolizasContent() {
                         ["Días Gracia (Primer Recibo)", polizaSeleccionada.diasGraciaPrimerRecibo?.toString() || "—"],
                         ["Días Gracia (Subsecuentes)", polizaSeleccionada.diasGraciaSubsecuentes?.toString() || "—"],
                         ["Divisa", polizaSeleccionada.divisas || "MXN"],
+                        ...(polizaSeleccionada.vehiculoDescripcion ? [
+                          ["Vehículo", polizaSeleccionada.vehiculoDescripcion],
+                          ["AMIS", polizaSeleccionada.vehiculoAmis || "—"],
+                          ["Clave Cot.", polizaSeleccionada.vehiculoClave || "—"],
+                          ["Modelos", polizaSeleccionada.vehiculoModelo || "—"],
+                        ] : []),
                       ].map(([label, value]) => (
                         <div key={label} className="space-y-1">
                           <p className="text-xs text-muted-foreground">{label}</p>
@@ -960,6 +974,24 @@ function PolizasContent() {
                     </SelectContent>
                   </Select>
                 </div>
+
+                {/* Selector de vehículo (solo autos) */}
+                {nuevaPoliza.ramo === "autos" && (
+                  <div className="space-y-3 p-4 border border-blue-200 dark:border-blue-800 rounded-lg bg-blue-50 dark:bg-blue-950/20">
+                    <VehiculoSelector
+                      selected={vehiculoSeleccionado}
+                      onSelect={(v) => {
+                        setVehiculoSeleccionado(v)
+                        if (v) {
+                          setNuevaPoliza(p => ({
+                            ...p,
+                            nombreAsegurado: p.nombreAsegurado || v.marcaDescripcion || "",
+                          }))
+                        }
+                      }}
+                    />
+                  </div>
+                )}
 
                 {/* Años vida (solo vida) */}
                 {nuevaPoliza.ramo === "vida" && (
