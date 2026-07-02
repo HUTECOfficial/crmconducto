@@ -50,7 +50,7 @@ function PolizasContent() {
   const [modalNuevaPoliza, setModalNuevaPoliza] = useState(false)
   const [modalEditarPoliza, setModalEditarPoliza] = useState(false)
   const [polizaEditar, setPolizaEditar] = useState<SPoliza | null>(null)
-  const [modoNuevoCliente, setModoNuevoCliente] = useState(false)
+  const [modoNuevoCliente, setModoNuevoCliente] = useState(true)
   const [modalRenovar, setModalRenovar] = useState(false)
   const [modalCancelar, setModalCancelar] = useState(false)
   const [polizaAccion, setPolizaAccion] = useState<SPoliza | null>(null)
@@ -174,7 +174,7 @@ function PolizasContent() {
     setNuevoCliente({ nombre: "", email: "", telefono: "", empresa: "" })
     setBusquedaCliente("")
     setVehiculoSeleccionado(null)
-    setModoNuevoCliente(false)
+    setModoNuevoCliente(true)
   }
 
   const handleSubmit = async () => {
@@ -718,13 +718,13 @@ function PolizasContent() {
               <div className="space-y-5 mt-4">
                 {/* Toggle cliente */}
                 <div className="flex gap-2 p-1 bg-muted rounded-lg">
-                  <button type="button" onClick={() => setModoNuevoCliente(false)}
-                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition-all ${!modoNuevoCliente ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-                    <User className="w-4 h-4" />Cliente Existente
-                  </button>
                   <button type="button" onClick={() => setModoNuevoCliente(true)}
                     className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition-all ${modoNuevoCliente ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
                     <UserPlus className="w-4 h-4" />Nuevo Cliente
+                  </button>
+                  <button type="button" onClick={() => setModoNuevoCliente(false)}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition-all ${!modoNuevoCliente ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                    <User className="w-4 h-4" />Cliente Existente
                   </button>
                 </div>
 
