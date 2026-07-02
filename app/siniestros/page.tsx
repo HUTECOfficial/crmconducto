@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { motion } from "framer-motion"
 import { Plus, Trash2, Edit2, Search, Loader2, CheckCircle2, Clock } from "lucide-react"
 import { ProtectedRoute } from "@/components/protected-route"
@@ -30,6 +30,7 @@ export default function SiniestrosPage() {
   const [busqueda, setBusqueda] = useState("")
   const [saving, setSaving] = useState(false)
   const [dandoVB, setDandoVB] = useState<string | null>(null)
+  const [confirmarVB, setConfirmarVB] = useState<SiniestroRegistro | null>(null)
 
   const [form, setForm] = useState({
     numeroFolio: "",
@@ -125,10 +126,16 @@ export default function SiniestrosPage() {
     setIsModalOpen(true)
   }
 
-  const handleVistoBueno = async (id: string) => {
-    setDandoVB(id)
+  const handleVistoBueno = async (siniestro: SiniestroRegistro) => {
+    setConfirmarVB(siniestro)
+  }
+
+  const confirmarVistoBueno = async () => {
+    if (!confirmarVB) return
+    setDandoVB(confirmarVB.id)
     try {
-      await darVistoBueno(id)
+      await darVistoBueno(confirmarVB.id)
+      setConfirmarVB(null)
     } finally {
       setDandoVB(null)
     }
@@ -317,7 +324,7 @@ export default function SiniestrosPage() {
                             variant="outline"
                             className="text-xs text-green-600 border-green-500/40 hover:bg-green-500/10 gap-1"
                             disabled={dandoVB === siniestro.id}
-                            onClick={() => handleVistoBueno(siniestro.id)}
+                            onClick={() => handleVistoBueno(siniestro)}
                           >
                             {dandoVB === siniestro.id
                               ? <Loader2 className="w-3 h-3 animate-spin" />
@@ -410,6 +417,39 @@ export default function SiniestrosPage() {
                 <Button onClick={handleSubmit} disabled={saving}>
                   {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                   {editingId ? "Actualizar" : "Registrar"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Modal Confirmar Visto Bueno */}
+          <Dialog open={!!confirmarVB} onOpenChange={open => { if (!open) setConfirmarVB(null) }}>
+            <DialogContent className="sm:max-w-[420px]">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-green-600" /> Confirmar Visto Bueno
+                </DialogTitle>
+                <DialogDescription>
+                  Estás por dar visto bueno al siniestro <strong>{confirmarVB?.numeroFolio}</strong>. Esto confirmará que toda la información es correcta y se guardará directamente en la base de datos.
+                </DialogDescription>
+              </DialogHeader>
+              {confirmarVB && (
+                <div className="space-y-3 py-2">
+                  <div className="p-3 rounded-lg bg-muted/40 space-y-1 text-sm">
+                    <p><span className="text-muted-foreground">Folio:</span> <span className="font-mono font-bold">{confirmarVB.numeroFolio}</span></p>
+                    <p><span className="text-muted-foreground">Compañía:</span> {confirmarVB.compania}</p>
+                    <p><span className="text-muted-foreground">Tipo:</span> {getTipoLabel(confirmarVB.tipo)}</p>
+                    <p><span className="text-muted-foreground">Fecha:</span> {new Date(confirmarVB.fechaIngreso).toLocaleDateString("es-MX")}</p>
+                  </div>
+                </div>
+              )}
+              <div className="flex gap-3 pt-2">
+                <Button variant="outline" className="flex-1" onClick={() => setConfirmarVB(null)}>
+                  Cancelar
+                </Button>
+                <Button className="flex-1 text-green-600 border-green-500/40 hover:bg-green-500/10" onClick={confirmarVistoBueno} disabled={dandoVB === confirmarVB?.id}>
+                  {dandoVB === confirmarVB?.id ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
+                  Confirmar Visto Bueno
                 </Button>
               </div>
             </DialogContent>

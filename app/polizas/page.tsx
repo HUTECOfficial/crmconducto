@@ -17,7 +17,7 @@ import { motion } from "framer-motion"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ProtectedRoute } from "@/components/protected-route"
 import { EventoRapidoButton } from "@/components/evento-rapido-button"
-import { Plus, FileText, UserPlus, User, Search, Edit2, X, RefreshCw, Trash2, MoreVertical } from "lucide-react"
+import { Plus, FileText, UserPlus, User, Search, Edit2, X, RefreshCw, Trash2, MoreVertical, Loader2 } from "lucide-react"
 import { PdfUploadZone } from "@/components/pdf-upload-zone"
 import { toast } from "sonner"
 
@@ -32,6 +32,8 @@ const ESTATUS_COLORS: Record<string, string> = {
   "en-movimientos": "bg-blue-500/10 text-blue-500 border-blue-500/20",
   "cancelada-cliente": "bg-gray-500/10 text-gray-400 border-gray-500/20",
   "cancelada-falta-pago": "bg-red-500/10 text-red-400 border-red-500/20",
+  "desvinculada-cobranza": "bg-indigo-500/10 text-indigo-500 border-indigo-500/20",
+  "espera-formato": "bg-cyan-500/10 text-cyan-600 border-cyan-500/20",
 }
 
 function PolizasContent() {
@@ -51,6 +53,7 @@ function PolizasContent() {
   const [modalCancelar, setModalCancelar] = useState(false)
   const [polizaAccion, setPolizaAccion] = useState<SPoliza | null>(null)
   const [motivoCancelacion, setMotivoCancelacion] = useState("")
+  const [savingPoliza, setSavingPoliza] = useState(false)
 
   // Autocompletar cliente
   const [busquedaCliente, setBusquedaCliente] = useState("")
@@ -89,6 +92,7 @@ function PolizasContent() {
     estatus: "" as SPoliza["estatus"] | "",
     comentarios: "", notas: "", prima: "", formaPago: "" as SPoliza["formaPago"] | "",
     ultimoDiaPago: "", vigenciaFin: "",
+    diasGraciaPrimerRecibo: "", diasGraciaSubsecuentes: "",
   })
 
   useEffect(() => {
@@ -207,41 +211,49 @@ function PolizasContent() {
       clienteIdFinal = nuevoId
     }
 
-    await agregarPoliza({
-      clienteId: clienteIdFinal,
-      companiaId: nuevaPoliza.companiaId,
-      ramo: nuevaPoliza.ramo as SPoliza["ramo"],
-      numeroPoliza: nuevaPoliza.numeroPoliza,
-      vigenciaInicio: nuevaPoliza.vigenciaInicio,
-      vigenciaFin: nuevaPoliza.vigenciaFin,
-      prima: primaNum,
-      formaPago: nuevaPoliza.formaPago as SPoliza["formaPago"],
-      estatus: "activa",
-      folios: [],
-      tramites: 0,
-      primaEmitida: primaNum,
-      primaCobrada: 0,
-      fechaEmision: new Date().toISOString().split("T")[0],
-      agente: nuevaPoliza.agente || "AG001",
-      incisoEndoso: nuevaPoliza.incisoEndoso || undefined,
-      nombreAsegurado: nuevaPoliza.nombreAsegurado || undefined,
-      ultimoDiaPago: nuevaPoliza.ultimoDiaPago || undefined,
-      numeroRecibo: nuevaPoliza.numeroRecibo || "1/1",
-      primaTotalRecibo: primaNum,
-      tipoPago: nuevaPoliza.tipoPago || undefined,
-      registroSistemaCobranza: nuevaPoliza.registroSistemaCobranza,
-      comentarios: nuevaPoliza.comentarios || undefined,
-      notas: nuevaPoliza.notas || undefined,
-      marcaActualizacion: nuevaPoliza.marcaActualizacion,
-      anosVidaProducto: nuevaPoliza.anosVidaProducto ? parseInt(nuevaPoliza.anosVidaProducto) : undefined,
-      primerRecibo: nuevaPoliza.primerRecibo ? parseFloat(nuevaPoliza.primerRecibo) : undefined,
-      recibosSubsecuentes: nuevaPoliza.recibosSubsecuentes ? parseFloat(nuevaPoliza.recibosSubsecuentes) : undefined,
-      diasGraciaPrimerRecibo: nuevaPoliza.diasGraciaPrimerRecibo ? parseInt(nuevaPoliza.diasGraciaPrimerRecibo) : undefined,
-      diasGraciaSubsecuentes: nuevaPoliza.diasGraciaSubsecuentes ? parseInt(nuevaPoliza.diasGraciaSubsecuentes) : undefined,
-    })
-
-    setModalNuevaPoliza(false)
-    resetFormulario()
+    setSavingPoliza(true)
+    try {
+      const polizaId = await agregarPoliza({
+        clienteId: clienteIdFinal,
+        companiaId: nuevaPoliza.companiaId,
+        ramo: nuevaPoliza.ramo as SPoliza["ramo"],
+        numeroPoliza: nuevaPoliza.numeroPoliza,
+        vigenciaInicio: nuevaPoliza.vigenciaInicio,
+        vigenciaFin: nuevaPoliza.vigenciaFin,
+        prima: primaNum,
+        formaPago: nuevaPoliza.formaPago as SPoliza["formaPago"],
+        estatus: "activa",
+        folios: [],
+        tramites: 0,
+        primaEmitida: primaNum,
+        primaCobrada: 0,
+        fechaEmision: new Date().toISOString().split("T")[0],
+        agente: nuevaPoliza.agente || "AG001",
+        incisoEndoso: nuevaPoliza.incisoEndoso || undefined,
+        nombreAsegurado: nuevaPoliza.nombreAsegurado || undefined,
+        ultimoDiaPago: nuevaPoliza.ultimoDiaPago || undefined,
+        numeroRecibo: nuevaPoliza.numeroRecibo || "1/1",
+        primaTotalRecibo: primaNum,
+        tipoPago: nuevaPoliza.tipoPago || undefined,
+        registroSistemaCobranza: nuevaPoliza.registroSistemaCobranza,
+        comentarios: nuevaPoliza.comentarios || undefined,
+        notas: nuevaPoliza.notas || undefined,
+        marcaActualizacion: nuevaPoliza.marcaActualizacion,
+        anosVidaProducto: nuevaPoliza.anosVidaProducto ? parseInt(nuevaPoliza.anosVidaProducto) : undefined,
+        primerRecibo: nuevaPoliza.primerRecibo ? parseFloat(nuevaPoliza.primerRecibo) : undefined,
+        recibosSubsecuentes: nuevaPoliza.recibosSubsecuentes ? parseFloat(nuevaPoliza.recibosSubsecuentes) : undefined,
+        diasGraciaPrimerRecibo: nuevaPoliza.diasGraciaPrimerRecibo ? parseInt(nuevaPoliza.diasGraciaPrimerRecibo) : undefined,
+        diasGraciaSubsecuentes: nuevaPoliza.diasGraciaSubsecuentes ? parseInt(nuevaPoliza.diasGraciaSubsecuentes) : undefined,
+        primaTotal: nuevaPoliza.primaTotal ? parseFloat(nuevaPoliza.primaTotal) : undefined,
+        divisas: nuevaPoliza.divisas || undefined,
+      })
+      if (polizaId) {
+        setModalNuevaPoliza(false)
+        resetFormulario()
+      }
+    } finally {
+      setSavingPoliza(false)
+    }
   }
 
   const abrirEdicion = (poliza: SPoliza) => {
@@ -254,6 +266,8 @@ function PolizasContent() {
       formaPago: poliza.formaPago,
       ultimoDiaPago: poliza.ultimoDiaPago || "",
       vigenciaFin: poliza.vigenciaFin,
+      diasGraciaPrimerRecibo: poliza.diasGraciaPrimerRecibo?.toString() || "",
+      diasGraciaSubsecuentes: poliza.diasGraciaSubsecuentes?.toString() || "",
     })
     setPolizaSeleccionada(null)
     setModalEditarPoliza(true)
@@ -270,6 +284,8 @@ function PolizasContent() {
       formaPago: editForm.formaPago as SPoliza["formaPago"],
       ultimoDiaPago: editForm.ultimoDiaPago || undefined,
       vigenciaFin: editForm.vigenciaFin,
+      diasGraciaPrimerRecibo: editForm.diasGraciaPrimerRecibo ? parseInt(editForm.diasGraciaPrimerRecibo) : undefined,
+      diasGraciaSubsecuentes: editForm.diasGraciaSubsecuentes ? parseInt(editForm.diasGraciaSubsecuentes) : undefined,
     })
     setModalEditarPoliza(false)
     setPolizaEditar(null)
@@ -402,6 +418,8 @@ function PolizasContent() {
                     <SelectItem value="cancelada">Cancelada</SelectItem>
                     <SelectItem value="cancelada-cliente">Cancelada (Cliente)</SelectItem>
                     <SelectItem value="cancelada-falta-pago">Cancelada (Falta Pago)</SelectItem>
+                    <SelectItem value="desvinculada-cobranza">Desvinculada de Cobranza</SelectItem>
+                    <SelectItem value="espera-formato">En Espera de Formato</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -553,6 +571,9 @@ function PolizasContent() {
                         ["Último Día Pago", polizaSeleccionada.ultimoDiaPago ? new Date(polizaSeleccionada.ultimoDiaPago).toLocaleDateString("es-MX") : "—"],
                         ["# Recibo", polizaSeleccionada.numeroRecibo || "1/1"],
                         ["Agente", polizaSeleccionada.agente || "—"],
+                        ["Días Gracia (Primer Recibo)", polizaSeleccionada.diasGraciaPrimerRecibo?.toString() || "—"],
+                        ["Días Gracia (Subsecuentes)", polizaSeleccionada.diasGraciaSubsecuentes?.toString() || "—"],
+                        ["Divisa", polizaSeleccionada.divisas || "MXN"],
                       ].map(([label, value]) => (
                         <div key={label} className="space-y-1">
                           <p className="text-xs text-muted-foreground">{label}</p>
@@ -610,6 +631,8 @@ function PolizasContent() {
                       <SelectItem value="cancelada">Cancelada</SelectItem>
                       <SelectItem value="cancelada-cliente">Cancelada a Petición del Cliente</SelectItem>
                       <SelectItem value="cancelada-falta-pago">Cancelada por Falta de Pago</SelectItem>
+                      <SelectItem value="desvinculada-cobranza">Desvinculada de Cobranza</SelectItem>
+                      <SelectItem value="espera-formato">En Espera de Formato</SelectItem>
                       <SelectItem value="rehabilitada">Rehabilitada</SelectItem>
                     </SelectContent>
                   </Select>
@@ -640,6 +663,16 @@ function PolizasContent() {
                   <div>
                     <Label className="text-xs">Último Día de Pago</Label>
                     <Input type="date" value={editForm.ultimoDiaPago} onChange={e => setEditForm(f => ({ ...f, ultimoDiaPago: e.target.value }))} className="h-8" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs">Días Gracia — Primer Recibo</Label>
+                    <Input type="number" min="0" value={editForm.diasGraciaPrimerRecibo} onChange={e => setEditForm(f => ({ ...f, diasGraciaPrimerRecibo: e.target.value }))} className="h-8" placeholder="Ej: 30" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Días Gracia — Subsecuentes</Label>
+                    <Input type="number" min="0" value={editForm.diasGraciaSubsecuentes} onChange={e => setEditForm(f => ({ ...f, diasGraciaSubsecuentes: e.target.value }))} className="h-8" placeholder="Ej: 15" />
                   </div>
                 </div>
                 <div>
@@ -952,9 +985,9 @@ function PolizasContent() {
 
                 <div className="flex justify-end gap-3 pt-4 border-t border-border/50">
                   <Button variant="outline" onClick={() => { setModalNuevaPoliza(false); resetFormulario() }}>Cancelar</Button>
-                  <Button onClick={handleSubmit}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    {modoNuevoCliente ? "Crear Cliente y Póliza" : "Crear Póliza"}
+                  <Button onClick={handleSubmit} disabled={savingPoliza}>
+                    {savingPoliza ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+                    {savingPoliza ? "Guardando..." : (modoNuevoCliente ? "Crear Cliente y Póliza" : "Crear Póliza")}
                   </Button>
                 </div>
               </div>

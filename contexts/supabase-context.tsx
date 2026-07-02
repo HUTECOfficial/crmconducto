@@ -48,7 +48,7 @@ export interface Poliza {
   vigenciaFin: string
   prima: number
   formaPago: 'mensual' | 'trimestral' | 'semestral' | 'anual'
-  estatus: 'activa' | 'por-renovar' | 'vencida' | 'cancelada' | 'gracia' | 'rehabilitada'
+  estatus: 'activa' | 'por-renovar' | 'vencida' | 'cancelada' | 'gracia' | 'rehabilitada' | 'vigente' | 'en-movimientos' | 'cancelada-cliente' | 'cancelada-falta-pago' | 'desvinculada-cobranza' | 'espera-formato'
   folios?: string[]
   tramites?: number
   primaEmitida: number
@@ -186,6 +186,9 @@ interface SupabaseContextType {
   actualizarSiniestro: (id: string, siniestro: Partial<SiniestroRegistro>) => Promise<void>
   eliminarSiniestro: (id: string) => Promise<void>
   darVistoBueno: (id: string) => Promise<void>
+  
+  // Vencidos
+  marcarComoVencido: (polizaId: string) => Promise<void>
   
   // Eventos del calendario
   eventos: Evento[]
@@ -413,6 +416,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         diasGraciaPrimerRecibo: p.dias_gracia_primer_recibo ?? undefined,
         diasGraciaSubsecuentes: p.dias_gracia_subsecuentes ?? undefined,
         tipoPago: p.tipo_pago || undefined,
+        primaTotal: p.prima_total ?? undefined,
+        divisas: p.divisas || undefined,
       }))
 
       setPolizas(mapped)
@@ -462,6 +467,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
           recibos_subsecuentes: poliza.recibosSubsecuentes ?? null,
           dias_gracia_primer_recibo: poliza.diasGraciaPrimerRecibo ?? null,
           dias_gracia_subsecuentes: poliza.diasGraciaSubsecuentes ?? null,
+          prima_total: poliza.primaTotal ?? null,
+          divisas: poliza.divisas || null,
         }])
         .select()
         .single()
@@ -503,6 +510,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       if (poliza.recibosSubsecuentes !== undefined) updateData.recibos_subsecuentes = poliza.recibosSubsecuentes ?? null
       if (poliza.diasGraciaPrimerRecibo !== undefined) updateData.dias_gracia_primer_recibo = poliza.diasGraciaPrimerRecibo ?? null
       if (poliza.diasGraciaSubsecuentes !== undefined) updateData.dias_gracia_subsecuentes = poliza.diasGraciaSubsecuentes ?? null
+      if (poliza.primaTotal !== undefined) updateData.prima_total = poliza.primaTotal ?? null
+      if (poliza.divisas !== undefined) updateData.divisas = poliza.divisas || null
       const { error } = await supabase
         .from('polizas')
         .update(updateData)
@@ -832,6 +841,25 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // ==================== VENCIDOS ====================
+  const marcarComoVencido = async (polizaId: string) => {
+    try {
+      const hoy = new Date().toISOString().split('T')[0]
+      const { error } = await supabase
+        .from('polizas')
+        .update({ 
+          estatus: 'vencida',
+          fecha_vencimiento_real: hoy
+        })
+        .eq('id', polizaId)
+      if (error) throw error
+      toast.success('Póliza marcada como vencida y guardada en BD')
+      await fetchPolizas()
+    } catch (err: any) {
+      toast.error('Error al marcar póliza como vencida: ' + err.message)
+    }
+  }
+
   // ==================== EVENTOS ====================
   const fetchEventos = async () => {
     try {
@@ -1085,6 +1113,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       actualizarSiniestro,
       eliminarSiniestro,
       darVistoBueno,
+      marcarComoVencido,
       
       eventos,
       loadingEventos,

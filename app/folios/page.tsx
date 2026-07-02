@@ -18,7 +18,6 @@ import { useSupabase } from "@/contexts/supabase-context"
 import type { FolioRegistro } from "@/contexts/supabase-context"
 
 const CATEGORIAS_FOLIOS: Record<string, string[]> = {
-  "Cobranza": ["Devoluciones", "Aplicaciones", "Conciliaciones", "Cartera Vencida"],
   "Movimientos": ["Altas", "Bajas", "Cambios de Datos", "Endosos", "Rehabilitaciones"],
   "Emisión": ["Nuevas Emisiones", "Renovaciones", "Reexpediciones"],
   "Cancelaciones": ["Por Falta de Pago", "Por Solicitud del Cliente", "Por Vencimiento", "Anulaciones"],
@@ -117,7 +116,6 @@ export default function FoliosPage() {
 
   const getCategoriaColor = (categoria: string) => {
     const colors: Record<string, string> = {
-      "Cobranza": "bg-blue-500/10 text-blue-600 border-blue-500/20",
       "Movimientos": "bg-green-500/10 text-green-600 border-green-500/20",
       "Emisión": "bg-purple-500/10 text-purple-600 border-purple-500/20",
       "Cancelaciones": "bg-red-500/10 text-red-600 border-red-500/20",

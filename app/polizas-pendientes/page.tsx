@@ -21,7 +21,7 @@ import { useSupabase, type Poliza } from "@/contexts/supabase-context"
 
 function PolizasPendientesContent() {
   const searchParams = useSearchParams()
-  const { polizas, clientes, companias, actualizarPoliza, loadingPolizas } = useSupabase()
+  const { polizas, clientes, companias, actualizarPoliza, loadingPolizas, marcarComoVencido } = useSupabase()
 
   const [filtroEstatus, setFiltroEstatus] = useState<"todas" | "activa" | "gracia" | "vencida" | "por-renovar" | "pagadas">("todas")
   const [filtroMovimiento, setFiltroMovimiento] = useState<"todas" | "con-movimiento" | "sin-movimiento">("todas")
@@ -525,6 +525,14 @@ function PolizasPendientesContent() {
                             )}
                             <Button 
                               size="sm" 
+                              variant="outline"
+                              className="h-8 text-xs whitespace-nowrap text-red-600 border-red-400 hover:bg-red-50"
+                              onClick={() => marcarComoVencido(poliza.id)}
+                            >
+                              Marcar Vencida
+                            </Button>
+                            <Button 
+                              size="sm" 
                               variant="destructive"
                               className="h-8 text-xs whitespace-nowrap"
                               onClick={() => abrirModalAccion(poliza, "cancelar")}
@@ -676,6 +684,14 @@ function PolizasPendientesContent() {
                           onClick={() => abrirModalAccion(poliza, "pagada")}
                         >
                           ✓ Pagada
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          className="flex-1 h-8 text-xs text-red-600 border-red-400"
+                          onClick={() => marcarComoVencido(poliza.id)}
+                        >
+                          Vencida
                         </Button>
                         <Button 
                           size="sm" 
