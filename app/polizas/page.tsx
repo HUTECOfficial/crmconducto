@@ -54,6 +54,7 @@ function PolizasContent() {
   const [modalRenovar, setModalRenovar] = useState(false)
   const [modalCancelar, setModalCancelar] = useState(false)
   const [polizaAccion, setPolizaAccion] = useState<SPoliza | null>(null)
+  const [polizaIdRenovando, setPolizaIdRenovando] = useState<string | null>(null)
   const [motivoCancelacion, setMotivoCancelacion] = useState("")
   const [savingPoliza, setSavingPoliza] = useState(false)
   const [vehiculoSeleccionado, setVehiculoSeleccionado] = useState<VehiculoAxa | null>(null)
@@ -170,6 +171,7 @@ function PolizasContent() {
   }, [nuevaPoliza.prima, nuevaPoliza.formaPago, nuevaPoliza.primerRecibo, nuevaPoliza.vigenciaInicio, nuevaPoliza.vigenciaFin, nuevaPoliza.ramo, nuevaPoliza.vigenciaVidaPago])
 
   const resetFormulario = () => {
+    setPolizaIdRenovando(null)
     setNuevaPoliza({
       clienteId: "", companiaId: "", ramo: "", numeroPoliza: "", incisoEndoso: "",
       nombreAsegurado: "", vigenciaInicio: "", vigenciaFin: "", prima: "", formaPago: "",
@@ -272,6 +274,15 @@ function PolizasContent() {
         vehiculoModelo: vehiculoSeleccionado?.modelos || undefined,
       })
       if (polizaId) {
+        // Si esta póliza proviene de una renovación, marcar la original como renovada
+        // solo ahora que la nueva póliza se creó exitosamente.
+        if (polizaIdRenovando) {
+          const original = polizas.find(p => p.id === polizaIdRenovando)
+          await actualizarPoliza(polizaIdRenovando, {
+            notas: `${original?.notas || ""}\n[RENOVADA] Renovada el ${new Date().toLocaleDateString('es-MX')}`,
+          })
+          setPolizaIdRenovando(null)
+        }
         setModalNuevaPoliza(false)
         resetFormulario()
       }
@@ -402,10 +413,8 @@ function PolizasContent() {
     setBusquedaCliente("")
     setVehiculoSeleccionado(null)
 
-    // Marcar la póliza original como renovada
-    await actualizarPoliza(polizaAccion.id, {
-      notas: `${polizaAccion.notas || ""}\n[RENOVADA] Renovada el ${new Date().toLocaleDateString('es-MX')}`,
-    })
+    // Se marcará como renovada solo si la nueva póliza se crea exitosamente (ver handleSubmit).
+    setPolizaIdRenovando(polizaAccion.id)
 
     setModalRenovar(false)
     setModalNuevaPoliza(true)
