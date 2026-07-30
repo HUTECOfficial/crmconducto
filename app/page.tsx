@@ -121,7 +121,7 @@ export default function DashboardPage() {
 
           {/* KPIs */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <div onClick={() => router.push('/polizas-pendientes?filtro=vencidas')} className="cursor-pointer">
+            <div onClick={() => router.push('/polizas-pendientes')} className="cursor-pointer">
               <MetricTile 
                 title="Pólizas por Cobrar" 
                 value={polizasPorCobrar} 

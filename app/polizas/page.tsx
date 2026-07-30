@@ -93,9 +93,13 @@ function PolizasContent() {
   // Estado edición
   const [editForm, setEditForm] = useState({
     estatus: "" as SPoliza["estatus"] | "",
-    comentarios: "", notas: "", prima: "", formaPago: "" as SPoliza["formaPago"] | "",
-    ultimoDiaPago: "", vigenciaFin: "",
+    comentarios: "", notas: "", prima: "", primaTotal: "",
+    formaPago: "" as SPoliza["formaPago"] | "",
+    tipoPago: "" as string,
+    ultimoDiaPago: "", vigenciaFin: "", vigenciaInicio: "",
     diasGraciaPrimerRecibo: "", diasGraciaSubsecuentes: "",
+    numeroRecibo: "", agente: "", divisas: "MXN",
+    primerRecibo: "", recibosSubsecuentes: "",
   })
 
   useEffect(() => {
@@ -271,11 +275,19 @@ function PolizasContent() {
       comentarios: poliza.comentarios || "",
       notas: poliza.notas || "",
       prima: poliza.prima.toString(),
+      primaTotal: poliza.primaTotal?.toString() || "",
       formaPago: poliza.formaPago,
+      tipoPago: poliza.tipoPago || "",
       ultimoDiaPago: poliza.ultimoDiaPago || "",
       vigenciaFin: poliza.vigenciaFin,
+      vigenciaInicio: poliza.vigenciaInicio,
       diasGraciaPrimerRecibo: poliza.diasGraciaPrimerRecibo?.toString() || "",
       diasGraciaSubsecuentes: poliza.diasGraciaSubsecuentes?.toString() || "",
+      numeroRecibo: poliza.numeroRecibo || "",
+      agente: poliza.agente || "",
+      divisas: poliza.divisas || "MXN",
+      primerRecibo: poliza.primerRecibo?.toString() || "",
+      recibosSubsecuentes: poliza.recibosSubsecuentes?.toString() || "",
     })
     setPolizaSeleccionada(null)
     setModalEditarPoliza(true)
@@ -284,22 +296,38 @@ function PolizasContent() {
   const guardarEdicion = async () => {
     if (!polizaEditar) return
     const primaNum = parseFloat(editForm.prima)
+    const primaTotalNum = parseFloat(editForm.primaTotal)
+    const primerReciboNum = parseFloat(editForm.primerRecibo)
+    const recibosSubsecuentesNum = parseFloat(editForm.recibosSubsecuentes)
     await actualizarPoliza(polizaEditar.id, {
       estatus: editForm.estatus as SPoliza["estatus"],
       comentarios: editForm.comentarios || undefined,
       notas: editForm.notas || undefined,
       prima: isNaN(primaNum) ? polizaEditar.prima : primaNum,
+      primaTotal: isNaN(primaTotalNum) ? undefined : primaTotalNum,
       formaPago: editForm.formaPago as SPoliza["formaPago"],
+      tipoPago: editForm.tipoPago || undefined,
       ultimoDiaPago: editForm.ultimoDiaPago || undefined,
       vigenciaFin: editForm.vigenciaFin,
+      vigenciaInicio: editForm.vigenciaInicio || undefined,
       diasGraciaPrimerRecibo: editForm.diasGraciaPrimerRecibo ? parseInt(editForm.diasGraciaPrimerRecibo) : undefined,
       diasGraciaSubsecuentes: editForm.diasGraciaSubsecuentes ? parseInt(editForm.diasGraciaSubsecuentes) : undefined,
+      numeroRecibo: editForm.numeroRecibo || undefined,
+      agente: editForm.agente || undefined,
+      divisas: editForm.divisas || undefined,
+      primerRecibo: isNaN(primerReciboNum) ? undefined : primerReciboNum,
+      recibosSubsecuentes: isNaN(recibosSubsecuentesNum) ? undefined : recibosSubsecuentesNum,
     })
     setModalEditarPoliza(false)
     setPolizaEditar(null)
+    toast.success("Póliza actualizada correctamente")
   }
 
   const handleRenovar = (poliza: SPoliza) => {
+    if (poliza.notas?.includes("[RENOVADA]")) {
+      toast.error("Esta póliza ya fue renovada anteriormente")
+      return
+    }
     setPolizaAccion(poliza)
     setModalRenovar(true)
   }
@@ -312,9 +340,47 @@ function PolizasContent() {
 
   const confirmarRenovacion = async () => {
     if (!polizaAccion) return
-    setModalNuevaPoliza(true)
+
+    // Pre-cargar todos los datos de la póliza original en el formulario
+    setModoNuevoCliente(false)
+    setNuevaPoliza({
+      clienteId: polizaAccion.clienteId,
+      companiaId: polizaAccion.companiaId,
+      ramo: polizaAccion.ramo,
+      numeroPoliza: polizaAccion.numeroPoliza,
+      incisoEndoso: polizaAccion.incisoEndoso || "",
+      nombreAsegurado: polizaAccion.nombreAsegurado || "",
+      vigenciaInicio: polizaAccion.vigenciaFin,
+      vigenciaFin: "",
+      prima: polizaAccion.prima.toString(),
+      formaPago: polizaAccion.formaPago,
+      tipoPago: (polizaAccion.tipoPago || "") as "efectivo" | "transferencia" | "tarjeta" | "domiciliacion" | "cheque" | "",
+      anosVidaProducto: polizaAccion.anosVidaProducto?.toString() || "",
+      agente: polizaAccion.agente || "",
+      ultimoDiaPago: "",
+      numeroRecibo: polizaAccion.numeroRecibo || "",
+      registroSistemaCobranza: polizaAccion.registroSistemaCobranza || false,
+      comentarios: polizaAccion.comentarios || "",
+      notas: `Renovación de póliza ${polizaAccion.numeroPoliza}`,
+      marcaActualizacion: false,
+      divisas: polizaAccion.divisas || "MXN",
+      primaTotal: polizaAccion.primaTotal?.toString() || "",
+      diasGraciaPrimerRecibo: polizaAccion.diasGraciaPrimerRecibo?.toString() || "",
+      diasGraciaSubsecuentes: polizaAccion.diasGraciaSubsecuentes?.toString() || "",
+      primerRecibo: polizaAccion.primerRecibo?.toString() || "",
+      recibosSubsecuentes: polizaAccion.recibosSubsecuentes?.toString() || "",
+    })
+    setBusquedaCliente("")
+    setVehiculoSeleccionado(null)
+
+    // Marcar la póliza original como renovada
+    await actualizarPoliza(polizaAccion.id, {
+      notas: `${polizaAccion.notas || ""}\n[RENOVADA] Renovada el ${new Date().toLocaleDateString('es-MX')}`,
+    })
+
     setModalRenovar(false)
-    toast.success("Abre el formulario de nueva póliza para renovar")
+    setModalNuevaPoliza(true)
+    toast.success("Datos de la póliza cargados en el formulario. Actualiza la vigencia y confirma.")
   }
 
   const confirmarCancelacion = async () => {
@@ -630,7 +696,7 @@ function PolizasContent() {
                 <DialogTitle className="font-serif text-xl">Editar Póliza: {polizaEditar?.numeroPoliza}</DialogTitle>
                 <DialogDescription>Modifica los datos de la póliza</DialogDescription>
               </DialogHeader>
-              <div className="space-y-4 mt-2">
+              <div className="space-y-4 mt-2 max-h-[70vh] overflow-y-auto pr-2">
                 <div>
                   <Label className="text-xs">Estatus</Label>
                   <Select value={editForm.estatus} onValueChange={v => setEditForm(f => ({ ...f, estatus: v as any }))}>
@@ -657,6 +723,12 @@ function PolizasContent() {
                     <Input type="number" value={editForm.prima} onChange={e => setEditForm(f => ({ ...f, prima: e.target.value }))} className="h-8" />
                   </div>
                   <div>
+                    <Label className="text-xs">Prima Total</Label>
+                    <Input type="number" value={editForm.primaTotal} onChange={e => setEditForm(f => ({ ...f, primaTotal: e.target.value }))} className="h-8" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
                     <Label className="text-xs">Forma de Pago</Label>
                     <Select value={editForm.formaPago} onValueChange={v => setEditForm(f => ({ ...f, formaPago: v as any }))}>
                       <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
@@ -668,15 +740,65 @@ function PolizasContent() {
                       </SelectContent>
                     </Select>
                   </div>
+                  <div>
+                    <Label className="text-xs">Tipo de Pago</Label>
+                    <Select value={editForm.tipoPago} onValueChange={v => setEditForm(f => ({ ...f, tipoPago: v }))}>
+                      <SelectTrigger className="h-8"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="efectivo">Efectivo</SelectItem>
+                        <SelectItem value="transferencia">Transferencia</SelectItem>
+                        <SelectItem value="tarjeta">Tarjeta</SelectItem>
+                        <SelectItem value="domiciliacion">Domiciliación</SelectItem>
+                        <SelectItem value="cheque">Cheque</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs">Vigencia Inicio</Label>
+                    <Input type="date" value={editForm.vigenciaInicio} onChange={e => setEditForm(f => ({ ...f, vigenciaInicio: e.target.value }))} className="h-8" />
+                  </div>
                   <div>
                     <Label className="text-xs">Vigencia Fin</Label>
                     <Input type="date" value={editForm.vigenciaFin} onChange={e => setEditForm(f => ({ ...f, vigenciaFin: e.target.value }))} className="h-8" />
                   </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label className="text-xs">Último Día de Pago</Label>
                     <Input type="date" value={editForm.ultimoDiaPago} onChange={e => setEditForm(f => ({ ...f, ultimoDiaPago: e.target.value }))} className="h-8" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Divisa</Label>
+                    <Select value={editForm.divisas} onValueChange={v => setEditForm(f => ({ ...f, divisas: v }))}>
+                      <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="MXN">MXN (Pesos)</SelectItem>
+                        <SelectItem value="USD">USD (Dólares)</SelectItem>
+                        <SelectItem value="EUR">EUR (Euros)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs">Número de Recibo</Label>
+                    <Input value={editForm.numeroRecibo} onChange={e => setEditForm(f => ({ ...f, numeroRecibo: e.target.value }))} className="h-8" placeholder="Ej: 1/6" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Agente</Label>
+                    <Input value={editForm.agente} onChange={e => setEditForm(f => ({ ...f, agente: e.target.value }))} className="h-8" placeholder="Ej: AG001" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs">Primer Recibo ($)</Label>
+                    <Input type="number" value={editForm.primerRecibo} onChange={e => setEditForm(f => ({ ...f, primerRecibo: e.target.value }))} className="h-8" placeholder="0.00" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Recibos Subsecuentes ($)</Label>
+                    <Input type="number" value={editForm.recibosSubsecuentes} onChange={e => setEditForm(f => ({ ...f, recibosSubsecuentes: e.target.value }))} className="h-8" placeholder="0.00" />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
