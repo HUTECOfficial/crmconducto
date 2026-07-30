@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef, useState } from "react"
-import { FileText, Upload, X, Loader2, CheckCircle2 } from "lucide-react"
+import { FileText, Upload, X, Loader2, CheckCircle2, ScanText, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 import { extractTextFromPDF, type ExtractedPDFData } from "@/lib/pdf-extractor"
 
@@ -13,25 +13,25 @@ export function PdfUploadZone({ onExtracted }: PdfUploadZoneProps) {
   const [pdfFile, setPdfFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
   const [done, setDone] = useState(false)
+  const [extraction, setExtraction] = useState<ExtractedPDFData["extraction"] | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFile = async (file: File) => {
-    if (file.type !== "application/pdf") {
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")
+    if (!isPdf) {
       toast.error("Solo se permiten archivos PDF")
       return
     }
     setPdfFile(file)
     setLoading(true)
     setDone(false)
+    setExtraction(null)
     try {
       const data = await extractTextFromPDF(file)
       onExtracted(data)
+      setExtraction(data.extraction)
       setDone(true)
-      if (data.fullText.length > 0) {
-        toast.success("Información extraída del PDF")
-      } else {
-        toast.info("PDF procesado — no se detectó texto (puede ser imagen escaneada)")
-      }
+      toast.success(`${data.extraction.fieldsDetected} campos detectados en el PDF`)
     } catch (err: any) {
       console.error("[PdfUploadZone]", err)
       toast.error(err?.message ?? "Error al procesar el PDF")
@@ -56,6 +56,7 @@ export function PdfUploadZone({ onExtracted }: PdfUploadZoneProps) {
   const remove = () => {
     setPdfFile(null)
     setDone(false)
+    setExtraction(null)
     if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
@@ -127,6 +128,27 @@ export function PdfUploadZone({ onExtracted }: PdfUploadZoneProps) {
           </>
         )}
       </div>
+
+      {done && pdfFile && extraction && (
+        <div className="mx-4 mb-4 rounded-xl border border-green-500/20 bg-background/70 p-3">
+          <div className="flex items-center justify-between gap-3 text-xs">
+            <span className="flex items-center gap-1.5 font-medium text-foreground">
+              <Sparkles className="h-3.5 w-3.5 text-primary" />
+              Indicadores de extracción
+            </span>
+            <span className="font-semibold text-green-700 dark:text-green-400">
+              {extraction.fieldsDetected}/{extraction.totalFields} campos detectados
+            </span>
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <ScanText className="h-3.5 w-3.5" />
+              {extraction.method === "vision" ? "Lectura inteligente / OCR" : "Texto y lectura visual"}
+            </span>
+            <span>Revisa los datos antes de guardar</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

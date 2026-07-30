@@ -98,8 +98,10 @@ export function useSupabasePolizas() {
           comentarios: poliza.comentarios || null,
           notas: poliza.notas || null,
           marca_actualizacion: poliza.marcaActualizacion || false,
-          vigencia_vida_pago: poliza.vigenciaVidaPago ?? null,
-          vigencia_vida_producto: poliza.vigenciaVidaProducto ?? null,
+          ...(poliza.ramo === 'vida' ? {
+            vigencia_vida_pago: poliza.vigenciaVidaPago ?? null,
+            vigencia_vida_producto: poliza.vigenciaVidaProducto ?? null,
+          } : {}),
         }])
         .select()
         .single()
@@ -148,8 +150,13 @@ export function useSupabasePolizas() {
       if (poliza.comentarios) updateData.comentarios = poliza.comentarios
       if (poliza.notas) updateData.notas = poliza.notas
       if (poliza.marcaActualizacion !== undefined) updateData.marca_actualizacion = poliza.marcaActualizacion
-      if (poliza.vigenciaVidaPago !== undefined) updateData.vigencia_vida_pago = poliza.vigenciaVidaPago ?? null
-      if (poliza.vigenciaVidaProducto !== undefined) updateData.vigencia_vida_producto = poliza.vigenciaVidaProducto ?? null
+      // Campos exclusivos de pólizas de vida: solo enviar si el ramo es vida.
+      if (poliza.ramo === 'vida' || (poliza.ramo === undefined && poliza.vigenciaVidaPago !== undefined)) {
+        if (poliza.vigenciaVidaPago !== undefined) updateData.vigencia_vida_pago = poliza.vigenciaVidaPago ?? null
+      }
+      if (poliza.ramo === 'vida' || (poliza.ramo === undefined && poliza.vigenciaVidaProducto !== undefined)) {
+        if (poliza.vigenciaVidaProducto !== undefined) updateData.vigencia_vida_producto = poliza.vigenciaVidaProducto ?? null
+      }
 
       const { error } = await supabase
         .from('polizas')

@@ -1,5 +1,10 @@
 export interface ExtractedPDFData {
   fullText: string
+  extraction: {
+    method: "texto" | "vision"
+    fieldsDetected: number
+    totalFields: number
+  }
   nombre?: string
   email?: string
   telefono?: string
@@ -46,6 +51,7 @@ export async function extractTextFromPDF(file: File): Promise<ExtractedPDFData> 
   const json = await res.json()
   return {
     fullText: json.fullText || "",
+    extraction: json.extraction || { method: "texto", fieldsDetected: 0, totalFields: 24 },
     ...json.data,
   }
 }
