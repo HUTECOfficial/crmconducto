@@ -93,6 +93,8 @@ export interface Database {
           comentarios: string | null
           notas: string | null
           marca_actualizacion: boolean
+          vigencia_vida_pago: number | null
+          vigencia_vida_producto: number | null
           anos_vida_producto: number | null
           tipo_pago: string | null
           created_at: string
@@ -128,6 +130,8 @@ export interface Database {
           comentarios?: string | null
           notas?: string | null
           marca_actualizacion?: boolean
+          vigencia_vida_pago?: number | null
+          vigencia_vida_producto?: number | null
           anos_vida_producto?: number | null
           tipo_pago?: string | null
           created_at?: string
@@ -163,6 +167,8 @@ export interface Database {
           comentarios?: string | null
           notas?: string | null
           marca_actualizacion?: boolean
+          vigencia_vida_pago?: number | null
+          vigencia_vida_producto?: number | null
           anos_vida_producto?: number | null
           tipo_pago?: string | null
           created_at?: string

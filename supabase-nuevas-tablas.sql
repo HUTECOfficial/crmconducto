@@ -13,6 +13,16 @@ ALTER TABLE polizas ADD COLUMN IF NOT EXISTS primer_recibo DECIMAL(10,2);
 ALTER TABLE polizas ADD COLUMN IF NOT EXISTS recibos_subsecuentes DECIMAL(10,2);
 ALTER TABLE polizas ADD COLUMN IF NOT EXISTS divisas TEXT DEFAULT 'MXN';
 ALTER TABLE polizas ADD COLUMN IF NOT EXISTS prima_total DECIMAL(10,2);
+
+-- Plazos exclusivos de pólizas de vida (expresados en años)
+ALTER TABLE polizas ADD COLUMN IF NOT EXISTS vigencia_vida_pago INTEGER;
+ALTER TABLE polizas ADD COLUMN IF NOT EXISTS vigencia_vida_producto INTEGER;
+
+-- Conserva los años de producto ya capturados en el campo anterior.
+UPDATE polizas
+SET vigencia_vida_producto = anos_vida_producto
+WHERE vigencia_vida_producto IS NULL
+  AND anos_vida_producto IS NOT NULL;
 -- Migrar datos existentes (dias_gracia → dias_gracia_primer_recibo si existía)
 -- ALTER TABLE polizas ADD COLUMN IF NOT EXISTS dias_gracia INTEGER; -- ya existía?
 

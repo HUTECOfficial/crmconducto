@@ -19,6 +19,26 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useSupabase, type Poliza } from "@/contexts/supabase-context"
 
+function obtenerPrimaRecibo(poliza: Poliza) {
+  const primaEmitida = Number(poliza.primaEmitida || poliza.prima || 0)
+  const primaCobrada = Number(poliza.primaCobrada || 0)
+  const pendiente = Math.max(0, primaEmitida - primaCobrada)
+  const [reciboActual] = (poliza.numeroRecibo || "1/1").split("/").map(Number)
+  const primerRecibo = Number(poliza.primerRecibo || 0)
+  const reciboSubsecuente = Number(poliza.recibosSubsecuentes || 0)
+  const primaConfigurada = Number(poliza.primaTotalRecibo || 0)
+
+  const importe = reciboActual === 1 && primerRecibo > 0
+    ? primerRecibo
+    : reciboActual > 1 && reciboSubsecuente > 0
+      ? reciboSubsecuente
+      : primaConfigurada > 0
+        ? primaConfigurada
+        : primaEmitida
+
+  return Math.min(importe, pendiente)
+}
+
 function PolizasPendientesContent() {
   const searchParams = useSearchParams()
   const { polizas, clientes, companias, actualizarPoliza, loadingPolizas, marcarComoVencido } = useSupabase()
@@ -110,9 +130,16 @@ function PolizasPendientesContent() {
     const fecha = new Date().toLocaleDateString('es-MX')
 
     if (tipoAccion === "pagada") {
+      const importeReciboPagado = obtenerPrimaRecibo(polizaAccion)
+      if (importeReciboPagado <= 0) {
+        toast.error("Esta póliza no tiene una prima pendiente válida. Actualiza la prima desde Pólizas.")
+        return
+      }
+
       // Calcular el siguiente número de recibo
       let nuevoNumeroRecibo = polizaAccion.numeroRecibo || "1/1"
       let nuevaPrimaCobrada = polizaAccion.primaCobrada || 0
+      let primaSiguienteRecibo = 0
       
       // Parsear el número de recibo actual (ej: "1/6" → [1, 6])
       const partes = nuevoNumeroRecibo.split("/")
@@ -124,19 +151,18 @@ function PolizasPendientesContent() {
         if (reciboActual < totalRecibos) {
           const siguienteRecibo = reciboActual + 1
           nuevoNumeroRecibo = `${siguienteRecibo}/${totalRecibos}`
-          
-          // Calcular prima cobrada basada en recibos subsecuentes
-          const recibosSubsecuentes = typeof polizaAccion.recibosSubsecuentes === 'number' 
-            ? polizaAccion.recibosSubsecuentes 
-            : parseFloat(String(polizaAccion.recibosSubsecuentes || "0"))
-          nuevaPrimaCobrada = (polizaAccion.primaCobrada || 0) + recibosSubsecuentes
+          nuevaPrimaCobrada = Math.min(
+            polizaAccion.primaEmitida,
+            (polizaAccion.primaCobrada || 0) + importeReciboPagado,
+          )
+          primaSiguienteRecibo = obtenerPrimaRecibo({ ...polizaAccion, numeroRecibo: nuevoNumeroRecibo, primaCobrada: nuevaPrimaCobrada })
         } else {
           // Si es el último recibo, marcar como completamente pagado
           nuevaPrimaCobrada = polizaAccion.primaEmitida
         }
       } else {
         // Si el formato no es válido, marcar como completamente pagado
-        nuevaPrimaCobrada = polizaAccion.primaEmitida
+        nuevaPrimaCobrada = Math.min(polizaAccion.primaEmitida, (polizaAccion.primaCobrada || 0) + importeReciboPagado)
       }
       
       const comentarioNuevo = polizaAccion.comentarios
@@ -147,6 +173,8 @@ function PolizasPendientesContent() {
         estatus: "activa",
         primaCobrada: nuevaPrimaCobrada,
         numeroRecibo: nuevoNumeroRecibo,
+        primaTotalRecibo: primaSiguienteRecibo,
+        registroSistemaCobranza: true,
         comentarios: comentarioNuevo,
         tipoPago: tipoPagoAccion,
       })
@@ -360,7 +388,7 @@ function PolizasPendientesContent() {
                   {polizasPendientes.map((poliza, index) => {
                     const cliente = clientes.find(c => c.id === poliza.clienteId)
                     const compania = companias.find(c => c.id === poliza.companiaId)
-                    const primaPendiente = poliza.primaEmitida - poliza.primaCobrada
+                    const primaRecibo = obtenerPrimaRecibo(poliza)
 
                     return (
                       <motion.tr
@@ -401,7 +429,7 @@ function PolizasPendientesContent() {
                           {poliza.numeroRecibo || "1/1"}
                         </td>
                         <td className="p-4 border-r border-pink-200 dark:border-pink-900 font-bold text-right align-top">
-                          ${(poliza.primaTotalRecibo || primaPendiente).toLocaleString()}
+                          ${primaRecibo.toLocaleString()}
                         </td>
                         <td className="p-4 border-r border-pink-200 dark:border-pink-900 text-center align-top">
                           {poliza.registroSistemaCobranza ? (
@@ -513,7 +541,7 @@ function PolizasPendientesContent() {
                                   ✓ Editar Estado
                                 </Button>
                               </>
-                            ) : (
+                            ) : primaRecibo > 0 ? (
                               <Button 
                                 size="sm" 
                                 variant="default"
@@ -522,6 +550,8 @@ function PolizasPendientesContent() {
                               >
                                 ✓ Marcar Pagada
                               </Button>
+                            ) : (
+                              <span className="text-xs font-medium text-red-600">Falta prima</span>
                             )}
                             <Button 
                               size="sm" 
@@ -555,6 +585,7 @@ function PolizasPendientesContent() {
               const cliente = clientes.find(c => c.id === poliza.clienteId)
               const compania = companias.find(c => c.id === poliza.companiaId)
               const primaPendiente = poliza.primaEmitida - poliza.primaCobrada
+              const primaRecibo = obtenerPrimaRecibo(poliza)
 
               return (
                 <motion.div
@@ -601,6 +632,10 @@ function PolizasPendientesContent() {
                       <div>
                         <p className="text-muted-foreground"># Recibo</p>
                         <p className="font-medium">{poliza.numeroRecibo || "1/1"}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Prima del recibo</p>
+                        <p className="font-bold text-green-700">${primaRecibo.toLocaleString()}</p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">En sistema</p>
@@ -677,14 +712,18 @@ function PolizasPendientesContent() {
                       
                       {/* Botones de acción */}
                       <div className="flex items-center gap-2">
-                        <Button 
-                          size="sm" 
-                          variant="default"
-                          className="flex-1 h-8 text-xs bg-green-600 hover:bg-green-700"
-                          onClick={() => abrirModalAccion(poliza, "pagada")}
-                        >
-                          ✓ Pagada
-                        </Button>
+                        {primaRecibo > 0 ? (
+                          <Button
+                            size="sm"
+                            variant="default"
+                            className="flex-1 h-8 text-xs bg-green-600 hover:bg-green-700"
+                            onClick={() => abrirModalAccion(poliza, "pagada")}
+                          >
+                            ✓ Pagar ${primaRecibo.toLocaleString()}
+                          </Button>
+                        ) : (
+                          <span className="flex-1 text-center text-xs font-medium text-red-600">Falta prima</span>
+                        )}
                         <Button 
                           size="sm" 
                           variant="outline"
@@ -768,7 +807,7 @@ function PolizasPendientesContent() {
               <div className="p-3 rounded-lg bg-muted">
                 <p className="text-sm font-semibold">{polizaAccion.numeroPoliza}</p>
                 <p className="text-xs text-muted-foreground">
-                  {clientes.find(c => c.id === polizaAccion.clienteId)?.nombre} • Prima: ${(polizaAccion.primaEmitida || 0).toLocaleString()}
+                  {clientes.find(c => c.id === polizaAccion.clienteId)?.nombre} • Recibo actual: ${obtenerPrimaRecibo(polizaAccion).toLocaleString()}
                 </p>
               </div>
             )}

@@ -64,6 +64,8 @@ CREATE TABLE IF NOT EXISTS polizas (
   comentarios TEXT,
   notas TEXT,
   marca_actualizacion BOOLEAN DEFAULT FALSE,
+  vigencia_vida_pago INTEGER,
+  vigencia_vida_producto INTEGER,
   anos_vida_producto INTEGER,
   tipo_pago TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),

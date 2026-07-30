@@ -50,6 +50,8 @@ export function useSupabasePolizas() {
         comentarios: p.comentarios || undefined,
         notas: p.notas || undefined,
         marcaActualizacion: p.marca_actualizacion || false,
+        vigenciaVidaPago: p.vigencia_vida_pago ?? undefined,
+        vigenciaVidaProducto: p.vigencia_vida_producto ?? p.anos_vida_producto ?? undefined,
       }))
 
       setPolizas(polizasMapeadas)
@@ -96,6 +98,8 @@ export function useSupabasePolizas() {
           comentarios: poliza.comentarios || null,
           notas: poliza.notas || null,
           marca_actualizacion: poliza.marcaActualizacion || false,
+          vigencia_vida_pago: poliza.vigenciaVidaPago ?? null,
+          vigencia_vida_producto: poliza.vigenciaVidaProducto ?? null,
         }])
         .select()
         .single()
@@ -144,6 +148,8 @@ export function useSupabasePolizas() {
       if (poliza.comentarios) updateData.comentarios = poliza.comentarios
       if (poliza.notas) updateData.notas = poliza.notas
       if (poliza.marcaActualizacion !== undefined) updateData.marca_actualizacion = poliza.marcaActualizacion
+      if (poliza.vigenciaVidaPago !== undefined) updateData.vigencia_vida_pago = poliza.vigenciaVidaPago ?? null
+      if (poliza.vigenciaVidaProducto !== undefined) updateData.vigencia_vida_producto = poliza.vigenciaVidaProducto ?? null
 
       const { error } = await supabase
         .from('polizas')

@@ -34,6 +34,8 @@ export interface Poliza {
   comentarios?: string // Comentarios adicionales
   notas?: string // Notas sobre recibos del cliente
   marcaActualizacion?: boolean // Marca por actualización
+  vigenciaVidaPago?: number // Vigencia 1: plazo de pago de póliza, en años
+  vigenciaVidaProducto?: number // Vigencia 2: plazo del producto, en años
 }
 
 export const polizas: Poliza[] = [

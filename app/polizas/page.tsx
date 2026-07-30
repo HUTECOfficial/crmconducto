@@ -83,7 +83,7 @@ function PolizasContent() {
     numeroPoliza: "", incisoEndoso: "", nombreAsegurado: "",
     vigenciaInicio: "", vigenciaFin: "", prima: "", formaPago: "" as SPoliza["formaPago"] | "",
     tipoPago: "" as "efectivo" | "transferencia" | "tarjeta" | "domiciliacion" | "cheque" | "",
-    anosVidaProducto: "", agente: "", ultimoDiaPago: "", numeroRecibo: "",
+    vigenciaVidaPago: "", vigenciaVidaProducto: "", agente: "", ultimoDiaPago: "", numeroRecibo: "",
     registroSistemaCobranza: false, comentarios: "", notas: "", marcaActualizacion: false,
     divisas: "MXN", primaTotal: "", diasGraciaPrimerRecibo: "", diasGraciaSubsecuentes: "", primerRecibo: "", recibosSubsecuentes: "",
   })
@@ -100,6 +100,7 @@ function PolizasContent() {
     diasGraciaPrimerRecibo: "", diasGraciaSubsecuentes: "",
     numeroRecibo: "", agente: "", divisas: "MXN",
     primerRecibo: "", recibosSubsecuentes: "",
+    vigenciaVidaPago: "", vigenciaVidaProducto: "",
   })
 
   useEffect(() => {
@@ -156,22 +157,23 @@ function PolizasContent() {
       }
     }
 
-    // Para seguros de vida, calcular recibos según años
-    if (nuevaPoliza.ramo === "vida" && nuevaPoliza.anosVidaProducto && nuevaPoliza.formaPago) {
-      const anos = parseInt(nuevaPoliza.anosVidaProducto)
+    // Para seguros de vida, el total de recibos se determina por el plazo de pago,
+    // no por el plazo total del producto.
+    if (nuevaPoliza.ramo === "vida" && nuevaPoliza.vigenciaVidaPago && nuevaPoliza.formaPago) {
+      const anos = parseInt(nuevaPoliza.vigenciaVidaPago)
       if (!isNaN(anos) && anos > 0) {
         const recibosAnuales = { mensual: 12, trimestral: 4, semestral: 2, anual: 1 }[nuevaPoliza.formaPago as string] ?? 1
         const totalRecibos = anos * recibosAnuales
         setNuevaPoliza(p => ({ ...p, numeroRecibo: `1/${totalRecibos}` }))
       }
     }
-  }, [nuevaPoliza.prima, nuevaPoliza.formaPago, nuevaPoliza.primerRecibo, nuevaPoliza.vigenciaInicio, nuevaPoliza.vigenciaFin, nuevaPoliza.ramo, nuevaPoliza.anosVidaProducto])
+  }, [nuevaPoliza.prima, nuevaPoliza.formaPago, nuevaPoliza.primerRecibo, nuevaPoliza.vigenciaInicio, nuevaPoliza.vigenciaFin, nuevaPoliza.ramo, nuevaPoliza.vigenciaVidaPago])
 
   const resetFormulario = () => {
     setNuevaPoliza({
       clienteId: "", companiaId: "", ramo: "", numeroPoliza: "", incisoEndoso: "",
       nombreAsegurado: "", vigenciaInicio: "", vigenciaFin: "", prima: "", formaPago: "",
-      tipoPago: "", anosVidaProducto: "", agente: "", ultimoDiaPago: "", numeroRecibo: "",
+      tipoPago: "", vigenciaVidaPago: "", vigenciaVidaProducto: "", agente: "", ultimoDiaPago: "", numeroRecibo: "",
       registroSistemaCobranza: false, comentarios: "", notas: "", marcaActualizacion: false,
       divisas: "MXN", primaTotal: "", diasGraciaPrimerRecibo: "", diasGraciaSubsecuentes: "", primerRecibo: "", recibosSubsecuentes: "",
     })
@@ -191,8 +193,15 @@ function PolizasContent() {
       toast.error("Complete todos los campos obligatorios")
       return
     }
-    if (nuevaPoliza.ramo === "vida" && !nuevaPoliza.anosVidaProducto) {
-      toast.error("Para seguros de vida especifique los años del producto")
+    if (nuevaPoliza.ramo === "vida" && (!nuevaPoliza.vigenciaVidaPago || !nuevaPoliza.vigenciaVidaProducto)) {
+      toast.error("Para seguros de vida especifique ambas vigencias")
+      return
+    }
+    if (nuevaPoliza.ramo === "vida" && (
+      !Number.isInteger(Number(nuevaPoliza.vigenciaVidaPago)) || Number(nuevaPoliza.vigenciaVidaPago) < 1 ||
+      !Number.isInteger(Number(nuevaPoliza.vigenciaVidaProducto)) || Number(nuevaPoliza.vigenciaVidaProducto) < 1
+    )) {
+      toast.error("Las vigencias de vida deben ser números enteros mayores a 0")
       return
     }
     const primaNum = parseFloat(nuevaPoliza.prima)
@@ -200,6 +209,8 @@ function PolizasContent() {
       toast.error("La prima debe ser un número válido mayor a 0")
       return
     }
+    const primerReciboNum = parseFloat(nuevaPoliza.primerRecibo)
+    const primaPrimerRecibo = !isNaN(primerReciboNum) && primerReciboNum > 0 ? primerReciboNum : primaNum
 
     let clienteIdFinal = nuevaPoliza.clienteId
     if (modoNuevoCliente) {
@@ -241,13 +252,14 @@ function PolizasContent() {
         nombreAsegurado: nuevaPoliza.nombreAsegurado || undefined,
         ultimoDiaPago: nuevaPoliza.ultimoDiaPago || undefined,
         numeroRecibo: nuevaPoliza.numeroRecibo || "1/1",
-        primaTotalRecibo: primaNum,
+        primaTotalRecibo: primaPrimerRecibo,
         tipoPago: nuevaPoliza.tipoPago || undefined,
         registroSistemaCobranza: nuevaPoliza.registroSistemaCobranza,
         comentarios: nuevaPoliza.comentarios || undefined,
         notas: nuevaPoliza.notas || undefined,
         marcaActualizacion: nuevaPoliza.marcaActualizacion,
-        anosVidaProducto: nuevaPoliza.anosVidaProducto ? parseInt(nuevaPoliza.anosVidaProducto) : undefined,
+        vigenciaVidaPago: nuevaPoliza.vigenciaVidaPago ? parseInt(nuevaPoliza.vigenciaVidaPago) : undefined,
+        vigenciaVidaProducto: nuevaPoliza.vigenciaVidaProducto ? parseInt(nuevaPoliza.vigenciaVidaProducto) : undefined,
         primerRecibo: nuevaPoliza.primerRecibo ? parseFloat(nuevaPoliza.primerRecibo) : undefined,
         recibosSubsecuentes: nuevaPoliza.recibosSubsecuentes ? parseFloat(nuevaPoliza.recibosSubsecuentes) : undefined,
         diasGraciaPrimerRecibo: nuevaPoliza.diasGraciaPrimerRecibo ? parseInt(nuevaPoliza.diasGraciaPrimerRecibo) : undefined,
@@ -288,6 +300,8 @@ function PolizasContent() {
       divisas: poliza.divisas || "MXN",
       primerRecibo: poliza.primerRecibo?.toString() || "",
       recibosSubsecuentes: poliza.recibosSubsecuentes?.toString() || "",
+      vigenciaVidaPago: poliza.vigenciaVidaPago?.toString() || "",
+      vigenciaVidaProducto: (poliza.vigenciaVidaProducto ?? poliza.anosVidaProducto)?.toString() || "",
     })
     setPolizaSeleccionada(null)
     setModalEditarPoliza(true)
@@ -299,11 +313,23 @@ function PolizasContent() {
     const primaTotalNum = parseFloat(editForm.primaTotal)
     const primerReciboNum = parseFloat(editForm.primerRecibo)
     const recibosSubsecuentesNum = parseFloat(editForm.recibosSubsecuentes)
+    const primaPoliza = isNaN(primaNum) ? polizaEditar.prima : primaNum
+    const numeroRecibo = editForm.numeroRecibo || polizaEditar.numeroRecibo || "1/1"
+    const [reciboActual] = numeroRecibo.split("/").map(Number)
+    const primaRecibo = reciboActual === 1 && !isNaN(primerReciboNum) && primerReciboNum > 0
+      ? primerReciboNum
+      : !isNaN(recibosSubsecuentesNum) && recibosSubsecuentesNum > 0
+        ? recibosSubsecuentesNum
+        : primaPoliza
+
     await actualizarPoliza(polizaEditar.id, {
       estatus: editForm.estatus as SPoliza["estatus"],
       comentarios: editForm.comentarios || undefined,
       notas: editForm.notas || undefined,
-      prima: isNaN(primaNum) ? polizaEditar.prima : primaNum,
+      prima: primaPoliza,
+      // Cobranza lee estos dos campos; se actualizan junto con la prima de la póliza.
+      primaEmitida: primaPoliza,
+      primaTotalRecibo: primaRecibo,
       primaTotal: isNaN(primaTotalNum) ? undefined : primaTotalNum,
       formaPago: editForm.formaPago as SPoliza["formaPago"],
       tipoPago: editForm.tipoPago || undefined,
@@ -317,6 +343,8 @@ function PolizasContent() {
       divisas: editForm.divisas || undefined,
       primerRecibo: isNaN(primerReciboNum) ? undefined : primerReciboNum,
       recibosSubsecuentes: isNaN(recibosSubsecuentesNum) ? undefined : recibosSubsecuentesNum,
+      vigenciaVidaPago: editForm.vigenciaVidaPago ? parseInt(editForm.vigenciaVidaPago) : undefined,
+      vigenciaVidaProducto: editForm.vigenciaVidaProducto ? parseInt(editForm.vigenciaVidaProducto) : undefined,
     })
     setModalEditarPoliza(false)
     setPolizaEditar(null)
@@ -355,7 +383,8 @@ function PolizasContent() {
       prima: polizaAccion.prima.toString(),
       formaPago: polizaAccion.formaPago,
       tipoPago: (polizaAccion.tipoPago || "") as "efectivo" | "transferencia" | "tarjeta" | "domiciliacion" | "cheque" | "",
-      anosVidaProducto: polizaAccion.anosVidaProducto?.toString() || "",
+      vigenciaVidaPago: polizaAccion.vigenciaVidaPago?.toString() || "",
+      vigenciaVidaProducto: (polizaAccion.vigenciaVidaProducto ?? polizaAccion.anosVidaProducto)?.toString() || "",
       agente: polizaAccion.agente || "",
       ultimoDiaPago: "",
       numeroRecibo: polizaAccion.numeroRecibo || "",
@@ -640,6 +669,10 @@ function PolizasContent() {
                         ["Ramo", polizaSeleccionada.ramo.replace("-", " ")],
                         ["Prima", `$${polizaSeleccionada.prima.toLocaleString()}`],
                         ["Forma de Pago", polizaSeleccionada.formaPago],
+                        ...(polizaSeleccionada.ramo === "vida" ? [
+                          ["Vigencia 1 — Plazo de pago", polizaSeleccionada.vigenciaVidaPago ? `${polizaSeleccionada.vigenciaVidaPago} años` : "—"],
+                          ["Vigencia 2 — Plazo del producto", (polizaSeleccionada.vigenciaVidaProducto ?? polizaSeleccionada.anosVidaProducto) ? `${polizaSeleccionada.vigenciaVidaProducto ?? polizaSeleccionada.anosVidaProducto} años` : "—"],
+                        ] : []),
                         ["Vigencia Inicio", new Date(polizaSeleccionada.vigenciaInicio).toLocaleDateString("es-MX")],
                         ["Vigencia Fin", new Date(polizaSeleccionada.vigenciaFin).toLocaleDateString("es-MX")],
                         ["Último Día Pago", polizaSeleccionada.ultimoDiaPago ? new Date(polizaSeleccionada.ultimoDiaPago).toLocaleDateString("es-MX") : "—"],
@@ -764,6 +797,18 @@ function PolizasContent() {
                     <Input type="date" value={editForm.vigenciaFin} onChange={e => setEditForm(f => ({ ...f, vigenciaFin: e.target.value }))} className="h-8" />
                   </div>
                 </div>
+                {polizaEditar?.ramo === "vida" && (
+                  <div className="grid grid-cols-2 gap-3 rounded-lg border border-purple-200 bg-purple-50 p-3 dark:border-purple-800 dark:bg-purple-950/20">
+                    <div>
+                      <Label className="text-xs">Vigencia 1 — Plazo de pago (años)</Label>
+                      <Input type="number" min="1" max="100" value={editForm.vigenciaVidaPago} onChange={e => setEditForm(f => ({ ...f, vigenciaVidaPago: e.target.value }))} className="mt-1 h-8" />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Vigencia 2 — Plazo del producto (años)</Label>
+                      <Input type="number" min="1" max="100" value={editForm.vigenciaVidaProducto} onChange={e => setEditForm(f => ({ ...f, vigenciaVidaProducto: e.target.value }))} className="mt-1 h-8" />
+                    </div>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label className="text-xs">Último Día de Pago</Label>
@@ -829,17 +874,20 @@ function PolizasContent() {
 
           {/* Modal Nueva Póliza */}
           <Dialog open={modalNuevaPoliza} onOpenChange={open => { setModalNuevaPoliza(open); if (!open) resetFormulario() }}>
-            <DialogContent className="glass-strong max-w-3xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle className="font-serif text-2xl flex items-center gap-2">
-                  <FileText className="w-6 h-6" />Nueva Póliza
+            <DialogContent className="poliza-form-dialog glass-strong max-w-3xl max-h-[90vh] overflow-y-auto p-0 gap-0">
+              <DialogHeader className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-6 pt-6 pb-4 pr-12 backdrop-blur">
+                <DialogTitle className="font-serif text-2xl font-bold text-slate-950 flex items-center gap-2">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                    <FileText className="w-5 h-5" />
+                  </span>
+                  Nueva Póliza
                 </DialogTitle>
-                <DialogDescription>Ingresa los datos de la nueva póliza</DialogDescription>
+                <DialogDescription className="text-slate-600">Ingresa los datos de la nueva póliza. Los campos marcados con * son obligatorios.</DialogDescription>
               </DialogHeader>
 
-              <div className="space-y-5 mt-4">
+              <div className="space-y-6 px-6 py-5">
                 {/* Toggle cliente */}
-                <div className="flex gap-2 p-1 bg-muted rounded-lg">
+                <div className="flex gap-2 rounded-xl border border-slate-200 bg-slate-100 p-1.5">
                   <button type="button" onClick={() => setModoNuevoCliente(true)}
                     className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition-all ${modoNuevoCliente ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
                     <UserPlus className="w-4 h-4" />Nuevo Cliente
@@ -886,7 +934,7 @@ function PolizasContent() {
 
                 {/* Nuevo cliente */}
                 {modoNuevoCliente && (
-                  <div className="space-y-4 p-4 border border-primary/20 rounded-2xl bg-primary/5">
+                  <div className="space-y-4 rounded-2xl border border-primary/20 bg-blue-50/70 p-4 shadow-sm">
                     <p className="text-sm font-semibold text-primary flex items-center gap-2"><UserPlus className="w-4 h-4" />Datos del Nuevo Cliente</p>
                     <PdfUploadZone
                       onExtracted={data => {
@@ -1124,15 +1172,29 @@ function PolizasContent() {
                   </div>
                 )}
 
-                {/* Años vida (solo vida) */}
+                {/* Datos exclusivos de pólizas de vida */}
                 {nuevaPoliza.ramo === "vida" && (
-                  <div className="space-y-2 p-4 border border-purple-200 dark:border-purple-800 rounded-lg bg-purple-50 dark:bg-purple-950/20">
-                    <Label className="font-semibold">Años de Vida del Producto *</Label>
-                    <Input type="number" min="1" max="100" placeholder="Ej: 10, 20, 30"
-                      value={nuevaPoliza.anosVidaProducto}
-                      onChange={e => setNuevaPoliza(p => ({ ...p, anosVidaProducto: e.target.value }))} />
+                  <div className="space-y-3 p-4 border border-purple-200 dark:border-purple-800 rounded-lg bg-purple-50 dark:bg-purple-950/20">
+                    <div>
+                      <Label className="font-semibold">Datos de la póliza de vida</Label>
+                      <p className="text-xs text-muted-foreground">La prima y la forma de pago seleccionadas arriba aplican a esta póliza.</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Vigencia 1 — Plazo de pago *</Label>
+                        <Input type="number" min="1" max="100" placeholder="Ej: 10 años"
+                          value={nuevaPoliza.vigenciaVidaPago}
+                          onChange={e => setNuevaPoliza(p => ({ ...p, vigenciaVidaPago: e.target.value }))} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Vigencia 2 — Plazo del producto *</Label>
+                        <Input type="number" min="1" max="100" placeholder="Ej: 20 años"
+                          value={nuevaPoliza.vigenciaVidaProducto}
+                          onChange={e => setNuevaPoliza(p => ({ ...p, vigenciaVidaProducto: e.target.value }))} />
+                      </div>
+                    </div>
                     {nuevaPoliza.numeroRecibo && (
-                      <p className="text-xs text-purple-600">📊 Recibos calculados: {nuevaPoliza.numeroRecibo}</p>
+                      <p className="text-xs text-purple-600">📊 Recibos calculados según el plazo de pago: {nuevaPoliza.numeroRecibo}</p>
                     )}
                   </div>
                 )}

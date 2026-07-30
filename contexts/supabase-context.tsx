@@ -72,6 +72,10 @@ export interface Poliza {
   comentarios?: string
   notas?: string
   marcaActualizacion?: boolean
+  // Campos exclusivos de seguros de vida (plazos expresados en años)
+  vigenciaVidaPago?: number
+  vigenciaVidaProducto?: number
+  // Se conserva para poder leer registros creados antes de los nuevos campos.
   anosVidaProducto?: number
   tipoPago?: string
   primerRecibo?: number
@@ -399,7 +403,17 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
       if (error) throw error
 
-      const mapped: Poliza[] = (data || []).map((p: any) => ({
+      const mapped: Poliza[] = (data || []).map((p: any) => {
+        // Algunas pólizas históricas sólo tenían prima. Usarla como respaldo evita
+        // que Cobranza las interprete erróneamente como pólizas de $0.
+        const prima = Number(p.prima || 0)
+        const primaEmitida = Number(p.prima_emitida || 0) > 0 ? Number(p.prima_emitida) : prima
+        const primaPrimerRecibo = Number(p.primer_recibo || 0)
+        const primaTotalRecibo = Number(p.prima_total_recibo || 0) > 0
+          ? Number(p.prima_total_recibo)
+          : (primaPrimerRecibo > 0 ? primaPrimerRecibo : prima)
+
+        return {
         id: p.id,
         clienteId: p.cliente_id,
         companiaId: p.compania_id,
@@ -407,12 +421,12 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         numeroPoliza: p.numero_poliza,
         vigenciaInicio: p.vigencia_inicio,
         vigenciaFin: p.vigencia_fin,
-        prima: p.prima,
+        prima,
         formaPago: p.forma_pago as Poliza['formaPago'],
         estatus: p.estatus as Poliza['estatus'],
         folios: p.folios || [],
         tramites: p.tramites || 0,
-        primaEmitida: p.prima_emitida,
+        primaEmitida,
         primaCobrada: p.prima_cobrada || 0,
         fechaEmision: p.fecha_emision,
         periodoGracia: p.periodo_gracia || undefined,
@@ -423,13 +437,15 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         nombreAsegurado: p.nombre_asegurado || undefined,
         ultimoDiaPago: p.ultimo_dia_pago || undefined,
         numeroRecibo: p.numero_recibo || undefined,
-        primaTotalRecibo: p.prima_total_recibo || undefined,
+        primaTotalRecibo,
         registroSistemaCobranza: p.registro_sistema_cobranza || false,
         fechasRecordatorio: p.fechas_recordatorio || undefined,
         comentarios: p.comentarios || undefined,
         notas: p.notas || undefined,
         marcaActualizacion: p.marca_actualizacion || false,
-        anosVidaProducto: p.anos_vida_producto || undefined,
+        vigenciaVidaPago: p.vigencia_vida_pago ?? undefined,
+        vigenciaVidaProducto: p.vigencia_vida_producto ?? p.anos_vida_producto ?? undefined,
+        anosVidaProducto: p.anos_vida_producto ?? undefined,
         primerRecibo: p.primer_recibo ?? undefined,
         recibosSubsecuentes: p.recibos_subsecuentes ?? undefined,
         diasGraciaPrimerRecibo: p.dias_gracia_primer_recibo ?? undefined,
@@ -441,7 +457,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         vehiculoClave: p.vehiculo_clave || undefined,
         vehiculoDescripcion: p.vehiculo_descripcion || undefined,
         vehiculoModelo: p.vehiculo_modelo || undefined,
-      }))
+        }
+      })
 
       setPolizas(mapped)
     } catch (err: any) {
@@ -484,7 +501,10 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
           comentarios: poliza.comentarios || null,
           notas: poliza.notas || null,
           marca_actualizacion: poliza.marcaActualizacion || false,
-          anos_vida_producto: poliza.anosVidaProducto || null,
+          vigencia_vida_pago: poliza.vigenciaVidaPago ?? null,
+          vigencia_vida_producto: poliza.vigenciaVidaProducto ?? poliza.anosVidaProducto ?? null,
+          // Compatibilidad con registros y reportes que aún usan esta columna.
+          anos_vida_producto: poliza.vigenciaVidaProducto ?? poliza.anosVidaProducto ?? null,
           tipo_pago: poliza.tipoPago || null,
           primer_recibo: poliza.primerRecibo ?? null,
           recibos_subsecuentes: poliza.recibosSubsecuentes ?? null,
@@ -520,17 +540,30 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       if (poliza.numeroPoliza !== undefined) updateData.numero_poliza = poliza.numeroPoliza
       if (poliza.vigenciaInicio !== undefined) updateData.vigencia_inicio = poliza.vigenciaInicio
       if (poliza.vigenciaFin !== undefined) updateData.vigencia_fin = poliza.vigenciaFin
-      if (poliza.prima !== undefined) updateData.prima = poliza.prima
+      if (poliza.prima !== undefined) {
+        updateData.prima = poliza.prima
+        // Mantiene Cobranza sincronizada incluso si otro formulario sólo actualiza prima.
+        if (poliza.primaEmitida === undefined) updateData.prima_emitida = poliza.prima
+        if (poliza.primaTotalRecibo === undefined) updateData.prima_total_recibo = poliza.prima
+      }
+      if (poliza.primaEmitida !== undefined) updateData.prima_emitida = poliza.primaEmitida
       if (poliza.formaPago !== undefined) updateData.forma_pago = poliza.formaPago
       if (poliza.estatus !== undefined) updateData.estatus = poliza.estatus
       if (poliza.primaCobrada !== undefined) updateData.prima_cobrada = poliza.primaCobrada
+      if (poliza.registroSistemaCobranza !== undefined) updateData.registro_sistema_cobranza = poliza.registroSistemaCobranza
       if (poliza.fechasRecordatorio !== undefined) updateData.fechas_recordatorio = poliza.fechasRecordatorio
       if (poliza.comentarios !== undefined) updateData.comentarios = poliza.comentarios
       if (poliza.notas !== undefined) updateData.notas = poliza.notas
       if (poliza.marcaActualizacion !== undefined) updateData.marca_actualizacion = poliza.marcaActualizacion
       if (poliza.cancelacionMotivo !== undefined) updateData.cancelacion_motivo = poliza.cancelacionMotivo || null
       if (poliza.tipoPago !== undefined) updateData.tipo_pago = poliza.tipoPago || null
+      if (poliza.vigenciaVidaPago !== undefined) updateData.vigencia_vida_pago = poliza.vigenciaVidaPago ?? null
+      if (poliza.vigenciaVidaProducto !== undefined) {
+        updateData.vigencia_vida_producto = poliza.vigenciaVidaProducto ?? null
+        updateData.anos_vida_producto = poliza.vigenciaVidaProducto ?? null
+      }
       if (poliza.numeroRecibo !== undefined) updateData.numero_recibo = poliza.numeroRecibo || null
+      if (poliza.primaTotalRecibo !== undefined) updateData.prima_total_recibo = poliza.primaTotalRecibo ?? null
       if (poliza.ultimoDiaPago !== undefined) updateData.ultimo_dia_pago = poliza.ultimoDiaPago || null
       if (poliza.periodoGracia !== undefined) updateData.periodo_gracia = poliza.periodoGracia || null
       if (poliza.primerRecibo !== undefined) updateData.primer_recibo = poliza.primerRecibo ?? null
