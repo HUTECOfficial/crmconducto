@@ -1573,7 +1573,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
   const darVistoBueno = async (id: string) => {
     try {
-      const hoy = new Date().toISOString().split('T')[0]
+      const hoy = todayDateOnly()
       const { error } = await supabase
         .from('siniestros')
         .update({ visto_bueno: true, fecha_visto_bueno: hoy })
@@ -1589,7 +1589,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   // ==================== VENCIDOS ====================
   const marcarComoVencido = async (polizaId: string) => {
     try {
-      const hoy = new Date().toISOString().split('T')[0]
+      const hoy = todayDateOnly()
       const { error } = await supabase
         .from('polizas')
         .update({ 
