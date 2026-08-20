@@ -12,6 +12,7 @@ import { motion } from "framer-motion"
 import { Search, RefreshCw, Eye, Download, Clock, CheckCircle, AlertCircle } from "lucide-react"
 import { ProtectedRoute } from "@/components/protected-route"
 import { useSupabase } from "@/contexts/supabase-context"
+import { formatDateOnly } from "@/lib/date-only"
 
 interface ConsultaResult {
   id: string
@@ -287,13 +288,13 @@ export default function ConsultaPolizasPage() {
                             <p className="font-medium">{resultado.compania}</p>
                           </div>
                           <div>
-                            <span className="text-muted-foreground">Prima:</span>
+                            <span className="text-muted-foreground">Prima total:</span>
                             <p className="font-medium">${resultado.prima.toLocaleString()}</p>
                           </div>
                           <div>
                             <span className="text-muted-foreground">Vigencia:</span>
                             <p className="font-medium">
-                              {new Date(resultado.vigenciaFin).toLocaleDateString()}
+                              {formatDateOnly(resultado.vigenciaFin)}
                             </p>
                           </div>
                           <div>

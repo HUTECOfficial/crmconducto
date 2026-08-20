@@ -20,12 +20,16 @@ import { EventoRapidoButton } from "@/components/evento-rapido-button"
 import { Plus, FileText, UserPlus, User, Search, Edit2, X, RefreshCw, Trash2, MoreVertical, Loader2 } from "lucide-react"
 import { PdfUploadZone } from "@/components/pdf-upload-zone"
 import { VehiculoSelector } from "@/components/vehiculo-selector"
+import { FlotillaUnidades } from "@/components/flotilla-unidades"
 import type { VehiculoAxa } from "@/contexts/supabase-context"
+import { formatDateOnly, todayDateOnly } from "@/lib/date-only"
+import { estadoCobranzaRecibo, generarRecibos, resumirCobranza } from "@/lib/payment-schedule"
 import { toast } from "sonner"
 
 const ESTATUS_COLORS: Record<string, string> = {
   activa: "bg-green-500/10 text-green-500 border-green-500/20",
   "por-renovar": "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
+  renovada: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
   vencida: "bg-red-500/10 text-red-500 border-red-500/20",
   cancelada: "bg-gray-500/10 text-gray-500 border-gray-500/20",
   gracia: "bg-orange-500/10 text-orange-500 border-orange-500/20",
@@ -36,11 +40,28 @@ const ESTATUS_COLORS: Record<string, string> = {
   "cancelada-falta-pago": "bg-red-500/10 text-red-400 border-red-500/20",
   "desvinculada-cobranza": "bg-indigo-500/10 text-indigo-500 border-indigo-500/20",
   "espera-formato": "bg-cyan-500/10 text-cyan-600 border-cyan-500/20",
+  "en-proceso-renovacion": "bg-blue-500/10 text-blue-600 border-blue-500/20",
+}
+
+function getEstatusVisible(poliza: SPoliza) {
+  if (poliza.renovacionEstado === "renovada" || poliza.estatus === "renovada") return "renovada"
+  if (poliza.renovacionEstado === "en_proceso") return "en-proceso-renovacion"
+  return poliza.estatus
+}
+
+function getEstatusLabel(estatus: string) {
+  if (estatus === "renovada") return "Renovada"
+  if (estatus === "en-proceso-renovacion") return "Renovación en proceso"
+  return estatus.replaceAll("-", " ")
 }
 
 function PolizasContent() {
   const searchParams = useSearchParams()
-  const { polizas, clientes, companias, agregarPoliza, actualizarPoliza, agregarCliente } = useSupabase()
+  const {
+    polizas, clientes, companias, usuariosSistema, pagos, historialPolizas,
+    agregarPoliza, actualizarPoliza, agregarCliente,
+    iniciarRenovacion, completarRenovacion, cancelarRenovacion,
+  } = useSupabase()
 
   const [busqueda, setBusqueda] = useState("")
   const [filtroCompania, setFiltroCompania] = useState("todas")
@@ -53,8 +74,10 @@ function PolizasContent() {
   const [modoNuevoCliente, setModoNuevoCliente] = useState(true)
   const [modalRenovar, setModalRenovar] = useState(false)
   const [modalCancelar, setModalCancelar] = useState(false)
+  const [modalCancelarRenovacion, setModalCancelarRenovacion] = useState(false)
   const [polizaAccion, setPolizaAccion] = useState<SPoliza | null>(null)
   const [polizaIdRenovando, setPolizaIdRenovando] = useState<string | null>(null)
+  const [renovacionIdActiva, setRenovacionIdActiva] = useState<string | null>(null)
   const [motivoCancelacion, setMotivoCancelacion] = useState("")
   const [savingPoliza, setSavingPoliza] = useState(false)
   const [vehiculoSeleccionado, setVehiculoSeleccionado] = useState<VehiculoAxa | null>(null)
@@ -84,7 +107,7 @@ function PolizasContent() {
     numeroPoliza: "", incisoEndoso: "", nombreAsegurado: "",
     vigenciaInicio: "", vigenciaFin: "", prima: "", formaPago: "" as SPoliza["formaPago"] | "",
     tipoPago: "" as "efectivo" | "transferencia" | "tarjeta" | "domiciliacion" | "cheque" | "",
-    vigenciaVidaPago: "", vigenciaVidaProducto: "", agente: "", ultimoDiaPago: "", numeroRecibo: "",
+    vigenciaVidaPago: "", vigenciaVidaProducto: "", agente: "", vendedorId: "", ultimoDiaPago: "", numeroRecibo: "",
     registroSistemaCobranza: false, comentarios: "", notas: "", marcaActualizacion: false,
     divisas: "MXN", primaTotal: "", diasGraciaPrimerRecibo: "", diasGraciaSubsecuentes: "", primerRecibo: "", recibosSubsecuentes: "",
   })
@@ -99,7 +122,7 @@ function PolizasContent() {
     tipoPago: "" as string,
     ultimoDiaPago: "", vigenciaFin: "", vigenciaInicio: "",
     diasGraciaPrimerRecibo: "", diasGraciaSubsecuentes: "",
-    numeroRecibo: "", agente: "", divisas: "MXN",
+    numeroRecibo: "", agente: "", vendedorId: "", divisas: "MXN",
     primerRecibo: "", recibosSubsecuentes: "",
     vigenciaVidaPago: "", vigenciaVidaProducto: "",
   })
@@ -118,42 +141,40 @@ function PolizasContent() {
       if (!isNaN(primaNum) && !isNaN(primerReciboNum) && primaNum > 0 && primerReciboNum > 0) {
         try {
           // Calcular período real entre fecha inicio y fin
-          const fechaInicio = new Date(nuevaPoliza.vigenciaInicio)
-          const fechaFin = new Date(nuevaPoliza.vigenciaFin)
+          const recibos = generarRecibos({
+            primaTotal: primaNum,
+            vigenciaInicio: nuevaPoliza.vigenciaInicio,
+            vigenciaFin: nuevaPoliza.vigenciaFin,
+            periodicidad: nuevaPoliza.formaPago as SPoliza["formaPago"],
+            primerRecibo: primerReciboNum,
+          })
           
           // Calcular diferencia en días
-          const diferenciaTiempo = fechaFin.getTime() - fechaInicio.getTime()
-          const diferenciaDias = Math.ceil(diferenciaTiempo / (1000 * 60 * 60 * 24))
-          const diferenciaMeses = diferenciaDias / 30.44 // promedio de días por mes
+          const totalRecibos = recibos.length
           
           // Determinar cantidad de recibos según forma de pago y período real
-          const recibosFormaPago = {
-            mensual: Math.ceil(diferenciaMeses),
-            trimestral: Math.ceil(diferenciaMeses / 3),
-            semestral: Math.ceil(diferenciaMeses / 6),
-            anual: Math.ceil(diferenciaMeses / 12)
-          }[nuevaPoliza.formaPago as string] ?? 1
+          const reciboPorSubsecuente = recibos[1]?.monto || 0
 
           // Asegurar mínimo 1 recibo
-          const totalRecibos = Math.max(1, recibosFormaPago)
+          const numeroRecibos = Math.max(1, totalRecibos)
 
           // Calcular prima total (anual)
           const primaTotalCalculada = primaNum
 
           // Calcular recibos subsecuentes
-          const primaRestante = primaTotalCalculada - primerReciboNum
-          const recibosSubsecuentesNum = totalRecibos - 1
-          const reciboPorSubsecuente = recibosSubsecuentesNum > 0 ? primaRestante / recibosSubsecuentesNum : 0
+          const recibosSubsecuentesNum = numeroRecibos - 1
+          void recibosSubsecuentesNum
 
           // Actualizar campos
           setNuevaPoliza(p => ({
             ...p,
             primaTotal: primaTotalCalculada.toString(),
             recibosSubsecuentes: reciboPorSubsecuente > 0 ? reciboPorSubsecuente.toFixed(2) : "0",
-            numeroRecibo: `1/${totalRecibos}`
+            numeroRecibo: `1/${numeroRecibos}`
           }))
         } catch (error) {
           console.error("Error al calcular período:", error)
+          setNuevaPoliza(poliza => ({ ...poliza, numeroRecibo: "", recibosSubsecuentes: "" }))
         }
       }
     }
@@ -172,10 +193,11 @@ function PolizasContent() {
 
   const resetFormulario = () => {
     setPolizaIdRenovando(null)
+    setRenovacionIdActiva(null)
     setNuevaPoliza({
       clienteId: "", companiaId: "", ramo: "", numeroPoliza: "", incisoEndoso: "",
       nombreAsegurado: "", vigenciaInicio: "", vigenciaFin: "", prima: "", formaPago: "",
-      tipoPago: "", vigenciaVidaPago: "", vigenciaVidaProducto: "", agente: "", ultimoDiaPago: "", numeroRecibo: "",
+      tipoPago: "", vigenciaVidaPago: "", vigenciaVidaProducto: "", agente: "", vendedorId: "", ultimoDiaPago: "", numeroRecibo: "",
       registroSistemaCobranza: false, comentarios: "", notas: "", marcaActualizacion: false,
       divisas: "MXN", primaTotal: "", diasGraciaPrimerRecibo: "", diasGraciaSubsecuentes: "", primerRecibo: "", recibosSubsecuentes: "",
     })
@@ -212,6 +234,10 @@ function PolizasContent() {
       return
     }
     const primerReciboNum = parseFloat(nuevaPoliza.primerRecibo)
+    if (!isNaN(primerReciboNum) && primerReciboNum > primaNum) {
+      toast.error("El primer recibo no puede ser mayor que la prima total")
+      return
+    }
     const primaPrimerRecibo = !isNaN(primerReciboNum) && primerReciboNum > 0 ? primerReciboNum : primaNum
 
     let clienteIdFinal = nuevaPoliza.clienteId
@@ -225,7 +251,7 @@ function PolizasContent() {
         email: nuevoCliente.email || `${nuevoCliente.nombre.toLowerCase().replace(/\s/g, ".")}@email.com`,
         telefono: nuevoCliente.telefono,
         empresa: nuevoCliente.empresa || undefined,
-        fechaRegistro: new Date().toISOString().split("T")[0],
+        fechaRegistro: todayDateOnly(),
         estatus: "activo",
       })
       if (!nuevoId) return
@@ -248,8 +274,10 @@ function PolizasContent() {
         tramites: 0,
         primaEmitida: primaNum,
         primaCobrada: 0,
-        fechaEmision: new Date().toISOString().split("T")[0],
-        agente: nuevaPoliza.agente || "AG001",
+        fechaEmision: todayDateOnly(),
+        agente: nuevaPoliza.agente || undefined,
+        vendedorId: nuevaPoliza.vendedorId || undefined,
+        renovadaDesdeId: polizaIdRenovando || undefined,
         incisoEndoso: nuevaPoliza.incisoEndoso || undefined,
         nombreAsegurado: nuevaPoliza.nombreAsegurado || undefined,
         ultimoDiaPago: nuevaPoliza.ultimoDiaPago || undefined,
@@ -276,12 +304,10 @@ function PolizasContent() {
       if (polizaId) {
         // Si esta póliza proviene de una renovación, marcar la original como renovada
         // solo ahora que la nueva póliza se creó exitosamente.
-        if (polizaIdRenovando) {
-          const original = polizas.find(p => p.id === polizaIdRenovando)
-          await actualizarPoliza(polizaIdRenovando, {
-            notas: `${original?.notas || ""}\n[RENOVADA] Renovada el ${new Date().toLocaleDateString('es-MX')}`,
-          })
+        if (polizaIdRenovando && renovacionIdActiva) {
+          await completarRenovacion(renovacionIdActiva, polizaId)
           setPolizaIdRenovando(null)
+          setRenovacionIdActiva(null)
         }
         setModalNuevaPoliza(false)
         resetFormulario()
@@ -308,6 +334,7 @@ function PolizasContent() {
       diasGraciaSubsecuentes: poliza.diasGraciaSubsecuentes?.toString() || "",
       numeroRecibo: poliza.numeroRecibo || "",
       agente: poliza.agente || "",
+      vendedorId: poliza.vendedorId || "",
       divisas: poliza.divisas || "MXN",
       primerRecibo: poliza.primerRecibo?.toString() || "",
       recibosSubsecuentes: poliza.recibosSubsecuentes?.toString() || "",
@@ -351,6 +378,7 @@ function PolizasContent() {
       diasGraciaSubsecuentes: editForm.diasGraciaSubsecuentes ? parseInt(editForm.diasGraciaSubsecuentes) : undefined,
       numeroRecibo: editForm.numeroRecibo || undefined,
       agente: editForm.agente || undefined,
+      vendedorId: editForm.vendedorId,
       divisas: editForm.divisas || undefined,
       primerRecibo: isNaN(primerReciboNum) ? undefined : primerReciboNum,
       recibosSubsecuentes: isNaN(recibosSubsecuentesNum) ? undefined : recibosSubsecuentesNum,
@@ -363,8 +391,8 @@ function PolizasContent() {
   }
 
   const handleRenovar = (poliza: SPoliza) => {
-    if (poliza.notas?.includes("[RENOVADA]")) {
-      toast.error("Esta póliza ya fue renovada anteriormente")
+    if (poliza.estatus === "renovada" || poliza.renovacionEstado === "renovada") {
+      toast.error("Esta póliza ya fue renovada")
       return
     }
     setPolizaAccion(poliza)
@@ -379,6 +407,17 @@ function PolizasContent() {
 
   const confirmarRenovacion = async () => {
     if (!polizaAccion) return
+    try {
+      const renovacionId = await iniciarRenovacion(polizaAccion.id)
+      if (!renovacionId) {
+        toast.error("No fue posible iniciar la renovación")
+        return
+      }
+      setRenovacionIdActiva(renovacionId)
+    } catch (error: any) {
+      toast.error(error.message || "No fue posible iniciar la renovación")
+      return
+    }
 
     // Pre-cargar todos los datos de la póliza original en el formulario
     setModoNuevoCliente(false)
@@ -386,7 +425,7 @@ function PolizasContent() {
       clienteId: polizaAccion.clienteId,
       companiaId: polizaAccion.companiaId,
       ramo: polizaAccion.ramo,
-      numeroPoliza: polizaAccion.numeroPoliza,
+      numeroPoliza: "",
       incisoEndoso: polizaAccion.incisoEndoso || "",
       nombreAsegurado: polizaAccion.nombreAsegurado || "",
       vigenciaInicio: polizaAccion.vigenciaFin,
@@ -397,6 +436,7 @@ function PolizasContent() {
       vigenciaVidaPago: polizaAccion.vigenciaVidaPago?.toString() || "",
       vigenciaVidaProducto: (polizaAccion.vigenciaVidaProducto ?? polizaAccion.anosVidaProducto)?.toString() || "",
       agente: polizaAccion.agente || "",
+      vendedorId: polizaAccion.vendedorId || "",
       ultimoDiaPago: "",
       numeroRecibo: polizaAccion.numeroRecibo || "",
       registroSistemaCobranza: polizaAccion.registroSistemaCobranza || false,
@@ -434,6 +474,29 @@ function PolizasContent() {
     setPolizaAccion(null)
     setMotivoCancelacion("")
     toast.success("Póliza cancelada correctamente")
+  }
+
+  const abrirCancelarRenovacion = (poliza: SPoliza) => {
+    setPolizaAccion(poliza)
+    setMotivoCancelacion("")
+    setModalCancelarRenovacion(true)
+  }
+
+  const confirmarCancelarRenovacion = async () => {
+    if (!polizaAccion || !motivoCancelacion.trim()) {
+      toast.error("Debes indicar el motivo de cancelación")
+      return
+    }
+    try {
+      await cancelarRenovacion(polizaAccion.id, motivoCancelacion.trim())
+      setModalCancelarRenovacion(false)
+      setPolizaAccion(null)
+      setMotivoCancelacion("")
+      if (polizaIdRenovando === polizaAccion.id) resetFormulario()
+      toast.success("Renovación cancelada; la póliza original permanece intacta")
+    } catch (error: any) {
+      toast.error(error.message || "No fue posible cancelar la renovación")
+    }
   }
 
   // Filtrar y buscar
@@ -524,6 +587,7 @@ function PolizasContent() {
                     <SelectItem value="activa">Activa</SelectItem>
                     <SelectItem value="vigente">Vigente</SelectItem>
                     <SelectItem value="por-renovar">Por Renovar</SelectItem>
+                    <SelectItem value="renovada">Renovada</SelectItem>
                     <SelectItem value="en-movimientos">En Movimientos</SelectItem>
                     <SelectItem value="gracia">En Gracia</SelectItem>
                     <SelectItem value="vencida">Vencida</SelectItem>
@@ -551,7 +615,7 @@ function PolizasContent() {
                     <th className="text-left p-3 font-semibold">Aseguradora</th>
                     <th className="text-left p-3 font-semibold">Ramo</th>
                     <th className="text-left p-3 font-semibold">Vigencia</th>
-                    <th className="text-left p-3 font-semibold">Prima</th>
+                    <th className="text-left p-3 font-semibold">Prima total</th>
                     <th className="text-left p-3 font-semibold">Estatus</th>
                     <th className="text-center p-3 font-semibold">Acciones</th>
                   </tr>
@@ -587,24 +651,31 @@ function PolizasContent() {
                         </td>
                         <td className="p-3 capitalize">{poliza.ramo.replace("-", " ")}</td>
                         <td className="p-3 text-xs">
-                          <p>{new Date(poliza.vigenciaInicio).toLocaleDateString("es-MX")}</p>
-                          <p className="text-muted-foreground">{new Date(poliza.vigenciaFin).toLocaleDateString("es-MX")}</p>
+                          <p>{formatDateOnly(poliza.vigenciaInicio)}</p>
+                          <p className="text-muted-foreground">{formatDateOnly(poliza.vigenciaFin)}</p>
                         </td>
                         <td className="p-3">
                           <p className="font-semibold">${poliza.prima.toLocaleString()}</p>
                           <p className="text-xs text-muted-foreground capitalize">{poliza.formaPago}</p>
                         </td>
                         <td className="p-3">
-                          <Badge className={ESTATUS_COLORS[poliza.estatus] || ESTATUS_COLORS.activa} variant="outline">
-                            {poliza.estatus}
+                          <Badge className={ESTATUS_COLORS[getEstatusVisible(poliza)] || ESTATUS_COLORS.activa} variant="outline">
+                            {getEstatusLabel(getEstatusVisible(poliza))}
                           </Badge>
                         </td>
                         <td className="p-3 text-center">
                           <div className="flex items-center justify-center gap-1">
-                            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs"
-                              onClick={e => { e.stopPropagation(); handleRenovar(poliza) }}>
-                              <RefreshCw className="w-3 h-3 mr-1" /> Renovar
-                            </Button>
+                            {poliza.renovacionEstado === "en_proceso" ? (
+                              <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-orange-600"
+                                onClick={e => { e.stopPropagation(); abrirCancelarRenovacion(poliza) }}>
+                                <X className="w-3 h-3 mr-1" /> Cancelar renovación
+                              </Button>
+                            ) : getEstatusVisible(poliza) !== "renovada" ? (
+                              <Button size="sm" variant="ghost" className="h-7 px-2 text-xs"
+                                onClick={e => { e.stopPropagation(); handleRenovar(poliza) }}>
+                                <RefreshCw className="w-3 h-3 mr-1" /> Renovar
+                              </Button>
+                            ) : null}
                             <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-destructive hover:text-destructive"
                               onClick={e => { e.stopPropagation(); handleCancelar(poliza) }}>
                               <Trash2 className="w-3 h-3 mr-1" /> Cancelar
@@ -637,7 +708,7 @@ function PolizasContent() {
                         <p className="font-mono text-xs text-muted-foreground">{poliza.numeroPoliza}</p>
                       </div>
                       <div className="flex items-center gap-1">
-                        <Badge className={ESTATUS_COLORS[poliza.estatus] || ESTATUS_COLORS.activa} variant="outline">{poliza.estatus}</Badge>
+                        <Badge className={ESTATUS_COLORS[getEstatusVisible(poliza)] || ESTATUS_COLORS.activa} variant="outline">{getEstatusLabel(getEstatusVisible(poliza))}</Badge>
                         <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={e => { e.stopPropagation(); abrirEdicion(poliza) }}>
                           <Edit2 className="w-3 h-3" />
                         </Button>
@@ -649,7 +720,7 @@ function PolizasContent() {
                     </div>
                     <div className="flex items-center justify-between text-sm">
                       <p className="font-semibold">${poliza.prima.toLocaleString()} <span className="text-xs font-normal text-muted-foreground capitalize">/ {poliza.formaPago}</span></p>
-                      <p className="text-xs text-muted-foreground">{new Date(poliza.vigenciaFin).toLocaleDateString("es-MX")}</p>
+                      <p className="text-xs text-muted-foreground">{formatDateOnly(poliza.vigenciaFin)}</p>
                     </div>
                   </GlassCard></div>
                 </motion.div>
@@ -659,7 +730,7 @@ function PolizasContent() {
 
           {/* Modal detalle */}
           <Dialog open={!!polizaSeleccionada} onOpenChange={() => setPolizaSeleccionada(null)}>
-            <DialogContent className="glass-strong max-w-2xl">
+            <DialogContent className="glass-strong max-w-3xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="font-serif text-2xl">Detalle de Póliza</DialogTitle>
                 <DialogDescription>Información completa de la póliza</DialogDescription>
@@ -667,6 +738,10 @@ function PolizasContent() {
               {polizaSeleccionada && (() => {
                 const cliente = clientes.find(c => c.id === polizaSeleccionada.clienteId)
                 const compania = companias.find(c => c.id === polizaSeleccionada.companiaId)
+                const vendedor = usuariosSistema.find(item => item.id === polizaSeleccionada.vendedorId)
+                const recibosPoliza = pagos.filter(item => item.polizaId === polizaSeleccionada.id && item.estatus !== "cancelado")
+                const resumen = resumirCobranza(recibosPoliza, polizaSeleccionada.primaTotal || polizaSeleccionada.prima)
+                const historial = historialPolizas.filter(item => item.polizaId === polizaSeleccionada.id).slice(0, 20)
                 return (
                   <div className="space-y-4 mt-2">
                     <div className="grid grid-cols-2 gap-3 text-sm">
@@ -676,17 +751,18 @@ function PolizasContent() {
                         ["Asegurado", polizaSeleccionada.nombreAsegurado || cliente?.nombre || "—"],
                         ["Aseguradora", compania?.nombre || "—"],
                         ["Ramo", polizaSeleccionada.ramo.replace("-", " ")],
-                        ["Prima", `$${polizaSeleccionada.prima.toLocaleString()}`],
+                        ["Prima total", `$${polizaSeleccionada.prima.toLocaleString()}`],
                         ["Forma de Pago", polizaSeleccionada.formaPago],
                         ...(polizaSeleccionada.ramo === "vida" ? [
                           ["Vigencia 1 — Plazo de pago", polizaSeleccionada.vigenciaVidaPago ? `${polizaSeleccionada.vigenciaVidaPago} años` : "—"],
                           ["Vigencia 2 — Plazo del producto", (polizaSeleccionada.vigenciaVidaProducto ?? polizaSeleccionada.anosVidaProducto) ? `${polizaSeleccionada.vigenciaVidaProducto ?? polizaSeleccionada.anosVidaProducto} años` : "—"],
                         ] : []),
-                        ["Vigencia Inicio", new Date(polizaSeleccionada.vigenciaInicio).toLocaleDateString("es-MX")],
-                        ["Vigencia Fin", new Date(polizaSeleccionada.vigenciaFin).toLocaleDateString("es-MX")],
-                        ["Último Día Pago", polizaSeleccionada.ultimoDiaPago ? new Date(polizaSeleccionada.ultimoDiaPago).toLocaleDateString("es-MX") : "—"],
+                        ["Vigencia Inicio", formatDateOnly(polizaSeleccionada.vigenciaInicio)],
+                        ["Vigencia Fin", formatDateOnly(polizaSeleccionada.vigenciaFin)],
+                        ["Último Día Pago", polizaSeleccionada.ultimoDiaPago ? formatDateOnly(polizaSeleccionada.ultimoDiaPago) : "—"],
                         ["# Recibo", polizaSeleccionada.numeroRecibo || "1/1"],
-                        ["Agente", polizaSeleccionada.agente || "—"],
+                        ["Agente de cobranza", polizaSeleccionada.agente || "—"],
+                        ["Vendedor de la póliza", vendedor?.nombre || "—"],
                         ["Días Gracia (Primer Recibo)", polizaSeleccionada.diasGraciaPrimerRecibo?.toString() || "—"],
                         ["Días Gracia (Subsecuentes)", polizaSeleccionada.diasGraciaSubsecuentes?.toString() || "—"],
                         ["Divisa", polizaSeleccionada.divisas || "MXN"],
@@ -705,9 +781,53 @@ function PolizasContent() {
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground mb-1">Estatus</p>
-                      <Badge className={ESTATUS_COLORS[polizaSeleccionada.estatus] || ESTATUS_COLORS.activa} variant="outline">
-                        {polizaSeleccionada.estatus}
+                      <Badge className={ESTATUS_COLORS[getEstatusVisible(polizaSeleccionada)] || ESTATUS_COLORS.activa} variant="outline">
+                        {getEstatusLabel(getEstatusVisible(polizaSeleccionada))}
                       </Badge>
+                    </div>
+                    <div className="rounded-xl border border-border/50 p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold">Cobranza</p>
+                          <p className="text-xs text-muted-foreground capitalize">Periodicidad {polizaSeleccionada.formaPago}</p>
+                        </div>
+                        <Badge variant={resumen.estatus === "pagada" ? "default" : resumen.estatus === "vencida" ? "destructive" : "secondary"}>{resumen.estatus.replace("_", " ")}</Badge>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3 text-sm">
+                        <div><p className="text-xs text-muted-foreground">Prima total</p><p className="font-semibold">${resumen.total.toLocaleString()}</p></div>
+                        <div><p className="text-xs text-muted-foreground">Cobrado</p><p className="font-semibold text-green-600">${resumen.cobrado.toLocaleString()}</p></div>
+                        <div><p className="text-xs text-muted-foreground">Pendiente</p><p className="font-semibold text-orange-600">${resumen.pendiente.toLocaleString()}</p></div>
+                      </div>
+                      {recibosPoliza.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">Sin recibos generados. Se crearán al guardar la póliza con la nueva estructura.</p>
+                      ) : (
+                        <div className="space-y-1 max-h-44 overflow-y-auto">
+                          {recibosPoliza.map(recibo => {
+                            const estado = estadoCobranzaRecibo(recibo)
+                            return (
+                              <div key={recibo.id} className="grid grid-cols-[80px_1fr_1fr_auto] gap-2 items-center rounded-lg bg-muted/30 p-2 text-xs">
+                                <span className="font-mono">{recibo.numeroRecibo}/{recibo.totalRecibos}</span>
+                                <span>${recibo.monto.toLocaleString()}</span>
+                                <span>{formatDateOnly(recibo.fechaLimite)}</span>
+                                <Badge variant={estado === "pagado" ? "default" : estado === "vencido" ? "destructive" : "outline"}>{estado.replace("_", " ")}</Badge>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                    {polizaSeleccionada.ramo === "flotilla" && <FlotillaUnidades polizaId={polizaSeleccionada.id} />}
+                    <div className="rounded-xl border border-border/50 p-4 space-y-2">
+                      <p className="text-sm font-semibold">Historial de cambios</p>
+                      {historial.length === 0 ? <p className="text-xs text-muted-foreground">Sin cambios registrados.</p> : historial.map(item => (
+                        <div key={item.id} className="border-b border-border/30 pb-2 last:border-0 text-xs">
+                          <div className="flex justify-between gap-3">
+                            <span className="font-medium">{item.tipoCambio.replaceAll("_", " ")}</span>
+                            <span className="text-muted-foreground">{new Date(item.createdAt).toLocaleString("es-MX")}</span>
+                          </div>
+                          <p className="text-muted-foreground">{item.usuarioNombre || item.usuarioEmail || "Sistema"}{item.campo ? ` · ${item.campo}` : ""}</p>
+                        </div>
+                      ))}
                     </div>
                     {polizaSeleccionada.comentarios && (
                       <div>
@@ -748,6 +868,7 @@ function PolizasContent() {
                       <SelectItem value="vigente">Vigente</SelectItem>
                       <SelectItem value="en-movimientos">En Movimientos</SelectItem>
                       <SelectItem value="por-renovar">Por Renovar</SelectItem>
+                    <SelectItem value="renovada">Renovada</SelectItem>
                       <SelectItem value="gracia">En Período de Gracia</SelectItem>
                       <SelectItem value="vencida">Vencida</SelectItem>
                       <SelectItem value="cancelada">Cancelada</SelectItem>
@@ -761,7 +882,7 @@ function PolizasContent() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label className="text-xs">Prima</Label>
+                    <Label className="text-xs">Prima total</Label>
                     <Input type="number" value={editForm.prima} onChange={e => setEditForm(f => ({ ...f, prima: e.target.value }))} className="h-8" />
                   </div>
                   <div>
@@ -841,9 +962,19 @@ function PolizasContent() {
                     <Input value={editForm.numeroRecibo} onChange={e => setEditForm(f => ({ ...f, numeroRecibo: e.target.value }))} className="h-8" placeholder="Ej: 1/6" />
                   </div>
                   <div>
-                    <Label className="text-xs">Agente</Label>
+                    <Label className="text-xs">Agente de cobranza</Label>
                     <Input value={editForm.agente} onChange={e => setEditForm(f => ({ ...f, agente: e.target.value }))} className="h-8" placeholder="Ej: AG001" />
                   </div>
+                </div>
+                <div>
+                  <Label className="text-xs">Vendedor de la póliza</Label>
+                  <Select value={editForm.vendedorId || "__none__"} onValueChange={value => setEditForm(form => ({ ...form, vendedorId: value === "__none__" ? "" : value }))}>
+                    <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Sin vendedor asignado</SelectItem>
+                      {usuariosSistema.map(item => <SelectItem key={item.id} value={item.id}>{item.nombre}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -1083,7 +1214,7 @@ function PolizasContent() {
                 {/* Prima anual y forma de pago */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Prima Anual</Label>
+                    <Label>Prima total calculada</Label>
                     <Input type="number" placeholder="Auto-calculada" value={nuevaPoliza.primaTotal}
                       onChange={e => setNuevaPoliza(p => ({ ...p, primaTotal: e.target.value }))}
                       disabled className="bg-muted" />
@@ -1218,10 +1349,20 @@ function PolizasContent() {
 
                 {/* Agente */}
                 <div className="space-y-2">
-                  <Label>ID Agente</Label>
+                  <Label>ID Agente de cobranza</Label>
                   <Input placeholder="Ej: AG001" value={nuevaPoliza.agente}
                     onChange={e => setNuevaPoliza(p => ({ ...p, agente: e.target.value }))} />
                   <p className="text-xs text-muted-foreground">El registro en sistema de cobranza se realiza automáticamente</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Vendedor de la póliza</Label>
+                  <Select value={nuevaPoliza.vendedorId || "__none__"} onValueChange={value => setNuevaPoliza(poliza => ({ ...poliza, vendedorId: value === "__none__" ? "" : value }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Sin vendedor asignado</SelectItem>
+                      {usuariosSistema.map(item => <SelectItem key={item.id} value={item.id}>{item.nombre}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {/* Comentarios */}
@@ -1263,7 +1404,7 @@ function PolizasContent() {
                     Vigencia: {polizaAccion?.vigenciaInicio} a {polizaAccion?.vigenciaFin}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    Prima: ${polizaAccion?.prima.toLocaleString()}
+                    Prima total: ${polizaAccion?.prima.toLocaleString()}
                   </p>
                 </div>
                 <p className="text-sm text-muted-foreground">
@@ -1277,6 +1418,29 @@ function PolizasContent() {
                 <Button className="flex-1" onClick={confirmarRenovacion}>
                   <RefreshCw className="w-4 h-4 mr-2" /> Continuar
                 </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={modalCancelarRenovacion} onOpenChange={setModalCancelarRenovacion}>
+            <DialogContent className="sm:max-w-[450px]">
+              <DialogHeader>
+                <DialogTitle>Cancelar renovación</DialogTitle>
+                <DialogDescription>La póliza original permanecerá intacta y podrá renovarse nuevamente.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3 py-3">
+                <div className="rounded-xl bg-muted/50 p-3">
+                  <p className="font-semibold">{polizaAccion?.numeroPoliza}</p>
+                  <p className="text-xs text-muted-foreground">Renovación en proceso</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Motivo de cancelación *</Label>
+                  <Textarea value={motivoCancelacion} onChange={event => setMotivoCancelacion(event.target.value)} className="min-h-[100px]" placeholder="Indica por qué se cancela esta renovación" />
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <Button variant="outline" className="flex-1" onClick={() => setModalCancelarRenovacion(false)}>Atrás</Button>
+                <Button variant="destructive" className="flex-1" onClick={confirmarCancelarRenovacion}>Cancelar renovación</Button>
               </div>
             </DialogContent>
           </Dialog>
@@ -1297,7 +1461,7 @@ function PolizasContent() {
                   <p className="text-sm text-muted-foreground">Póliza a cancelar</p>
                   <p className="font-semibold">{polizaAccion?.numeroPoliza}</p>
                   <p className="text-sm text-muted-foreground">
-                    Prima: ${polizaAccion?.prima.toLocaleString()}
+                    Prima total: ${polizaAccion?.prima.toLocaleString()}
                   </p>
                 </div>
                 <div className="space-y-2">

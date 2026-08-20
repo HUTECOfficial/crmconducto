@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useSupabase, type Poliza } from "@/contexts/supabase-context"
+import { formatDateOnly, todayDateOnly } from "@/lib/date-only"
 
 function obtenerPrimaRecibo(poliza: Poliza) {
   const primaEmitida = Number(poliza.primaEmitida || poliza.prima || 0)
@@ -41,7 +42,7 @@ function obtenerPrimaRecibo(poliza: Poliza) {
 
 function PolizasPendientesContent() {
   const searchParams = useSearchParams()
-  const { polizas, clientes, companias, actualizarPoliza, loadingPolizas, marcarComoVencido } = useSupabase()
+  const { polizas, clientes, companias, pagos, registrarPago, actualizarPoliza, loadingPolizas, marcarComoVencido } = useSupabase()
 
   const [filtroEstatus, setFiltroEstatus] = useState<"todas" | "activa" | "gracia" | "vencida" | "por-renovar" | "pagadas">("todas")
   const [filtroMovimiento, setFiltroMovimiento] = useState<"todas" | "con-movimiento" | "sin-movimiento">("todas")
@@ -84,12 +85,7 @@ function PolizasPendientesContent() {
   }
 
   // Ordenar por fecha de vencimiento (más cercanas o vencidas primero)
-  const hoy = new Date()
-  polizasPendientes = polizasPendientes.sort((a, b) => {
-    const fechaVencimientoA = new Date(a.vigenciaFin)
-    const fechaVencimientoB = new Date(b.vigenciaFin)
-    return fechaVencimientoA.getTime() - fechaVencimientoB.getTime()
-  })
+  polizasPendientes = polizasPendientes.sort((a, b) => a.vigenciaFin.localeCompare(b.vigenciaFin))
 
   const totalPendiente = polizasPendientes.reduce((sum, p) => sum + ((p.primaEmitida || 0) - (p.primaCobrada || 0)), 0)
   const totalEmitido = polizasPendientes.reduce((sum, p) => sum + (p.primaEmitida || 0), 0)
@@ -130,64 +126,31 @@ function PolizasPendientesContent() {
     const fecha = new Date().toLocaleDateString('es-MX')
 
     if (tipoAccion === "pagada") {
-      const importeReciboPagado = obtenerPrimaRecibo(polizaAccion)
-      if (importeReciboPagado <= 0) {
-        toast.error("Esta póliza no tiene una prima pendiente válida. Actualiza la prima desde Pólizas.")
+      const reciboPendiente = pagos
+        .filter(pago => pago.polizaId === polizaAccion.id && pago.estatus !== "pagado" && pago.estatus !== "cancelado")
+        .sort((left, right) => left.numeroRecibo - right.numeroRecibo)[0]
+      if (!reciboPendiente) {
+        toast.error("Esta póliza no tiene recibos pendientes generados.")
         return
       }
 
       // Calcular el siguiente número de recibo
-      let nuevoNumeroRecibo = polizaAccion.numeroRecibo || "1/1"
-      let nuevaPrimaCobrada = polizaAccion.primaCobrada || 0
-      let primaSiguienteRecibo = 0
+      const nuevoNumeroRecibo = `${reciboPendiente.numeroRecibo}/${reciboPendiente.totalRecibos}`
       
       // Parsear el número de recibo actual (ej: "1/6" → [1, 6])
-      const partes = nuevoNumeroRecibo.split("/")
-      if (partes.length === 2) {
-        const reciboActual = parseInt(partes[0])
-        const totalRecibos = parseInt(partes[1])
-        
-        // Si no es el último recibo, incrementar al siguiente
-        if (reciboActual < totalRecibos) {
-          const siguienteRecibo = reciboActual + 1
-          nuevoNumeroRecibo = `${siguienteRecibo}/${totalRecibos}`
-          nuevaPrimaCobrada = Math.min(
-            polizaAccion.primaEmitida,
-            (polizaAccion.primaCobrada || 0) + importeReciboPagado,
-          )
-          primaSiguienteRecibo = obtenerPrimaRecibo({ ...polizaAccion, numeroRecibo: nuevoNumeroRecibo, primaCobrada: nuevaPrimaCobrada })
-        } else {
-          // Si es el último recibo, marcar como completamente pagado
-          nuevaPrimaCobrada = polizaAccion.primaEmitida
-        }
-      } else {
-        // Si el formato no es válido, marcar como completamente pagado
-        nuevaPrimaCobrada = Math.min(polizaAccion.primaEmitida, (polizaAccion.primaCobrada || 0) + importeReciboPagado)
-      }
-      
-      const comentarioNuevo = polizaAccion.comentarios
-        ? `${polizaAccion.comentarios}\n[${fecha}] PAGADA: ${tipoPagoAccion}${motivoAccion ? ` - ${motivoAccion}` : ""} (Recibo: ${nuevoNumeroRecibo})`
-        : `[${fecha}] PAGADA: ${tipoPagoAccion}${motivoAccion ? ` - ${motivoAccion}` : ""} (Recibo: ${nuevoNumeroRecibo})`
-      
-      await actualizarPoliza(polizaAccion.id, {
-        estatus: "activa",
-        primaCobrada: nuevaPrimaCobrada,
-        numeroRecibo: nuevoNumeroRecibo,
-        primaTotalRecibo: primaSiguienteRecibo,
-        registroSistemaCobranza: true,
-        comentarios: comentarioNuevo,
-        tipoPago: tipoPagoAccion,
+      const comentarioPago = motivoAccion ? motivoAccion : undefined
+
+      // Si no es el último recibo, incrementar al siguiente
+      await registrarPago(reciboPendiente.id, {
+        metodoPago: tipoPagoAccion,
+        notas: comentarioPago,
       })
+
+      // Si es el último recibo, marcar como completamente pagado
       toast.success(`Recibo ${nuevoNumeroRecibo} marcado como pagado`)
     } else if (tipoAccion === "editar-estado") {
-      const comentarioNuevo = polizaAccion.comentarios
-        ? `${polizaAccion.comentarios}\n[${fecha}] EDICIÓN: Revertido a no pagado${motivoAccion ? ` - ${motivoAccion}` : ""}`
-        : `[${fecha}] EDICIÓN: Revertido a no pagado${motivoAccion ? ` - ${motivoAccion}` : ""}`
-      await actualizarPoliza(polizaAccion.id, {
-        primaCobrada: 0,
-        comentarios: comentarioNuevo,
-      })
-      toast.success("Estado actualizado - Póliza marcada como no pagada")
+      toast.error("Los recibos cobrados forman parte del historial y no pueden revertirse desde esta acción.")
+      return
     } else if (tipoAccion === "cancelar") {
       const comentarioNuevo = polizaAccion.comentarios
         ? `${polizaAccion.comentarios}\n[${fecha}] CANCELADA: ${motivoAccion}`
@@ -209,7 +172,7 @@ function PolizasPendientesContent() {
   }
 
   const marcarRecordatorio = async (polizaId: string, numRecordatorio: 1 | 2 | 3) => {
-    const hoy = new Date().toISOString().split("T")[0]
+    const hoy = todayDateOnly()
     const poliza = polizas.find(p => p.id === polizaId)
     const fechasActuales = poliza?.fechasRecordatorio || {}
     await actualizarPoliza(polizaId, {
@@ -388,7 +351,8 @@ function PolizasPendientesContent() {
                   {polizasPendientes.map((poliza, index) => {
                     const cliente = clientes.find(c => c.id === poliza.clienteId)
                     const compania = companias.find(c => c.id === poliza.companiaId)
-                    const primaRecibo = obtenerPrimaRecibo(poliza)
+                    const reciboPendiente = pagos.filter(pago => pago.polizaId === poliza.id && pago.estatus !== "pagado" && pago.estatus !== "cancelado").sort((left, right) => left.numeroRecibo - right.numeroRecibo)[0]
+                    const primaRecibo = reciboPendiente?.monto ?? obtenerPrimaRecibo(poliza)
 
                     return (
                       <motion.tr
@@ -421,12 +385,14 @@ function PolizasPendientesContent() {
                           </div>
                         </td>
                         <td className="p-4 border-r border-pink-200 dark:border-pink-900 font-medium align-top">
-                          {poliza.ultimoDiaPago 
-                            ? new Date(poliza.ultimoDiaPago).toLocaleDateString() 
-                            : new Date(poliza.vigenciaFin).toLocaleDateString()}
+                          {reciboPendiente?.fechaLimite
+                            ? formatDateOnly(reciboPendiente.fechaLimite)
+                            : poliza.ultimoDiaPago
+                              ? formatDateOnly(poliza.ultimoDiaPago)
+                              : formatDateOnly(poliza.vigenciaFin)}
                         </td>
                         <td className="p-4 border-r border-pink-200 dark:border-pink-900 text-center align-top">
-                          {poliza.numeroRecibo || "1/1"}
+                          {reciboPendiente ? `${reciboPendiente.numeroRecibo}/${reciboPendiente.totalRecibos}` : poliza.numeroRecibo || "1/1"}
                         </td>
                         <td className="p-4 border-r border-pink-200 dark:border-pink-900 font-bold text-right align-top">
                           ${primaRecibo.toLocaleString()}
@@ -441,7 +407,7 @@ function PolizasPendientesContent() {
                         <td className="p-4 border-r border-pink-200 dark:border-pink-900 text-center align-top">
                           {poliza.fechasRecordatorio?.fecha1 ? (
                             <span className="text-xs font-medium text-green-600">
-                              {new Date(poliza.fechasRecordatorio.fecha1).toLocaleDateString()}
+                              {formatDateOnly(poliza.fechasRecordatorio.fecha1)}
                             </span>
                           ) : (
                             <Button 
@@ -457,7 +423,7 @@ function PolizasPendientesContent() {
                         <td className="p-4 border-r border-pink-200 dark:border-pink-900 text-center align-top">
                           {poliza.fechasRecordatorio?.fecha2 ? (
                             <span className="text-xs font-medium text-yellow-600">
-                              {new Date(poliza.fechasRecordatorio.fecha2).toLocaleDateString()}
+                              {formatDateOnly(poliza.fechasRecordatorio.fecha2)}
                             </span>
                           ) : (
                             <Button 
@@ -473,7 +439,7 @@ function PolizasPendientesContent() {
                         <td className="p-4 border-r border-pink-200 dark:border-pink-900 text-center align-top">
                           {poliza.fechasRecordatorio?.fecha3 ? (
                             <span className="text-xs font-medium text-red-600">
-                              {new Date(poliza.fechasRecordatorio.fecha3).toLocaleDateString()}
+                              {formatDateOnly(poliza.fechasRecordatorio.fecha3)}
                             </span>
                           ) : (
                             <Button 
@@ -584,8 +550,10 @@ function PolizasPendientesContent() {
             {polizasPendientes.map((poliza, index) => {
               const cliente = clientes.find(c => c.id === poliza.clienteId)
               const compania = companias.find(c => c.id === poliza.companiaId)
-              const primaPendiente = poliza.primaEmitida - poliza.primaCobrada
-              const primaRecibo = obtenerPrimaRecibo(poliza)
+              const recibosPendientes = pagos.filter(pago => pago.polizaId === poliza.id && pago.estatus !== "pagado" && pago.estatus !== "cancelado").sort((left, right) => left.numeroRecibo - right.numeroRecibo)
+              const reciboPendiente = recibosPendientes[0]
+              const primaPendiente = recibosPendientes.length > 0 ? recibosPendientes.reduce((sum, pago) => sum + pago.monto, 0) : poliza.primaEmitida - poliza.primaCobrada
+              const primaRecibo = reciboPendiente?.monto ?? obtenerPrimaRecibo(poliza)
 
               return (
                 <motion.div
@@ -624,14 +592,16 @@ function PolizasPendientesContent() {
                       <div>
                         <p className="text-muted-foreground">Último día pago</p>
                         <p className="font-medium">
-                          {poliza.ultimoDiaPago 
-                            ? new Date(poliza.ultimoDiaPago).toLocaleDateString() 
-                            : new Date(poliza.vigenciaFin).toLocaleDateString()}
+                          {reciboPendiente?.fechaLimite
+                            ? formatDateOnly(reciboPendiente.fechaLimite)
+                            : poliza.ultimoDiaPago
+                              ? formatDateOnly(poliza.ultimoDiaPago)
+                              : formatDateOnly(poliza.vigenciaFin)}
                         </p>
                       </div>
                       <div>
                         <p className="text-muted-foreground"># Recibo</p>
-                        <p className="font-medium">{poliza.numeroRecibo || "1/1"}</p>
+                        <p className="font-medium">{reciboPendiente ? `${reciboPendiente.numeroRecibo}/${reciboPendiente.totalRecibos}` : poliza.numeroRecibo || "1/1"}</p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">Prima del recibo</p>
@@ -663,7 +633,7 @@ function PolizasPendientesContent() {
                                 : 'bg-muted hover:bg-muted/80 text-muted-foreground'
                             }`}
                           >
-                            {fecha ? new Date(fecha).toLocaleDateString('es', { day: '2-digit', month: 'short' }) : `Rec ${num}`}
+                            {fecha ? formatDateOnly(fecha) : `Rec ${num}`}
                           </button>
                         )
                       })}

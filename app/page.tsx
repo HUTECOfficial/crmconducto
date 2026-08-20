@@ -13,13 +13,14 @@ import { ProtectedRoute } from "@/components/protected-route"
 import { useAuth } from "@/contexts/auth-context"
 import { useRouter } from "next/navigation"
 import { useSupabase } from "@/contexts/supabase-context"
+import { differenceInCalendarDays, todayDateOnly } from "@/lib/date-only"
 
 export default function DashboardPage() {
   const { usuario } = useAuth()
   const router = useRouter()
   const { polizas, clientes, companias } = useSupabase()
 
-  const hoy = new Date()
+  const hoy = todayDateOnly()
 
   // Pólizas por cobrar: activas, en gracia, por-renovar y vencidas
   const polizasPorCobrar = polizas.filter(p =>
@@ -28,9 +29,8 @@ export default function DashboardPage() {
 
   // Próximas renovaciones (próximos 60 días)
   const renovacionesProximas = polizas.filter(p => {
-    const vigenciaFin = new Date(p.vigenciaFin)
-    const dias = Math.ceil((vigenciaFin.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
-    return dias > 0 && dias <= 60
+    const dias = differenceInCalendarDays(p.vigenciaFin, hoy)
+    return dias > 0 && dias <= 60 && p.estatus !== "renovada" && p.renovacionEstado !== "renovada"
   }).length
 
   // Registro de pólizas activas
@@ -44,8 +44,8 @@ export default function DashboardPage() {
   const renovacionesCercanas = polizas
     .filter(p => (p.primaCobrada || 0) < (p.primaEmitida || 0))
     .sort((a, b) => {
-      const diasA = Math.ceil((new Date(a.vigenciaFin).getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
-      const diasB = Math.ceil((new Date(b.vigenciaFin).getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
+      const diasA = differenceInCalendarDays(a.vigenciaFin, hoy)
+      const diasB = differenceInCalendarDays(b.vigenciaFin, hoy)
       if (diasA !== diasB) return diasA - diasB
       return (b.primaEmitida - b.primaCobrada) - (a.primaEmitida - a.primaCobrada)
     })
@@ -61,14 +61,12 @@ export default function DashboardPage() {
           {/* ALERTA DE PAGOS - Prominent Alert Section */}
           {(() => {
             const polizasVencidas = polizas.filter(p => {
-              const vigenciaFin = new Date(p.vigenciaFin)
-              const diasDiferencia = Math.ceil((vigenciaFin.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
+              const diasDiferencia = differenceInCalendarDays(p.vigenciaFin, hoy)
               return diasDiferencia < 0 && (p.estatus === "activa" || p.estatus === "gracia")
             })
             const polizasEnGracia = polizas.filter(p => p.estatus === "gracia")
             const polizasPorVencer = polizas.filter(p => {
-              const vigenciaFin = new Date(p.vigenciaFin)
-              const diasDiferencia = Math.ceil((vigenciaFin.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
+              const diasDiferencia = differenceInCalendarDays(p.vigenciaFin, hoy)
               return diasDiferencia > 0 && diasDiferencia <= 7 && p.estatus === "activa"
             })
             
@@ -185,10 +183,7 @@ export default function DashboardPage() {
                   renovacionesCercanas.map((poliza, index) => {
                     const cliente = clientes.find((c) => c.id === poliza.clienteId)
                     const compania = companias.find((c) => c.id === poliza.companiaId)
-                    const fechaVencimiento = new Date(poliza.vigenciaFin)
-                    const diasDiferencia = Math.ceil(
-                      (fechaVencimiento.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24),
-                    )
+                    const diasDiferencia = differenceInCalendarDays(poliza.vigenciaFin, hoy)
                     const yaVencida = diasDiferencia < 0
 
                     return (

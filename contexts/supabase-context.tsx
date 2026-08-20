@@ -3,6 +3,12 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
+import { useAuth } from '@/contexts/auth-context'
+import { auditLogger, AuditEventType } from '@/lib/security/audit-logger'
+import { generarRecibos, type EstadoRecibo } from '@/lib/payment-schedule'
+import { todayDateOnly } from '@/lib/date-only'
+import { cancelarEstadoRenovacion, completarEstadoRenovacion, iniciarEstadoRenovacion } from '@/lib/renewal-state'
+import { normalizarNumeroInciso, numeroIncisoDisponible, validarNumeroInciso } from '@/lib/fleet'
 
 // Tipos
 export interface ClienteTelefono {
@@ -48,7 +54,11 @@ export interface Poliza {
   vigenciaFin: string
   prima: number
   formaPago: 'mensual' | 'trimestral' | 'semestral' | 'anual'
-  estatus: 'activa' | 'por-renovar' | 'vencida' | 'cancelada' | 'gracia' | 'rehabilitada' | 'vigente' | 'en-movimientos' | 'cancelada-cliente' | 'cancelada-falta-pago' | 'desvinculada-cobranza' | 'espera-formato'
+  estatus: 'activa' | 'por-renovar' | 'renovada' | 'vencida' | 'cancelada' | 'gracia' | 'rehabilitada' | 'vigente' | 'en-movimientos' | 'cancelada-cliente' | 'cancelada-falta-pago' | 'desvinculada-cobranza' | 'espera-formato'
+  renovacionEstado?: 'sin_iniciar' | 'pendiente' | 'en_proceso' | 'renovada' | 'cancelada'
+  renovadaDesdeId?: string
+  renovadaAId?: string
+  vendedorId?: string
   folios?: string[]
   tramites?: number
   primaEmitida: number
@@ -100,6 +110,73 @@ export interface VehiculoAxa {
   ocupantes?: string
   equipamiento?: string
   descripcionDetallada?: string
+}
+
+export interface UsuarioSistema {
+  id: string
+  nombre: string
+  email: string
+  rol: string
+  activo: boolean
+}
+
+export interface PagoPoliza {
+  id: string
+  polizaId: string
+  clienteId: string
+  monto: number
+  numeroRecibo: number
+  totalRecibos: number
+  fechaEmision: string
+  fechaLimite: string
+  fechaPago?: string
+  metodoPago?: string
+  referencia?: string
+  estatus: EstadoRecibo
+  notas?: string
+}
+
+export interface Renovacion {
+  id: string
+  polizaOrigenId: string
+  polizaRenovadaId?: string
+  estado: 'pendiente' | 'en_proceso' | 'renovada' | 'cancelada'
+  estatusPolizaAnterior: string
+  iniciadaPor?: string
+  completadaPor?: string
+  canceladaPor?: string
+  motivoCancelacion?: string
+  iniciadaEn: string
+  completadaEn?: string
+  canceladaEn?: string
+}
+
+export interface PolizaHistorial {
+  id: string
+  polizaId: string
+  tipoCambio: string
+  campo?: string
+  valorAnterior?: unknown
+  valorNuevo?: unknown
+  usuarioId?: string
+  usuarioNombre?: string
+  usuarioEmail?: string
+  metadata: Record<string, unknown>
+  createdAt: string
+}
+
+export interface FlotillaUnidad {
+  id: string
+  flotillaId: string
+  polizaId: string
+  numeroInciso: string
+  descripcion?: string
+  marca?: string
+  modelo?: string
+  placas?: string
+  numeroSerie?: string
+  primaTotal?: number
+  activa: boolean
 }
 
 export interface FolioRegistro {
@@ -184,6 +261,23 @@ interface SupabaseContextType {
   agregarPoliza: (poliza: Omit<Poliza, 'id'>) => Promise<string | null>
   actualizarPoliza: (id: string, poliza: Partial<Poliza>) => Promise<void>
   eliminarPoliza: (id: string) => Promise<void>
+
+  usuariosSistema: UsuarioSistema[]
+  pagos: PagoPoliza[]
+  loadingPagos: boolean
+  registrarPago: (pagoId: string, datos: { metodoPago: string; referencia?: string; notas?: string }) => Promise<void>
+  regenerarRecibosPoliza: (polizaId: string, cambios?: Partial<Pick<Poliza, 'prima' | 'primaTotal' | 'formaPago' | 'vigenciaInicio' | 'vigenciaFin' | 'primerRecibo'>>) => Promise<void>
+
+  renovaciones: Renovacion[]
+  iniciarRenovacion: (polizaId: string) => Promise<string | null>
+  completarRenovacion: (renovacionId: string, polizaRenovadaId: string) => Promise<void>
+  cancelarRenovacion: (polizaId: string, motivo: string) => Promise<void>
+
+  historialPolizas: PolizaHistorial[]
+  flotillaUnidades: FlotillaUnidad[]
+  agregarUnidadFlotilla: (polizaId: string, unidad: Omit<FlotillaUnidad, 'id' | 'flotillaId' | 'polizaId'>) => Promise<void>
+  actualizarUnidadFlotilla: (id: string, unidad: Partial<Omit<FlotillaUnidad, 'id' | 'flotillaId' | 'polizaId'>>) => Promise<void>
+  desactivarUnidadFlotilla: (id: string) => Promise<void>
   
   // Vehículos AXA
   buscarVehiculos: (query: string) => Promise<VehiculoAxa[]>
@@ -232,6 +326,7 @@ interface SupabaseContextType {
 const SupabaseContext = createContext<SupabaseContextType | undefined>(undefined)
 
 export function SupabaseProvider({ children }: { children: ReactNode }) {
+  const { usuario } = useAuth()
   // Estados
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [loadingClientes, setLoadingClientes] = useState(true)
@@ -241,6 +336,12 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   
   const [polizas, setPolizas] = useState<Poliza[]>([])
   const [loadingPolizas, setLoadingPolizas] = useState(true)
+  const [usuariosSistema, setUsuariosSistema] = useState<UsuarioSistema[]>([])
+  const [pagos, setPagos] = useState<PagoPoliza[]>([])
+  const [loadingPagos, setLoadingPagos] = useState(true)
+  const [renovaciones, setRenovaciones] = useState<Renovacion[]>([])
+  const [historialPolizas, setHistorialPolizas] = useState<PolizaHistorial[]>([])
+  const [flotillaUnidades, setFlotillaUnidades] = useState<FlotillaUnidad[]>([])
   
   const [prospectos, setProspectos] = useState<Prospecto[]>([])
   const [loadingProspectos, setLoadingProspectos] = useState(true)
@@ -424,6 +525,10 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         prima,
         formaPago: p.forma_pago as Poliza['formaPago'],
         estatus: p.estatus as Poliza['estatus'],
+        renovacionEstado: p.renovacion_estado || (p.estatus === 'por-renovar' ? 'pendiente' : 'sin_iniciar'),
+        renovadaDesdeId: p.renovada_desde_id || undefined,
+        renovadaAId: p.renovada_a_id || undefined,
+        vendedorId: p.vendedor_id || undefined,
         folios: p.folios || [],
         tramites: p.tramites || 0,
         primaEmitida,
@@ -468,8 +573,455 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const agregarPoliza = async (poliza: Omit<Poliza, 'id'>): Promise<string | null> => {
+  const getActor = () => usuariosSistema.find(item => item.email === usuario?.email)
+
+  const fetchUsuariosSistema = async () => {
+    const { data, error } = await supabase.from('usuarios').select('*').eq('activo', true).order('nombre')
+    if (error) throw error
+    setUsuariosSistema((data || []).map((item: any) => ({
+      id: item.id,
+      nombre: item.nombre,
+      email: item.email,
+      rol: item.rol,
+      activo: item.activo,
+    })))
+  }
+
+  const fetchPagos = async () => {
     try {
+      setLoadingPagos(true)
+      const { data, error } = await supabase.from('pagos').select('*').order('fecha_limite')
+      if (error) throw error
+      setPagos((data || []).map((item: any) => ({
+        id: item.id,
+        polizaId: item.poliza_id,
+        clienteId: item.cliente_id,
+        monto: Number(item.monto || 0),
+        numeroRecibo: Number(item.numero_recibo || 1),
+        totalRecibos: Number(item.total_recibos || 1),
+        fechaEmision: item.fecha_emision || item.created_at?.slice(0, 10),
+        fechaLimite: item.fecha_limite || item.created_at?.slice(0, 10),
+        fechaPago: item.fecha_pago || undefined,
+        metodoPago: item.metodo_pago || undefined,
+        referencia: item.referencia || undefined,
+        estatus: item.estatus as EstadoRecibo,
+        notas: item.notas || undefined,
+      })))
+    } catch (err: any) {
+      console.error('Error fetching pagos:', err.message)
+    } finally {
+      setLoadingPagos(false)
+    }
+  }
+
+  const fetchRenovaciones = async () => {
+    const { data, error } = await supabase.from('renovaciones').select('*').order('iniciada_en', { ascending: false })
+    if (error) {
+      if (error.code === '42P01') return
+      throw error
+    }
+    setRenovaciones((data || []).map((item: any) => ({
+      id: item.id,
+      polizaOrigenId: item.poliza_origen_id,
+      polizaRenovadaId: item.poliza_renovada_id || undefined,
+      estado: item.estado,
+      estatusPolizaAnterior: item.estatus_poliza_anterior,
+      iniciadaPor: item.iniciada_por || undefined,
+      completadaPor: item.completada_por || undefined,
+      canceladaPor: item.cancelada_por || undefined,
+      motivoCancelacion: item.motivo_cancelacion || undefined,
+      iniciadaEn: item.iniciada_en,
+      completadaEn: item.completada_en || undefined,
+      canceladaEn: item.cancelada_en || undefined,
+    })))
+  }
+
+  const fetchHistorialPolizas = async () => {
+    const { data, error } = await supabase.from('poliza_historial').select('*').order('created_at', { ascending: false }).limit(1000)
+    if (error) {
+      if (error.code === '42P01') return
+      throw error
+    }
+    setHistorialPolizas((data || []).map((item: any) => ({
+      id: item.id,
+      polizaId: item.poliza_id,
+      tipoCambio: item.tipo_cambio,
+      campo: item.campo || undefined,
+      valorAnterior: item.valor_anterior ?? undefined,
+      valorNuevo: item.valor_nuevo ?? undefined,
+      usuarioId: item.usuario_id || undefined,
+      usuarioNombre: item.usuario_nombre || undefined,
+      usuarioEmail: item.usuario_email || undefined,
+      metadata: item.metadata || {},
+      createdAt: item.created_at,
+    })))
+  }
+
+  const fetchFlotillaUnidades = async () => {
+    const { data, error } = await supabase
+      .from('flotilla_unidades')
+      .select('*, flotillas!inner(poliza_id)')
+      .order('numero_inciso')
+    if (error) {
+      if (error.code === '42P01') return
+      throw error
+    }
+    setFlotillaUnidades((data || []).map((item: any) => ({
+      id: item.id,
+      flotillaId: item.flotilla_id,
+      polizaId: item.flotillas.poliza_id,
+      numeroInciso: item.numero_inciso,
+      descripcion: item.descripcion || undefined,
+      marca: item.marca || undefined,
+      modelo: item.modelo || undefined,
+      placas: item.placas || undefined,
+      numeroSerie: item.numero_serie || undefined,
+      primaTotal: item.prima_total == null ? undefined : Number(item.prima_total),
+      activa: item.activa,
+    })))
+  }
+
+  const registrarHistorial = async (
+    polizaId: string,
+    tipoCambio: string,
+    campo?: string,
+    valorAnterior?: unknown,
+    valorNuevo?: unknown,
+    metadata: Record<string, unknown> = {},
+  ) => {
+    const actor = getActor()
+    const { error } = await supabase.from('poliza_historial').insert([{
+      poliza_id: polizaId,
+      tipo_cambio: tipoCambio,
+      campo: campo || null,
+      valor_anterior: valorAnterior === undefined ? null : valorAnterior,
+      valor_nuevo: valorNuevo === undefined ? null : valorNuevo,
+      usuario_id: actor?.id || null,
+      usuario_nombre: usuario?.nombre || actor?.nombre || null,
+      usuario_email: usuario?.email || actor?.email || null,
+      metadata,
+    }])
+    if (error) throw error
+    await auditLogger.log({
+      eventType: tipoCambio === 'renovacion_completada' ? AuditEventType.POLIZA_RENEW : AuditEventType.POLIZA_UPDATE,
+      userId: actor?.id || usuario?.id || null,
+      userEmail: usuario?.email || actor?.email || null,
+      userRole: usuario?.rol || actor?.rol || null,
+      resource: 'polizas',
+      resourceId: polizaId,
+      action: tipoCambio,
+      previousValue: valorAnterior,
+      newValue: valorNuevo,
+      details: { campo, ...metadata },
+    })
+  }
+
+  const regenerarRecibosPoliza = async (
+    polizaId: string,
+    cambios: Partial<Pick<Poliza, 'prima' | 'primaTotal' | 'formaPago' | 'vigenciaInicio' | 'vigenciaFin' | 'primerRecibo'>> = {},
+  ) => {
+    const actual = polizas.find(item => item.id === polizaId)
+    if (!actual) throw new Error('No se encontró la póliza para regenerar sus recibos')
+    const cambiosDefinidos = Object.fromEntries(Object.entries(cambios).filter(([, value]) => value !== undefined))
+    const configuracion = { ...actual, ...cambiosDefinidos } as Poliza
+    const pagados = pagos.filter(item => item.polizaId === polizaId && item.estatus === 'pagado')
+    const pendientes = pagos.filter(item => item.polizaId === polizaId && item.estatus !== 'pagado' && item.estatus !== 'cancelado')
+    const actor = getActor()
+    const restaurarPendientes = async () => {
+      const resultados = await Promise.all(pendientes.map(item => supabase.from('pagos').update({
+        estatus: item.estatus,
+        cancelado_en: null,
+        cancelado_por: null,
+        motivo_cancelacion: null,
+      }).eq('id', item.id)))
+      const error = resultados.find(resultado => resultado.error)?.error
+      if (error) throw error
+    }
+
+    if (pendientes.length > 0) {
+      const { error } = await supabase
+        .from('pagos')
+        .update({
+          estatus: 'cancelado',
+          cancelado_en: new Date().toISOString(),
+          cancelado_por: actor?.id || null,
+          motivo_cancelacion: 'regeneracion_periodicidad',
+        })
+        .in('id', pendientes.map(item => item.id))
+      if (error) throw error
+    }
+
+    const recibos = generarRecibos({
+      primaTotal: Number(configuracion.primaTotal || configuracion.prima || 0),
+      vigenciaInicio: configuracion.vigenciaInicio,
+      vigenciaFin: configuracion.vigenciaFin,
+      periodicidad: configuracion.formaPago,
+      primerRecibo: configuracion.primerRecibo,
+      recibosPagados: pagados,
+    })
+
+    if (recibos.length > 0) {
+      const { data: nuevosPagos, error } = await supabase.from('pagos').insert(recibos.map(recibo => ({
+        poliza_id: polizaId,
+        cliente_id: configuracion.clienteId,
+        monto: recibo.monto,
+        numero_recibo: recibo.numeroRecibo,
+        total_recibos: recibo.totalRecibos,
+        fecha_emision: recibo.fechaEmision,
+        fecha_limite: recibo.fechaLimite,
+        estatus: recibo.estatus,
+        metodo_pago: null,
+      }))).select('id')
+      if (error) {
+        await restaurarPendientes()
+        throw error
+      }
+
+      const { error: polizaError } = await supabase.from('polizas').update({
+        numero_recibo: `${recibos[0].numeroRecibo}/${recibos[0].totalRecibos}`,
+        prima_total_recibo: recibos[0].monto,
+        ultimo_dia_pago: recibos[0].fechaLimite,
+      }).eq('id', polizaId)
+      if (polizaError) {
+        if (nuevosPagos?.length) {
+          await supabase.from('pagos').update({
+            estatus: 'cancelado',
+            cancelado_en: new Date().toISOString(),
+            cancelado_por: actor?.id || null,
+            motivo_cancelacion: 'error_regeneracion',
+          }).in('id', nuevosPagos.map(item => item.id))
+        }
+        await restaurarPendientes()
+        throw polizaError
+      }
+    }
+
+    await fetchPagos()
+  }
+
+  const registrarPago = async (pagoId: string, datos: { metodoPago: string; referencia?: string; notas?: string }) => {
+    const pago = pagos.find(item => item.id === pagoId)
+    if (!pago || pago.estatus === 'pagado' || pago.estatus === 'cancelado') return
+    const fechaPago = todayDateOnly()
+    const { error } = await supabase.from('pagos').update({
+      estatus: 'pagado',
+      fecha_pago: fechaPago,
+      metodo_pago: datos.metodoPago,
+      referencia: datos.referencia || null,
+      notas: datos.notas || null,
+    }).eq('id', pagoId)
+    if (error) throw error
+
+    const { data: pagosActuales, error: pagosError } = await supabase
+      .from('pagos')
+      .select('monto, estatus, numero_recibo, total_recibos, fecha_limite')
+      .eq('poliza_id', pago.polizaId)
+      .neq('estatus', 'cancelado')
+    if (pagosError) throw pagosError
+
+    const cobrado = (pagosActuales || []).filter((item: any) => item.estatus === 'pagado').reduce((sum: number, item: any) => sum + Number(item.monto), 0)
+    const siguiente = (pagosActuales || []).filter((item: any) => item.estatus !== 'pagado').sort((left: any, right: any) => left.numero_recibo - right.numero_recibo)[0]
+    const { error: polizaError } = await supabase.from('polizas').update({
+      prima_cobrada: cobrado,
+      registro_sistema_cobranza: true,
+      tipo_pago: datos.metodoPago,
+      numero_recibo: siguiente ? `${siguiente.numero_recibo}/${siguiente.total_recibos}` : `${pago.totalRecibos}/${pago.totalRecibos}`,
+      prima_total_recibo: siguiente ? Number(siguiente.monto) : 0,
+      ultimo_dia_pago: siguiente?.fecha_limite || null,
+    }).eq('id', pago.polizaId)
+    if (polizaError) {
+      await supabase.from('pagos').update({
+        estatus: pago.estatus,
+        fecha_pago: pago.fechaPago || null,
+        metodo_pago: pago.metodoPago || null,
+        referencia: pago.referencia || null,
+        notas: pago.notas || null,
+      }).eq('id', pagoId)
+      throw polizaError
+    }
+
+    await registrarHistorial(pago.polizaId, 'pago_registrado', 'recibo', pago.estatus, 'pagado', {
+      pagoId,
+      numeroRecibo: pago.numeroRecibo,
+      monto: pago.monto,
+      metodoPago: datos.metodoPago,
+    })
+    await Promise.all([fetchPagos(), fetchPolizas(), fetchHistorialPolizas()])
+    toast.success(`Recibo ${pago.numeroRecibo}/${pago.totalRecibos} cobrado`)
+  }
+
+  const iniciarRenovacion = async (polizaId: string): Promise<string | null> => {
+    const poliza = polizas.find(item => item.id === polizaId)
+    if (!poliza) return null
+    const activa = renovaciones.find(item => item.polizaOrigenId === polizaId && (item.estado === 'pendiente' || item.estado === 'en_proceso'))
+    if (activa) return activa.id
+    const siguienteEstado = iniciarEstadoRenovacion(poliza.renovacionEstado || (poliza.estatus === 'por-renovar' ? 'pendiente' : 'sin_iniciar'))
+    const actor = getActor()
+    const { data, error } = await supabase.from('renovaciones').insert([{
+      poliza_origen_id: polizaId,
+      estado: siguienteEstado,
+      estatus_poliza_anterior: poliza.estatus,
+      iniciada_por: actor?.id || null,
+    }]).select().single()
+    if (error) throw error
+    const { error: polizaError } = await supabase.from('polizas').update({ renovacion_estado: siguienteEstado }).eq('id', polizaId)
+    if (polizaError) {
+      await supabase.from('renovaciones').update({
+        estado: 'cancelada',
+        cancelada_por: actor?.id || null,
+        cancelada_en: new Date().toISOString(),
+        motivo_cancelacion: 'error_inicio',
+      }).eq('id', data.id)
+      throw polizaError
+    }
+    await registrarHistorial(polizaId, 'renovacion_iniciada', 'renovacion_estado', poliza.renovacionEstado, siguienteEstado, { renovacionId: data.id })
+    await Promise.all([fetchRenovaciones(), fetchPolizas(), fetchHistorialPolizas()])
+    return data.id
+  }
+
+  const completarRenovacion = async (renovacionId: string, polizaRenovadaId: string) => {
+    const renovacion = renovaciones.find(item => item.id === renovacionId)
+    if (!renovacion) throw new Error('La renovación no está en proceso')
+    const estadoCompletado = completarEstadoRenovacion(renovacion.estado)
+    const actor = getActor()
+    const completadaEn = new Date().toISOString()
+    const { error } = await supabase.from('renovaciones').update({
+      estado: estadoCompletado,
+      poliza_renovada_id: polizaRenovadaId,
+      completada_por: actor?.id || null,
+      completada_en: completadaEn,
+    }).eq('id', renovacionId).eq('estado', 'en_proceso')
+    if (error) throw error
+    const resultadosPolizas = await Promise.all([
+      supabase.from('polizas').update({ estatus: 'renovada', renovacion_estado: estadoCompletado, renovada_a_id: polizaRenovadaId }).eq('id', renovacion.polizaOrigenId),
+      supabase.from('polizas').update({ renovada_desde_id: renovacion.polizaOrigenId }).eq('id', polizaRenovadaId),
+    ])
+    const errorPolizas = resultadosPolizas.find(resultado => resultado.error)?.error
+    if (errorPolizas) {
+      await Promise.all([
+        supabase.from('polizas').update({ estatus: renovacion.estatusPolizaAnterior, renovacion_estado: 'en_proceso', renovada_a_id: null }).eq('id', renovacion.polizaOrigenId),
+        supabase.from('polizas').update({ renovada_desde_id: null }).eq('id', polizaRenovadaId),
+      ])
+      await supabase.from('renovaciones').update({
+        estado: renovacion.estado,
+        poliza_renovada_id: null,
+        completada_por: null,
+        completada_en: null,
+      }).eq('id', renovacionId)
+      throw errorPolizas
+    }
+    await registrarHistorial(renovacion.polizaOrigenId, 'renovacion_completada', 'renovacion_estado', renovacion.estado, estadoCompletado, {
+      renovacionId,
+      polizaRenovadaId,
+    })
+    await Promise.all([fetchRenovaciones(), fetchPolizas(), fetchHistorialPolizas()])
+  }
+
+  const cancelarRenovacion = async (polizaId: string, motivo: string) => {
+    const renovacion = renovaciones.find(item => item.polizaOrigenId === polizaId && (item.estado === 'pendiente' || item.estado === 'en_proceso'))
+    if (!renovacion) throw new Error('No existe una renovación activa para cancelar')
+    const estadoCancelado = cancelarEstadoRenovacion(renovacion.estado)
+    const actor = getActor()
+    const { error } = await supabase.from('renovaciones').update({
+      estado: estadoCancelado,
+      cancelada_por: actor?.id || null,
+      cancelada_en: new Date().toISOString(),
+      motivo_cancelacion: motivo,
+    }).eq('id', renovacion.id)
+    if (error) throw error
+    const { error: polizaError } = await supabase.from('polizas').update({ renovacion_estado: estadoCancelado }).eq('id', polizaId)
+    if (polizaError) {
+      await supabase.from('renovaciones').update({
+        estado: renovacion.estado,
+        cancelada_por: null,
+        cancelada_en: null,
+        motivo_cancelacion: null,
+      }).eq('id', renovacion.id)
+      throw polizaError
+    }
+    await registrarHistorial(polizaId, 'renovacion_cancelada', 'renovacion_estado', renovacion.estado, estadoCancelado, {
+      renovacionId: renovacion.id,
+      motivo,
+    })
+    await Promise.all([fetchRenovaciones(), fetchPolizas(), fetchHistorialPolizas()])
+  }
+
+  const getOrCreateFlotilla = async (polizaId: string): Promise<string> => {
+    const { data: existente, error: selectError } = await supabase.from('flotillas').select('id').eq('poliza_id', polizaId).maybeSingle()
+    if (selectError) throw selectError
+    if (existente) return existente.id
+    const poliza = polizas.find(item => item.id === polizaId)
+    const { data, error } = await supabase.from('flotillas').insert([{
+      poliza_id: polizaId,
+      nombre: `Flotilla ${poliza?.numeroPoliza || ''}`.trim(),
+    }]).select('id').single()
+    if (error) throw error
+    return data.id
+  }
+
+  const agregarUnidadFlotilla = async (polizaId: string, unidad: Omit<FlotillaUnidad, 'id' | 'flotillaId' | 'polizaId'>) => {
+    if (!validarNumeroInciso(unidad.numeroInciso)) throw new Error('El número de inciso es obligatorio')
+    const incisos = flotillaUnidades.filter(item => item.polizaId === polizaId).map(item => item.numeroInciso)
+    if (!numeroIncisoDisponible(unidad.numeroInciso, incisos)) throw new Error('El número de inciso ya existe en esta flotilla')
+    const flotillaId = await getOrCreateFlotilla(polizaId)
+    const { error } = await supabase.from('flotilla_unidades').insert([{
+      flotilla_id: flotillaId,
+      numero_inciso: normalizarNumeroInciso(unidad.numeroInciso),
+      descripcion: unidad.descripcion || null,
+      marca: unidad.marca || null,
+      modelo: unidad.modelo || null,
+      placas: unidad.placas || null,
+      numero_serie: unidad.numeroSerie || null,
+      prima_total: unidad.primaTotal ?? null,
+      activa: unidad.activa,
+    }])
+    if (error) throw error
+    await registrarHistorial(polizaId, 'unidad_flotilla_creada', 'numero_inciso', undefined, unidad.numeroInciso)
+    await Promise.all([fetchFlotillaUnidades(), fetchHistorialPolizas()])
+  }
+
+  const actualizarUnidadFlotilla = async (id: string, unidad: Partial<Omit<FlotillaUnidad, 'id' | 'flotillaId' | 'polizaId'>>) => {
+    const anterior = flotillaUnidades.find(item => item.id === id)
+    if (!anterior) return
+    const updateData: Record<string, unknown> = {}
+    if (unidad.numeroInciso !== undefined) {
+      if (!validarNumeroInciso(unidad.numeroInciso)) throw new Error('El número de inciso es obligatorio')
+      const incisos = flotillaUnidades.filter(item => item.polizaId === anterior.polizaId).map(item => item.numeroInciso)
+      if (!numeroIncisoDisponible(unidad.numeroInciso, incisos, anterior.numeroInciso)) throw new Error('El número de inciso ya existe en esta flotilla')
+      updateData.numero_inciso = normalizarNumeroInciso(unidad.numeroInciso)
+    }
+    if (unidad.descripcion !== undefined) updateData.descripcion = unidad.descripcion || null
+    if (unidad.marca !== undefined) updateData.marca = unidad.marca || null
+    if (unidad.modelo !== undefined) updateData.modelo = unidad.modelo || null
+    if (unidad.placas !== undefined) updateData.placas = unidad.placas || null
+    if (unidad.numeroSerie !== undefined) updateData.numero_serie = unidad.numeroSerie || null
+    if (unidad.primaTotal !== undefined) updateData.prima_total = unidad.primaTotal ?? null
+    if (unidad.activa !== undefined) updateData.activa = unidad.activa
+    const { error } = await supabase.from('flotilla_unidades').update(updateData).eq('id', id)
+    if (error) throw error
+    await registrarHistorial(anterior.polizaId, 'unidad_flotilla_actualizada', 'unidad', anterior, { ...anterior, ...unidad })
+    await Promise.all([fetchFlotillaUnidades(), fetchHistorialPolizas()])
+  }
+
+  const desactivarUnidadFlotilla = async (id: string) => {
+    const unidad = flotillaUnidades.find(item => item.id === id)
+    if (!unidad) return
+    const { error } = await supabase.from('flotilla_unidades').update({ activa: false }).eq('id', id)
+    if (error) throw error
+    await registrarHistorial(unidad.polizaId, 'unidad_flotilla_desactivada', 'activa', true, false, { unidadId: id, numeroInciso: unidad.numeroInciso })
+    await Promise.all([fetchFlotillaUnidades(), fetchHistorialPolizas()])
+  }
+
+  const agregarPoliza = async (poliza: Omit<Poliza, 'id'>): Promise<string | null> => {
+    let polizaCreadaId: string | null = null
+    try {
+      const recibos = generarRecibos({
+        primaTotal: Number(poliza.primaTotal || poliza.prima),
+        vigenciaInicio: poliza.vigenciaInicio,
+        vigenciaFin: poliza.vigenciaFin,
+        periodicidad: poliza.formaPago,
+        primerRecibo: poliza.primerRecibo,
+      })
       const { data, error } = await supabase
         .from('polizas')
         .insert([{
@@ -482,6 +1034,9 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
           prima: poliza.prima,
           forma_pago: poliza.formaPago,
           estatus: poliza.estatus,
+          renovacion_estado: poliza.renovacionEstado || 'sin_iniciar',
+          renovada_desde_id: poliza.renovadaDesdeId || null,
+          vendedor_id: poliza.vendedorId || null,
           folios: poliza.folios || null,
           tramites: poliza.tramites || 0,
           prima_emitida: poliza.primaEmitida,
@@ -523,11 +1078,42 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         .single()
 
       if (error) throw error
+      polizaCreadaId = data.id
 
+      if (recibos.length > 0) {
+        const { error: pagosError } = await supabase.from('pagos').insert(recibos.map(recibo => ({
+          poliza_id: data.id,
+          cliente_id: poliza.clienteId,
+          monto: recibo.monto,
+          numero_recibo: recibo.numeroRecibo,
+          total_recibos: recibo.totalRecibos,
+          fecha_emision: recibo.fechaEmision,
+          fecha_limite: recibo.fechaLimite,
+          estatus: recibo.estatus,
+          metodo_pago: null,
+        })))
+        if (pagosError) throw pagosError
+        const { error: polizaError } = await supabase.from('polizas').update({
+          numero_recibo: `${recibos[0].numeroRecibo}/${recibos[0].totalRecibos}`,
+          prima_total_recibo: recibos[0].monto,
+          ultimo_dia_pago: recibos[0].fechaLimite,
+        }).eq('id', data.id)
+        if (polizaError) throw polizaError
+      }
+      await registrarHistorial(data.id, 'poliza_creada', undefined, undefined, {
+        numeroPoliza: poliza.numeroPoliza,
+        primaTotal: poliza.primaTotal || poliza.prima,
+        formaPago: poliza.formaPago,
+      })
       toast.success('Póliza creada exitosamente')
-      await fetchPolizas()
+      await Promise.all([fetchPolizas(), fetchPagos(), fetchHistorialPolizas(), ...(poliza.ramo === 'flotilla' ? [fetchFlotillaUnidades()] : [])])
       return data.id
     } catch (err: any) {
+      if (polizaCreadaId) {
+        toast.error('La póliza fue creada, pero su configuración operativa quedó incompleta: ' + err.message)
+        await Promise.all([fetchPolizas(), fetchPagos(), fetchHistorialPolizas()])
+        return polizaCreadaId
+      }
       toast.error('Error al crear póliza: ' + err.message)
       return null
     }
@@ -535,6 +1121,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
   const actualizarPoliza = async (id: string, poliza: Partial<Poliza>) => {
     try {
+      const anterior = polizas.find(item => item.id === id)
       const updateData: any = {}
       if (poliza.clienteId !== undefined) updateData.cliente_id = poliza.clienteId
       if (poliza.companiaId !== undefined) updateData.compania_id = poliza.companiaId
@@ -551,6 +1138,10 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       if (poliza.primaEmitida !== undefined) updateData.prima_emitida = poliza.primaEmitida
       if (poliza.formaPago !== undefined) updateData.forma_pago = poliza.formaPago
       if (poliza.estatus !== undefined) updateData.estatus = poliza.estatus
+      if (poliza.renovacionEstado !== undefined) updateData.renovacion_estado = poliza.renovacionEstado
+      if (poliza.renovadaDesdeId !== undefined) updateData.renovada_desde_id = poliza.renovadaDesdeId || null
+      if (poliza.renovadaAId !== undefined) updateData.renovada_a_id = poliza.renovadaAId || null
+      if (poliza.vendedorId !== undefined) updateData.vendedor_id = poliza.vendedorId || null
       if (poliza.primaCobrada !== undefined) updateData.prima_cobrada = poliza.primaCobrada
       if (poliza.registroSistemaCobranza !== undefined) updateData.registro_sistema_cobranza = poliza.registroSistemaCobranza
       if (poliza.fechasRecordatorio !== undefined) updateData.fechas_recordatorio = poliza.fechasRecordatorio
@@ -559,6 +1150,9 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       if (poliza.marcaActualizacion !== undefined) updateData.marca_actualizacion = poliza.marcaActualizacion
       if (poliza.cancelacionMotivo !== undefined) updateData.cancelacion_motivo = poliza.cancelacionMotivo || null
       if (poliza.tipoPago !== undefined) updateData.tipo_pago = poliza.tipoPago || null
+      if (poliza.agente !== undefined) updateData.agente = poliza.agente || null
+      if (poliza.incisoEndoso !== undefined) updateData.inciso_endoso = poliza.incisoEndoso || null
+      if (poliza.nombreAsegurado !== undefined) updateData.nombre_asegurado = poliza.nombreAsegurado || null
       // Campos exclusivos de pólizas de vida: solo enviar si el ramo es vida.
       if (poliza.ramo === 'vida' || (poliza.ramo === undefined && poliza.vigenciaVidaPago !== undefined)) {
         if (poliza.vigenciaVidaPago !== undefined) updateData.vigencia_vida_pago = poliza.vigenciaVidaPago ?? null
@@ -590,10 +1184,58 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
       if (error) throw error
 
+      if (anterior) {
+        const camposRelevantes: Array<keyof Poliza> = [
+          'numeroPoliza', 'ramo', 'vigenciaInicio', 'vigenciaFin', 'prima', 'primaTotal',
+          'formaPago', 'estatus', 'renovacionEstado', 'vendedorId', 'nombreAsegurado',
+          'agente', 'incisoEndoso', 'tipoPago', 'comentarios', 'notas',
+        ]
+        const cambios = camposRelevantes.filter(campo =>
+          poliza[campo] !== undefined && JSON.stringify(anterior[campo]) !== JSON.stringify(poliza[campo]),
+        )
+        const requiereRegeneracion = ['prima', 'primaTotal', 'formaPago', 'vigenciaInicio', 'vigenciaFin', 'primerRecibo']
+          .some(campo => poliza[campo as keyof Poliza] !== undefined && poliza[campo as keyof Poliza] !== anterior[campo as keyof Poliza])
+        if (requiereRegeneracion) {
+          try {
+            await regenerarRecibosPoliza(id, {
+              prima: poliza.prima,
+              primaTotal: poliza.primaTotal,
+              formaPago: poliza.formaPago,
+              vigenciaInicio: poliza.vigenciaInicio,
+              vigenciaFin: poliza.vigenciaFin,
+              primerRecibo: poliza.primerRecibo,
+            })
+          } catch (error) {
+            const { error: rollbackError } = await supabase.from('polizas').update({
+              prima: anterior.prima,
+              prima_total: anterior.primaTotal ?? null,
+              prima_emitida: anterior.primaEmitida,
+              forma_pago: anterior.formaPago,
+              vigencia_inicio: anterior.vigenciaInicio,
+              vigencia_fin: anterior.vigenciaFin,
+              primer_recibo: anterior.primerRecibo ?? null,
+              numero_recibo: anterior.numeroRecibo || null,
+              prima_total_recibo: anterior.primaTotalRecibo ?? null,
+              ultimo_dia_pago: anterior.ultimoDiaPago || null,
+            }).eq('id', id)
+            if (rollbackError) throw rollbackError
+            throw error
+          }
+        }
+        await Promise.all(cambios.map(campo => registrarHistorial(
+          id,
+          campo === 'formaPago' ? 'periodicidad_cambiada' : `${String(campo)}_cambiado`,
+          String(campo),
+          anterior[campo],
+          poliza[campo],
+        )))
+      }
+
       toast.success('Póliza actualizada')
-      await fetchPolizas()
+      await Promise.all([fetchPolizas(), fetchHistorialPolizas()])
     } catch (err: any) {
       toast.error('Error al actualizar póliza: ' + err.message)
+      throw err
     }
   }
 
@@ -1169,6 +1811,11 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       fetchClientes(),
       fetchCompanias(),
       fetchPolizas(),
+      fetchUsuariosSistema(),
+      fetchPagos(),
+      fetchRenovaciones(),
+      fetchHistorialPolizas(),
+      fetchFlotillaUnidades(),
       fetchProspectos(),
       fetchEventos(),
       fetchFolios(),
@@ -1197,6 +1844,20 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       agregarPoliza,
       actualizarPoliza,
       eliminarPoliza,
+      usuariosSistema,
+      pagos,
+      loadingPagos,
+      registrarPago,
+      regenerarRecibosPoliza,
+      renovaciones,
+      iniciarRenovacion,
+      completarRenovacion,
+      cancelarRenovacion,
+      historialPolizas,
+      flotillaUnidades,
+      agregarUnidadFlotilla,
+      actualizarUnidadFlotilla,
+      desactivarUnidadFlotilla,
       buscarVehiculos,
       
       prospectos,

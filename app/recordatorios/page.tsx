@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { toast } from "sonner"
 import { ProtectedRoute } from "@/components/protected-route"
+import { differenceInCalendarDays, formatDateOnly, todayDateOnly } from "@/lib/date-only"
 
 interface RecordatorioAuto {
   id: string
@@ -35,38 +36,38 @@ interface RecordatorioAuto {
 }
 
 export default function RecordatoriosPage() {
-  const { polizas, clientes, companias } = useSupabase()
+  const { polizas, clientes, companias, pagos } = useSupabase()
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [filtro, setFiltro] = useState<"todos" | "alta" | "media" | "baja">("todos")
   const [expandido, setExpandido] = useState<string | null>(null)
 
   // Auto-generar recordatorios desde pólizas con fecha límite de pago o próximas a vencer
   const recordatoriosAuto = useMemo((): RecordatorioAuto[] => {
-    const hoy = new Date()
+    const hoy = todayDateOnly()
     const items: RecordatorioAuto[] = []
 
     polizas.forEach(poliza => {
       const cliente = clientes.find(c => c.id === poliza.clienteId)
       const compania = companias.find(c => c.id === poliza.companiaId)
+      const reciboPendiente = pagos.filter(pago => pago.polizaId === poliza.id && pago.estatus !== "pagado" && pago.estatus !== "cancelado").sort((left, right) => left.fechaLimite.localeCompare(right.fechaLimite))[0]
       if (!cliente) return
 
       // Recordatorio por fecha límite de pago
-      if (poliza.ultimoDiaPago) {
-        const fechaPago = new Date(poliza.ultimoDiaPago)
-        const dias = Math.ceil((fechaPago.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
+      if (reciboPendiente) {
+        const dias = differenceInCalendarDays(reciboPendiente.fechaLimite, hoy)
         if (dias >= -3 && dias <= 15) {
           const urgencia: "alta" | "media" | "baja" = dias <= 0 ? "alta" : dias <= 5 ? "media" : "baja"
           items.push({
             id: `pago-${poliza.id}`,
             titulo: `Pago pendiente: ${poliza.numeroPoliza}`,
-            descripcion: `${compania?.nombre || "—"} — $${poliza.prima.toLocaleString()} ${poliza.formaPago}`,
-            fechaRecordatorio: poliza.ultimoDiaPago,
+            descripcion: `${compania?.nombre || "—"} — Recibo ${reciboPendiente.numeroRecibo}/${reciboPendiente.totalRecibos} por $${reciboPendiente.monto.toLocaleString()}`,
+            fechaRecordatorio: reciboPendiente.fechaLimite,
             diasRestantes: dias,
             urgencia,
             clienteNombre: poliza.nombreAsegurado || cliente.nombre,
             clienteTelefono: cliente.telefono,
             numeroPoliza: poliza.numeroPoliza,
-            prima: poliza.prima,
+            prima: reciboPendiente.monto,
             polizaId: poliza.id,
             tipo: "pago",
           })
@@ -74,14 +75,13 @@ export default function RecordatoriosPage() {
       }
 
       // Recordatorio por renovación próxima (60 días)
-      const vigenciaFin = new Date(poliza.vigenciaFin)
-      const diasVig = Math.ceil((vigenciaFin.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
+      const diasVig = differenceInCalendarDays(poliza.vigenciaFin, hoy)
       if (diasVig >= 0 && diasVig <= 60 && (poliza.estatus === "activa" || poliza.estatus === "por-renovar")) {
         const urgencia: "alta" | "media" | "baja" = diasVig <= 7 ? "alta" : diasVig <= 30 ? "media" : "baja"
         items.push({
           id: `ren-${poliza.id}`,
           titulo: `Renovación próxima: ${poliza.numeroPoliza}`,
-          descripcion: `${compania?.nombre || "—"} — Vence ${new Date(poliza.vigenciaFin).toLocaleDateString("es-MX")}`,
+          descripcion: `${compania?.nombre || "—"} — Vence ${formatDateOnly(poliza.vigenciaFin)}`,
           fechaRecordatorio: poliza.vigenciaFin,
           diasRestantes: diasVig,
           urgencia,
@@ -118,7 +118,7 @@ export default function RecordatoriosPage() {
       if (orden[a.urgencia] !== orden[b.urgencia]) return orden[a.urgencia] - orden[b.urgencia]
       return a.diasRestantes - b.diasRestantes
     })
-  }, [polizas, clientes, companias])
+  }, [polizas, clientes, companias, pagos])
 
   const recordatoriosFiltrados = filtro === "todos"
     ? recordatoriosAuto
@@ -262,7 +262,7 @@ export default function RecordatoriosPage() {
                                 <p className="font-mono font-semibold">{rec.numeroPoliza}</p>
                               </div>
                               <div>
-                                <p className="text-muted-foreground">Prima</p>
+                                <p className="text-muted-foreground">Prima total</p>
                                 <p className="font-semibold">${rec.prima.toLocaleString()}</p>
                               </div>
                               <div>

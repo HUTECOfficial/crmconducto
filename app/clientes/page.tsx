@@ -19,6 +19,7 @@ import { EventoRapidoButton } from "@/components/evento-rapido-button"
 import { WhatsAppShareButton } from "@/components/whatsapp-share-button"
 import { motion } from "framer-motion"
 import { toast } from "sonner"
+import { todayDateOnly } from "@/lib/date-only"
 import {
   Plus, Search, X, User, Mail, Phone, Building2, FileText,
   Edit2, Trash2, Users, CheckCircle, XCircle, FolderOpen
@@ -83,7 +84,7 @@ export default function ClientesPage() {
         codigoPostal: form.codigoPostal || undefined,
         notas: form.notas || undefined,
         estatus: form.estatus,
-        fechaRegistro: new Date().toISOString().split("T")[0],
+        fechaRegistro: todayDateOnly(),
       })
       setModalNuevo(false)
       setForm({ ...emptyForm })
@@ -346,7 +347,6 @@ export default function ClientesPage() {
                             </div>
                           </td>
                           <td className="p-3 hidden md:table-cell">
-                            <p className="text-xs">{cliente.email}</p>
                             <p className="text-xs text-muted-foreground">{cliente.telefono}</p>
                           </td>
                           <td className="p-3 hidden lg:table-cell text-sm text-muted-foreground">
@@ -493,7 +493,6 @@ export default function ClientesPage() {
                 <div className="space-y-4 py-2">
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     {[
-                      ["Email", clienteSeleccionado.email, Mail],
                       ["Teléfono", clienteSeleccionado.telefono, Phone],
                       ["Empresa", clienteSeleccionado.empresa || "—", Building2],
                       ["RFC", clienteSeleccionado.rfc || "—", FileText],

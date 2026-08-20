@@ -23,20 +23,27 @@ import {
 import { ProtectedRoute } from "@/components/protected-route"
 import { useSupabase } from "@/contexts/supabase-context"
 import { calcularKPIsCobranza } from "@/lib/kpi-calculator"
+import { differenceInCalendarDays, todayDateOnly } from "@/lib/date-only"
+import { estadoCobranzaRecibo } from "@/lib/payment-schedule"
 
 export default function IndicadoresCobranzaPage() {
-  const { polizas } = useSupabase()
+  const { polizas, pagos } = useSupabase()
   // Generate basic payment data from polizas for KPI calculation
-  const pagosFromPolizas = polizas.map(p => ({
-    id: p.id,
-    polizaId: p.id,
-    monto: p.primaEmitida - p.primaCobrada,
-    fechaVencimiento: p.ultimoDiaPago || p.vigenciaFin,
-    estatus: p.primaCobrada >= p.primaEmitida ? 'pagado' as const : p.estatus === 'gracia' ? 'vencido' as const : 'pendiente' as const,
-    metodoPago: undefined,
-    diasMora: 0,
-    intentosCobranza: 0,
-  }))
+  const pagosFromPolizas = pagos.filter(pago => pago.estatus !== "cancelado").map(pago => {
+    const estado = estadoCobranzaRecibo(pago)
+    return {
+      id: pago.id,
+      polizaId: pago.polizaId,
+      monto: pago.monto,
+      fechaVencimiento: pago.fechaLimite,
+      fechaPago: pago.fechaPago,
+      estatus: estado === "pagado" ? "pagado" as const : estado === "vencido" ? "vencido" as const : "pendiente" as const,
+      metodoPago: pago.metodoPago,
+      referencia: pago.referencia,
+      diasMora: Math.max(0, differenceInCalendarDays(todayDateOnly(), pago.fechaLimite)),
+      intentosCobranza: 0,
+    }
+  })
   const kpis = calcularKPIsCobranza(polizas as any, pagosFromPolizas as any)
 
   const getColorTendencia = (valor: number, objetivo: number) => {

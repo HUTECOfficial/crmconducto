@@ -1,4 +1,5 @@
 import type { Poliza } from "@/contexts/supabase-context"
+import { differenceInCalendarDays, todayDateOnly } from "@/lib/date-only"
 
 type Pago = {
   id: string
@@ -69,7 +70,7 @@ export function calcularKPIsCobranza(polizas: Poliza[], pagos: Pago[]): KPICobra
   const efectividadCobranza = primaTotalEmitida > 0 ? (primaTotalCobrada / primaTotalEmitida) * 100 : 0
 
   // 2. Calcular Aging (Antigüedad de Saldos)
-  const hoy = new Date()
+  const hoy = todayDateOnly()
   const pagosVencidos = pagos.filter(p => p.estatus === "vencido" || p.estatus === "pendiente")
   
   let agingCorriente = 0
@@ -79,7 +80,7 @@ export function calcularKPIsCobranza(polizas: Poliza[], pagos: Pago[]): KPICobra
   let agingMas90 = 0
 
   pagosVencidos.forEach(pago => {
-    const diasMora = pago.diasMora || 0
+    const diasMora = pago.diasMora ?? Math.max(0, differenceInCalendarDays(hoy, pago.fechaVencimiento))
     if (diasMora === 0) agingCorriente += pago.monto
     else if (diasMora <= 30) aging1a30 += pago.monto
     else if (diasMora <= 60) aging31a60 += pago.monto

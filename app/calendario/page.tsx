@@ -18,6 +18,7 @@ import { ChevronLeft, ChevronRight, Plus, Calendar, Clock, CheckCircle2, AlertTr
 import { cn } from "@/lib/utils"
 import { ProtectedRoute } from "@/components/protected-route"
 import { toast } from "sonner"
+import { differenceInCalendarDays, toDateOnly, todayDateOnly } from "@/lib/date-only"
 
 // Colores de prioridad: Verde (baja), Amarillo (media), Rojo (alta)
 const PRIORIDAD_COLORS = {
@@ -81,7 +82,7 @@ export default function CalendarioPage() {
   const [nuevoEvento, setNuevoEvento] = useState({
     titulo: "",
     descripcion: "",
-    fecha: new Date().toISOString().split("T")[0],
+    fecha: todayDateOnly(),
     hora: "",
     tipo: "otro" as "renovacion" | "pago" | "cita" | "recordatorio" | "otro",
     prioridad: "media" as "alta" | "media" | "baja",
@@ -92,7 +93,7 @@ export default function CalendarioPage() {
   // Generar eventos del calendario combinando eventos de Supabase + pólizas por vencer
   const eventosCalendario = useMemo(() => {
     const todosEventos: EventoCalendario[] = []
-    const hoy = new Date()
+    const hoy = todayDateOnly()
 
     // 1. Eventos de Supabase
     eventos.forEach(evento => {
@@ -104,10 +105,9 @@ export default function CalendarioPage() {
 
     // 2. Renovaciones de pólizas (próximos 60 días)
     polizas.forEach(poliza => {
-      const vigenciaFin = new Date(poliza.vigenciaFin)
-      const diasParaVencer = Math.ceil((vigenciaFin.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
+      const diasParaVencer = differenceInCalendarDays(poliza.vigenciaFin, hoy)
       
-      if (diasParaVencer > 0 && diasParaVencer <= 60) {
+      if (diasParaVencer > 0 && diasParaVencer <= 60 && poliza.estatus !== "renovada" && poliza.renovacionEstado !== "renovada") {
         const cliente = clientes.find(c => c.id === poliza.clienteId)
         const compania = companias.find(c => c.id === poliza.companiaId)
         
@@ -247,7 +247,7 @@ export default function CalendarioPage() {
     setNuevoEvento({
       titulo: "",
       descripcion: "",
-      fecha: new Date().toISOString().split("T")[0],
+      fecha: todayDateOnly(),
       hora: "",
       tipo: "otro",
       prioridad: "media",
@@ -431,7 +431,7 @@ export default function CalendarioPage() {
               {/* Días del mes */}
               <div className="grid grid-cols-7 gap-2">
                 {getDiasDelMes().map((dia, index) => {
-                  const fechaStr = dia.fecha.toISOString().split("T")[0]
+                  const fechaStr = toDateOnly({ year: dia.fecha.getFullYear(), month: dia.fecha.getMonth() + 1, day: dia.fecha.getDate() })
                   const eventosDia = eventosPorFecha[fechaStr] || []
                   const esHoy = dia.fecha.toDateString() === new Date().toDateString()
                   const tieneAltaPrioridad = eventosDia.some(e => e.prioridad === 'alta' && !e.completado)

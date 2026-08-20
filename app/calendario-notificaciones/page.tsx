@@ -11,6 +11,7 @@ import { Calendar, Bell, AlertCircle, CheckCircle2, Clock } from "lucide-react"
 import { motion } from "framer-motion"
 import { useSupabase } from "@/contexts/supabase-context"
 import { toast } from "sonner"
+import { differenceInCalendarDays, todayDateOnly } from "@/lib/date-only"
 
 type TipoNotificacion = "verde" | "amarillo" | "magenta"
 
@@ -32,13 +33,13 @@ export default function CalendarioNotificacionesPage() {
   // Generar notificaciones basadas en pólizas
   const generarNotificaciones = (): Notificacion[] => {
     const notificaciones: Notificacion[] = []
-    const hoy = new Date()
+    const hoy = todayDateOnly()
 
     polizas.forEach(poliza => {
       const cliente = clientes.find(c => c.id === poliza.clienteId)
       const compania = companias.find(c => c.id === poliza.companiaId)
-      const vigenciaFin = new Date(poliza.vigenciaFin)
-      const diasParaVencer = Math.ceil((vigenciaFin.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
+      const diasParaVencer = differenceInCalendarDays(poliza.vigenciaFin, hoy)
+      if (poliza.estatus === "renovada" || poliza.renovacionEstado === "renovada") return
 
       // VERDE - Pólizas próximas a renovar (30-60 días)
       if (diasParaVencer > 30 && diasParaVencer <= 60) {
@@ -100,7 +101,7 @@ export default function CalendarioNotificacionesPage() {
           tipo: "magenta",
           titulo: `Actualización requerida: ${poliza.numeroPoliza}`,
           descripcion: `${cliente?.nombre} - ${compania?.nombre} - Requiere actualización`,
-          fecha: new Date().toISOString().split("T")[0],
+          fecha: todayDateOnly(),
           polizaId: poliza.id,
           prioridad: "alta"
         })
