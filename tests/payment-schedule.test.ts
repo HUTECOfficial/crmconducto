@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { estadoCobranzaRecibo, generarRecibos, type PeriodicidadPago, type ReciboExistente } from '../lib/payment-schedule'
+import { calcularMontoMxnUdis, calcularPrimaTotalPlazo, calcularVigenciasPoliza, estadoCobranzaRecibo, generarRecibos, resumirCobranza, type PeriodicidadPago, type ReciboExistente } from '../lib/payment-schedule'
 
 const expectedCounts: Record<PeriodicidadPago, number> = {
   anual: 1,
@@ -80,4 +80,51 @@ test('el plazo central de pago es de 30 días y determina el vencimiento', () =>
   assert.equal(recibo.fechaLimite, '2026-05-31')
   assert.equal(estadoCobranzaRecibo(recibo, '2026-05-24'), 'proximo_vencer')
   assert.equal(estadoCobranzaRecibo(recibo, '2026-06-01'), 'vencido')
+})
+
+test('calcula por separado las vigencias anual, de pago y del producto', () => {
+  assert.deepEqual(calcularVigenciasPoliza('2026-02-28', 10, 20), {
+    vigenciaAnualFin: '2027-02-28',
+    vigenciaPagoFin: '2036-02-28',
+    vigenciaProductoFin: '2046-02-28',
+  })
+  assert.throws(() => calcularVigenciasPoliza('2026-01-01', 20, 10))
+})
+
+test('una póliza de vida genera recibos durante todo el plazo de pago por anualidad', () => {
+  const primaTotal = calcularPrimaTotalPlazo(12_000, 3)
+  const recibos = generarRecibos({
+    primaTotal,
+    vigenciaInicio: '2026-01-15',
+    vigenciaFin: '2029-01-15',
+    periodicidad: 'semestral',
+  })
+  assert.equal(primaTotal, 36_000)
+  assert.equal(recibos.length, 6)
+  assert.deepEqual(recibos.map(recibo => recibo.anualidad), [1, 1, 2, 2, 3, 3])
+  assert.deepEqual(recibos.map(recibo => recibo.monto), [6_000, 6_000, 6_000, 6_000, 6_000, 6_000])
+})
+
+test('convierte manualmente un recibo UDIS a MXN con precisión monetaria', () => {
+  assert.equal(calcularMontoMxnUdis(1_250.5, 8.547321), 10_688.42)
+  assert.throws(() => calcularMontoMxnUdis(1_250.5, 0))
+})
+
+test('al anular un pago el recibo vuelve a formar parte del saldo pendiente', () => {
+  const pagado: ReciboExistente = {
+    id: 'pago-1',
+    monto: 12_000,
+    numeroRecibo: 1,
+    totalRecibos: 1,
+    fechaEmision: '2026-01-01',
+    fechaLimite: '2026-01-31',
+    fechaPago: '2026-01-15',
+    estatus: 'pagado',
+  }
+  assert.equal(resumirCobranza([pagado], 12_000).estatus, 'pagada')
+  const anulado = { ...pagado, estatus: 'pendiente' as const, fechaPago: undefined }
+  const resumen = resumirCobranza([anulado], 12_000, '2026-01-20')
+  assert.equal(resumen.estatus, 'pendiente')
+  assert.equal(resumen.cobrado, 0)
+  assert.equal(resumen.pendiente, 12_000)
 })

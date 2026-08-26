@@ -71,6 +71,8 @@ export interface Database {
           numero_poliza: string
           vigencia_inicio: string
           vigencia_fin: string
+          vigencia_pago_fin: string | null
+          vigencia_producto_fin: string | null
           prima: number
           forma_pago: string
           estatus: string
@@ -101,6 +103,7 @@ export interface Database {
           vigencia_vida_producto: number | null
           anos_vida_producto: number | null
           tipo_pago: string | null
+          valor_udi_inicial: number | null
           created_at: string
           updated_at: string
         }
@@ -112,6 +115,8 @@ export interface Database {
           numero_poliza: string
           vigencia_inicio: string
           vigencia_fin: string
+          vigencia_pago_fin?: string | null
+          vigencia_producto_fin?: string | null
           prima: number
           forma_pago: string
           estatus?: string
@@ -142,6 +147,7 @@ export interface Database {
           vigencia_vida_producto?: number | null
           anos_vida_producto?: number | null
           tipo_pago?: string | null
+          valor_udi_inicial?: number | null
           created_at?: string
           updated_at?: string
         }
@@ -153,6 +159,8 @@ export interface Database {
           numero_poliza?: string
           vigencia_inicio?: string
           vigencia_fin?: string
+          vigencia_pago_fin?: string | null
+          vigencia_producto_fin?: string | null
           prima?: number
           forma_pago?: string
           estatus?: string
@@ -183,6 +191,7 @@ export interface Database {
           vigencia_vida_producto?: number | null
           anos_vida_producto?: number | null
           tipo_pago?: string | null
+          valor_udi_inicial?: number | null
           created_at?: string
           updated_at?: string
         }
@@ -285,11 +294,19 @@ export interface Database {
           notas: string | null
           numero_recibo: number | null
           total_recibos: number | null
+          anualidad: number
+          moneda: string
+          monto_udis: number | null
+          valor_udi: number | null
+          monto_mxn: number | null
           fecha_emision: string | null
           fecha_limite: string | null
           cancelado_en: string | null
           cancelado_por: string | null
           motivo_cancelacion: string | null
+          anulado_en: string | null
+          anulado_por: string | null
+          motivo_anulacion: string | null
           created_at: string
           updated_at: string
         }
@@ -305,11 +322,19 @@ export interface Database {
           notas?: string | null
           numero_recibo?: number | null
           total_recibos?: number | null
+          anualidad?: number
+          moneda?: string
+          monto_udis?: number | null
+          valor_udi?: number | null
+          monto_mxn?: number | null
           fecha_emision?: string | null
           fecha_limite?: string | null
           cancelado_en?: string | null
           cancelado_por?: string | null
           motivo_cancelacion?: string | null
+          anulado_en?: string | null
+          anulado_por?: string | null
+          motivo_anulacion?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -325,11 +350,19 @@ export interface Database {
           notas?: string | null
           numero_recibo?: number | null
           total_recibos?: number | null
+          anualidad?: number
+          moneda?: string
+          monto_udis?: number | null
+          valor_udi?: number | null
+          monto_mxn?: number | null
           fecha_emision?: string | null
           fecha_limite?: string | null
           cancelado_en?: string | null
           cancelado_por?: string | null
           motivo_cancelacion?: string | null
+          anulado_en?: string | null
+          anulado_por?: string | null
+          motivo_anulacion?: string | null
           created_at?: string
           updated_at?: string
         }

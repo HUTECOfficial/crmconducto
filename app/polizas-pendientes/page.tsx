@@ -42,7 +42,7 @@ function obtenerPrimaRecibo(poliza: Poliza) {
 
 function PolizasPendientesContent() {
   const searchParams = useSearchParams()
-  const { polizas, clientes, companias, pagos, registrarPago, actualizarPoliza, loadingPolizas, marcarComoVencido } = useSupabase()
+  const { polizas, clientes, companias, pagos, registrarPago, anularPago, actualizarPoliza, loadingPolizas, marcarComoVencido } = useSupabase()
 
   const [filtroEstatus, setFiltroEstatus] = useState<"todas" | "activa" | "gracia" | "vencida" | "por-renovar" | "pagadas">("todas")
   const [filtroMovimiento, setFiltroMovimiento] = useState<"todas" | "con-movimiento" | "sin-movimiento">("todas")
@@ -53,9 +53,10 @@ function PolizasPendientesContent() {
   // Estados para modales de acción
   const [modalAccion, setModalAccion] = useState(false)
   const [polizaAccion, setPolizaAccion] = useState<Poliza | null>(null)
-  const [tipoAccion, setTipoAccion] = useState<"pagada" | "cancelar" | "editar-estado" | null>(null)
+  const [tipoAccion, setTipoAccion] = useState<"pagada" | "cancelar" | "anular-pago" | null>(null)
   const [motivoAccion, setMotivoAccion] = useState("")
   const [tipoPagoAccion, setTipoPagoAccion] = useState<"efectivo" | "transferencia" | "tarjeta" | "domiciliacion" | "cheque" | "">("")
+  const [valorUdiAccion, setValorUdiAccion] = useState("")
   const [comprobante, setComprobante] = useState<File | null>(null)
 
   // Aplicar filtro desde URL si viene de dashboard
@@ -103,11 +104,12 @@ function PolizasPendientesContent() {
     setComentarioTemp("")
   }
 
-  const abrirModalAccion = (poliza: Poliza, tipo: "pagada" | "cancelar" | "editar-estado") => {
+  const abrirModalAccion = (poliza: Poliza, tipo: "pagada" | "cancelar" | "anular-pago") => {
     setPolizaAccion(poliza)
     setTipoAccion(tipo)
     setMotivoAccion("")
     setTipoPagoAccion("")
+    setValorUdiAccion(poliza.divisas === "UDIS" ? poliza.valorUdiInicial?.toString() || "" : "")
     setComprobante(null)
     setModalAccion(true)
   }
@@ -117,8 +119,8 @@ function PolizasPendientesContent() {
       toast.error("Seleccione el tipo de pago")
       return
     }
-    if (tipoAccion === "cancelar" && !motivoAccion.trim()) {
-      toast.error("El motivo de cancelación es obligatorio")
+    if ((tipoAccion === "cancelar" || tipoAccion === "anular-pago") && !motivoAccion.trim()) {
+      toast.error(tipoAccion === "anular-pago" ? "El motivo de anulación es obligatorio" : "El motivo de cancelación es obligatorio")
       return
     }
     if (!polizaAccion) return
@@ -133,6 +135,10 @@ function PolizasPendientesContent() {
         toast.error("Esta póliza no tiene recibos pendientes generados.")
         return
       }
+      if (reciboPendiente.moneda === "UDIS" && (!valorUdiAccion || Number(valorUdiAccion) <= 0)) {
+        toast.error("Capture el valor UDI aplicado al recibo")
+        return
+      }
 
       // Calcular el siguiente número de recibo
       const nuevoNumeroRecibo = `${reciboPendiente.numeroRecibo}/${reciboPendiente.totalRecibos}`
@@ -144,13 +150,20 @@ function PolizasPendientesContent() {
       await registrarPago(reciboPendiente.id, {
         metodoPago: tipoPagoAccion,
         notas: comentarioPago,
+        valorUdi: reciboPendiente.moneda === "UDIS" ? Number(valorUdiAccion) : undefined,
       })
 
       // Si es el último recibo, marcar como completamente pagado
       toast.success(`Recibo ${nuevoNumeroRecibo} marcado como pagado`)
-    } else if (tipoAccion === "editar-estado") {
-      toast.error("Los recibos cobrados forman parte del historial y no pueden revertirse desde esta acción.")
-      return
+    } else if (tipoAccion === "anular-pago") {
+      const ultimoPago = pagos
+        .filter(pago => pago.polizaId === polizaAccion.id && pago.estatus === "pagado")
+        .sort((left, right) => right.numeroRecibo - left.numeroRecibo)[0]
+      if (!ultimoPago) {
+        toast.error("La póliza no tiene recibos pagados para anular")
+        return
+      }
+      await anularPago(ultimoPago.id, motivoAccion.trim())
     } else if (tipoAccion === "cancelar") {
       const comentarioNuevo = polizaAccion.comentarios
         ? `${polizaAccion.comentarios}\n[${fecha}] CANCELADA: ${motivoAccion}`
@@ -168,6 +181,7 @@ function PolizasPendientesContent() {
     setTipoAccion(null)
     setMotivoAccion("")
     setTipoPagoAccion("")
+    setValorUdiAccion("")
     setComprobante(null)
   }
 
@@ -502,9 +516,9 @@ function PolizasPendientesContent() {
                                   size="sm" 
                                   variant="outline"
                                   className="h-8 text-xs border-green-600 text-green-600 whitespace-nowrap"
-                                  onClick={() => abrirModalAccion(poliza, "editar-estado")}
+                                  onClick={() => abrirModalAccion(poliza, "anular-pago")}
                                 >
-                                  ✓ Editar Estado
+                                  Anular último pago
                                 </Button>
                               </>
                             ) : primaRecibo > 0 ? (
@@ -682,14 +696,23 @@ function PolizasPendientesContent() {
                       
                       {/* Botones de acción */}
                       <div className="flex items-center gap-2">
-                        {primaRecibo > 0 ? (
+                        {poliza.primaCobrada >= poliza.primaEmitida ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="flex-1 h-8 text-xs text-red-600 border-red-400"
+                            onClick={() => abrirModalAccion(poliza, "anular-pago")}
+                          >
+                            Anular pago
+                          </Button>
+                        ) : primaRecibo > 0 ? (
                           <Button
                             size="sm"
                             variant="default"
                             className="flex-1 h-8 text-xs bg-green-600 hover:bg-green-700"
                             onClick={() => abrirModalAccion(poliza, "pagada")}
                           >
-                            ✓ Pagar ${primaRecibo.toLocaleString()}
+                            Pagar {primaRecibo.toLocaleString()} {poliza.divisas || "MXN"}
                           </Button>
                         ) : (
                           <span className="flex-1 text-center text-xs font-medium text-red-600">Falta prima</span>
@@ -763,12 +786,14 @@ function PolizasPendientesContent() {
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>
-              {tipoAccion === "pagada" ? "✓ Registrar Pago" : "Cancelar Póliza"}
+              {tipoAccion === "pagada" ? "Registrar pago" : tipoAccion === "anular-pago" ? "Anular último pago" : "Cancelar póliza"}
             </DialogTitle>
             <DialogDescription>
               {tipoAccion === "pagada" 
                 ? "Seleccione el tipo de pago y opcionalmente suba el comprobante"
-                : "Ingrese el motivo de cancelación proporcionado por el cliente"}
+                : tipoAccion === "anular-pago"
+                  ? "El último recibo pagado volverá a pendiente y la acción quedará en el historial"
+                  : "Ingrese el motivo de cancelación proporcionado por el cliente"}
             </DialogDescription>
           </DialogHeader>
 
@@ -777,7 +802,7 @@ function PolizasPendientesContent() {
               <div className="p-3 rounded-lg bg-muted">
                 <p className="text-sm font-semibold">{polizaAccion.numeroPoliza}</p>
                 <p className="text-xs text-muted-foreground">
-                  {clientes.find(c => c.id === polizaAccion.clienteId)?.nombre} • Recibo actual: ${obtenerPrimaRecibo(polizaAccion).toLocaleString()}
+                  {clientes.find(c => c.id === polizaAccion.clienteId)?.nombre} • Recibo actual: {obtenerPrimaRecibo(polizaAccion).toLocaleString()} {polizaAccion.divisas || "MXN"}
                 </p>
               </div>
             )}
@@ -800,12 +825,20 @@ function PolizasPendientesContent() {
               </div>
             )}
 
+            {tipoAccion === "pagada" && polizaAccion?.divisas === "UDIS" && (
+              <div className="space-y-2">
+                <Label>Valor UDI aplicado (MXN) *</Label>
+                <Input type="number" min="0" step="0.000001" value={valorUdiAccion} onChange={event => setValorUdiAccion(event.target.value)} />
+                {valorUdiAccion && Number(valorUdiAccion) > 0 && <p className="text-xs text-muted-foreground">Equivalente: ${(obtenerPrimaRecibo(polizaAccion) * Number(valorUdiAccion)).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN</p>}
+              </div>
+            )}
+
             <div className="space-y-2">
-              <Label>{tipoAccion === "cancelar" ? "Motivo de Cancelación *" : "Notas adicionales"}</Label>
+              <Label>{tipoAccion === "cancelar" ? "Motivo de cancelación *" : tipoAccion === "anular-pago" ? "Motivo de anulación *" : "Notas adicionales"}</Label>
               <Textarea
                 placeholder={tipoAccion === "pagada" 
                   ? "Ej: Referencia de transferencia, número de cheque..."
-                  : "Ej: Cliente ya no requiere el servicio..."}
+                  : tipoAccion === "anular-pago" ? "Ej: Pago marcado por error..." : "Ej: Cliente ya no requiere el servicio..."}
                 value={motivoAccion}
                 onChange={(e) => setMotivoAccion(e.target.value)}
                 className="min-h-[80px]"
@@ -836,9 +869,9 @@ function PolizasPendientesContent() {
             <Button 
               onClick={ejecutarAccion}
               className={tipoAccion === "pagada" ? "bg-green-600 hover:bg-green-700" : ""}
-              variant={tipoAccion === "cancelar" ? "destructive" : "default"}
+              variant={tipoAccion === "cancelar" || tipoAccion === "anular-pago" ? "destructive" : "default"}
             >
-              {tipoAccion === "pagada" ? "✓ Confirmar Pago" : "Cancelar Póliza"}
+              {tipoAccion === "pagada" ? "Confirmar pago" : tipoAccion === "anular-pago" ? "Anular pago" : "Cancelar póliza"}
             </Button>
           </div>
         </DialogContent>

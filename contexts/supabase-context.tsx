@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/auth-context'
 import { auditLogger, AuditEventType } from '@/lib/security/audit-logger'
-import { generarRecibos, type EstadoRecibo } from '@/lib/payment-schedule'
+import { calcularMontoMxnUdis, calcularPrimaTotalPlazo, calcularVigenciasPoliza, generarRecibos, type EstadoRecibo } from '@/lib/payment-schedule'
 import { todayDateOnly } from '@/lib/date-only'
 import { cancelarEstadoRenovacion, completarEstadoRenovacion, iniciarEstadoRenovacion } from '@/lib/renewal-state'
 import { normalizarNumeroInciso, numeroIncisoDisponible, validarNumeroInciso } from '@/lib/fleet'
@@ -52,6 +52,8 @@ export interface Poliza {
   numeroPoliza: string
   vigenciaInicio: string
   vigenciaFin: string
+  vigenciaPagoFin?: string
+  vigenciaProductoFin?: string
   prima: number
   formaPago: 'mensual' | 'trimestral' | 'semestral' | 'anual'
   estatus: 'activa' | 'por-renovar' | 'renovada' | 'vencida' | 'cancelada' | 'gracia' | 'rehabilitada' | 'vigente' | 'en-movimientos' | 'cancelada-cliente' | 'cancelada-falta-pago' | 'desvinculada-cobranza' | 'espera-formato'
@@ -94,6 +96,7 @@ export interface Poliza {
   diasGraciaPrimerRecibo?: number
   diasGraciaSubsecuentes?: number
   divisas?: string
+  valorUdiInicial?: number
   vehiculoAmis?: string
   vehiculoClave?: string
   vehiculoDescripcion?: string
@@ -127,6 +130,11 @@ export interface PagoPoliza {
   monto: number
   numeroRecibo: number
   totalRecibos: number
+  anualidad: number
+  moneda: string
+  montoUdis?: number
+  valorUdi?: number
+  montoMxn?: number
   fechaEmision: string
   fechaLimite: string
   fechaPago?: string
@@ -134,6 +142,9 @@ export interface PagoPoliza {
   referencia?: string
   estatus: EstadoRecibo
   notas?: string
+  anuladoEn?: string
+  anuladoPor?: string
+  motivoAnulacion?: string
 }
 
 export interface Renovacion {
@@ -265,8 +276,9 @@ interface SupabaseContextType {
   usuariosSistema: UsuarioSistema[]
   pagos: PagoPoliza[]
   loadingPagos: boolean
-  registrarPago: (pagoId: string, datos: { metodoPago: string; referencia?: string; notas?: string }) => Promise<void>
-  regenerarRecibosPoliza: (polizaId: string, cambios?: Partial<Pick<Poliza, 'prima' | 'primaTotal' | 'formaPago' | 'vigenciaInicio' | 'vigenciaFin' | 'primerRecibo'>>) => Promise<void>
+  registrarPago: (pagoId: string, datos: { metodoPago: string; referencia?: string; notas?: string; valorUdi?: number }) => Promise<void>
+  anularPago: (pagoId: string, motivo: string) => Promise<void>
+  regenerarRecibosPoliza: (polizaId: string, cambios?: Partial<Pick<Poliza, 'prima' | 'primaTotal' | 'formaPago' | 'vigenciaInicio' | 'vigenciaFin' | 'vigenciaPagoFin' | 'primerRecibo' | 'divisas'>>) => Promise<void>
 
   renovaciones: Renovacion[]
   iniciarRenovacion: (polizaId: string) => Promise<string | null>
@@ -522,6 +534,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         numeroPoliza: p.numero_poliza,
         vigenciaInicio: p.vigencia_inicio,
         vigenciaFin: p.vigencia_fin,
+        vigenciaPagoFin: p.vigencia_pago_fin || undefined,
+        vigenciaProductoFin: p.vigencia_producto_fin || undefined,
         prima,
         formaPago: p.forma_pago as Poliza['formaPago'],
         estatus: p.estatus as Poliza['estatus'],
@@ -558,6 +572,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         tipoPago: p.tipo_pago || undefined,
         primaTotal: p.prima_total ?? undefined,
         divisas: p.divisas || undefined,
+        valorUdiInicial: p.valor_udi_inicial ?? undefined,
         vehiculoAmis: p.vehiculo_amis || undefined,
         vehiculoClave: p.vehiculo_clave || undefined,
         vehiculoDescripcion: p.vehiculo_descripcion || undefined,
@@ -599,6 +614,11 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         monto: Number(item.monto || 0),
         numeroRecibo: Number(item.numero_recibo || 1),
         totalRecibos: Number(item.total_recibos || 1),
+        anualidad: Number(item.anualidad || 1),
+        moneda: item.moneda || 'MXN',
+        montoUdis: item.monto_udis == null ? undefined : Number(item.monto_udis),
+        valorUdi: item.valor_udi == null ? undefined : Number(item.valor_udi),
+        montoMxn: item.monto_mxn == null ? undefined : Number(item.monto_mxn),
         fechaEmision: item.fecha_emision || item.created_at?.slice(0, 10),
         fechaLimite: item.fecha_limite || item.created_at?.slice(0, 10),
         fechaPago: item.fecha_pago || undefined,
@@ -606,6 +626,9 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         referencia: item.referencia || undefined,
         estatus: item.estatus as EstadoRecibo,
         notas: item.notas || undefined,
+        anuladoEn: item.anulado_en || undefined,
+        anuladoPor: item.anulado_por || undefined,
+        motivoAnulacion: item.motivo_anulacion || undefined,
       })))
     } catch (err: any) {
       console.error('Error fetching pagos:', err.message)
@@ -718,7 +741,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
   const regenerarRecibosPoliza = async (
     polizaId: string,
-    cambios: Partial<Pick<Poliza, 'prima' | 'primaTotal' | 'formaPago' | 'vigenciaInicio' | 'vigenciaFin' | 'primerRecibo'>> = {},
+    cambios: Partial<Pick<Poliza, 'prima' | 'primaTotal' | 'formaPago' | 'vigenciaInicio' | 'vigenciaFin' | 'vigenciaPagoFin' | 'primerRecibo' | 'divisas'>> = {},
   ) => {
     const actual = polizas.find(item => item.id === polizaId)
     if (!actual) throw new Error('No se encontró la póliza para regenerar sus recibos')
@@ -726,6 +749,9 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     const configuracion = { ...actual, ...cambiosDefinidos } as Poliza
     const pagados = pagos.filter(item => item.polizaId === polizaId && item.estatus === 'pagado')
     const pendientes = pagos.filter(item => item.polizaId === polizaId && item.estatus !== 'pagado' && item.estatus !== 'cancelado')
+    const totalConfigurado = Number(configuracion.primaTotal || configuracion.prima || 0)
+    const totalPagado = pagados.reduce((sum, item) => sum + item.monto, 0)
+    if (totalConfigurado < totalPagado) throw new Error('La prima total del plazo no puede ser menor que el importe ya cobrado')
     const actor = getActor()
     const restaurarPendientes = async () => {
       const resultados = await Promise.all(pendientes.map(item => supabase.from('pagos').update({
@@ -752,9 +778,9 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     }
 
     const recibos = generarRecibos({
-      primaTotal: Number(configuracion.primaTotal || configuracion.prima || 0),
+      primaTotal: totalConfigurado,
       vigenciaInicio: configuracion.vigenciaInicio,
-      vigenciaFin: configuracion.vigenciaFin,
+      vigenciaFin: configuracion.ramo === 'vida' ? configuracion.vigenciaPagoFin || configuracion.vigenciaFin : configuracion.vigenciaFin,
       periodicidad: configuracion.formaPago,
       primerRecibo: configuracion.primerRecibo,
       recibosPagados: pagados,
@@ -767,6 +793,9 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         monto: recibo.monto,
         numero_recibo: recibo.numeroRecibo,
         total_recibos: recibo.totalRecibos,
+        anualidad: recibo.anualidad,
+        moneda: configuracion.divisas || 'MXN',
+        monto_udis: configuracion.divisas === 'UDIS' ? recibo.monto : null,
         fecha_emision: recibo.fechaEmision,
         fecha_limite: recibo.fechaLimite,
         estatus: recibo.estatus,
@@ -778,6 +807,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       }
 
       const { error: polizaError } = await supabase.from('polizas').update({
+        prima_cobrada: totalPagado,
         numero_recibo: `${recibos[0].numeroRecibo}/${recibos[0].totalRecibos}`,
         prima_total_recibo: recibos[0].monto,
         ultimo_dia_pago: recibos[0].fechaLimite,
@@ -794,60 +824,152 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         await restaurarPendientes()
         throw polizaError
       }
+    } else {
+      const ultimoPagado = [...pagados].sort((left, right) => right.numeroRecibo - left.numeroRecibo)[0]
+      const { error } = await supabase.from('polizas').update({
+        prima_cobrada: totalPagado,
+        numero_recibo: ultimoPagado ? `${ultimoPagado.numeroRecibo}/${ultimoPagado.totalRecibos}` : null,
+        prima_total_recibo: 0,
+        ultimo_dia_pago: null,
+      }).eq('id', polizaId)
+      if (error) {
+        await restaurarPendientes()
+        throw error
+      }
     }
 
     await fetchPagos()
   }
 
-  const registrarPago = async (pagoId: string, datos: { metodoPago: string; referencia?: string; notas?: string }) => {
+  const sincronizarResumenCobranza = async (polizaId: string, metodoPago?: string) => {
+    const { data: pagosActuales, error: pagosError } = await supabase
+      .from('pagos')
+      .select('monto, estatus, numero_recibo, total_recibos, fecha_limite')
+      .eq('poliza_id', polizaId)
+      .neq('estatus', 'cancelado')
+    if (pagosError) throw pagosError
+
+    const activos = pagosActuales || []
+    const pagadosActuales = activos.filter((item: any) => item.estatus === 'pagado')
+    const cobrado = pagadosActuales.reduce((sum: number, item: any) => sum + Number(item.monto), 0)
+    const siguiente = activos.filter((item: any) => item.estatus !== 'pagado').sort((left: any, right: any) => left.numero_recibo - right.numero_recibo)[0]
+    const ultimoPagado = [...pagadosActuales].sort((left: any, right: any) => right.numero_recibo - left.numero_recibo)[0]
+    const updateData: Record<string, unknown> = {
+      prima_cobrada: cobrado,
+      registro_sistema_cobranza: pagadosActuales.length > 0,
+      numero_recibo: siguiente
+        ? `${siguiente.numero_recibo}/${siguiente.total_recibos}`
+        : ultimoPagado ? `${ultimoPagado.numero_recibo}/${ultimoPagado.total_recibos}` : null,
+      prima_total_recibo: siguiente ? Number(siguiente.monto) : 0,
+      ultimo_dia_pago: siguiente?.fecha_limite || null,
+    }
+    if (metodoPago !== undefined) updateData.tipo_pago = metodoPago || null
+    const { error } = await supabase.from('polizas').update(updateData).eq('id', polizaId)
+    if (error) throw error
+  }
+
+  const registrarPago = async (pagoId: string, datos: { metodoPago: string; referencia?: string; notas?: string; valorUdi?: number }) => {
     const pago = pagos.find(item => item.id === pagoId)
     if (!pago || pago.estatus === 'pagado' || pago.estatus === 'cancelado') return
+    const esUdis = pago.moneda === 'UDIS'
+    const valorUdi = datos.valorUdi === undefined ? undefined : Number(datos.valorUdi)
+    if (esUdis && (!valorUdi || valorUdi <= 0)) throw new Error('Captura el valor UDI aplicado a este recibo')
+    const montoMxn = esUdis ? calcularMontoMxnUdis(pago.montoUdis || pago.monto, Number(valorUdi)) : pago.monto
     const fechaPago = todayDateOnly()
-    const { error } = await supabase.from('pagos').update({
+    const { data: pagoActualizado, error } = await supabase.from('pagos').update({
       estatus: 'pagado',
       fecha_pago: fechaPago,
       metodo_pago: datos.metodoPago,
       referencia: datos.referencia || null,
       notas: datos.notas || null,
-    }).eq('id', pagoId)
+      valor_udi: esUdis ? valorUdi : null,
+      monto_mxn: montoMxn,
+    }).eq('id', pagoId).neq('estatus', 'pagado').neq('estatus', 'cancelado').select('id').maybeSingle()
     if (error) throw error
+    if (!pagoActualizado) throw new Error('El recibo ya fue cobrado o cancelado por otro usuario')
 
-    const { data: pagosActuales, error: pagosError } = await supabase
-      .from('pagos')
-      .select('monto, estatus, numero_recibo, total_recibos, fecha_limite')
-      .eq('poliza_id', pago.polizaId)
-      .neq('estatus', 'cancelado')
-    if (pagosError) throw pagosError
-
-    const cobrado = (pagosActuales || []).filter((item: any) => item.estatus === 'pagado').reduce((sum: number, item: any) => sum + Number(item.monto), 0)
-    const siguiente = (pagosActuales || []).filter((item: any) => item.estatus !== 'pagado').sort((left: any, right: any) => left.numero_recibo - right.numero_recibo)[0]
-    const { error: polizaError } = await supabase.from('polizas').update({
-      prima_cobrada: cobrado,
-      registro_sistema_cobranza: true,
-      tipo_pago: datos.metodoPago,
-      numero_recibo: siguiente ? `${siguiente.numero_recibo}/${siguiente.total_recibos}` : `${pago.totalRecibos}/${pago.totalRecibos}`,
-      prima_total_recibo: siguiente ? Number(siguiente.monto) : 0,
-      ultimo_dia_pago: siguiente?.fecha_limite || null,
-    }).eq('id', pago.polizaId)
-    if (polizaError) {
+    try {
+      await sincronizarResumenCobranza(pago.polizaId, datos.metodoPago)
+    } catch (error) {
       await supabase.from('pagos').update({
         estatus: pago.estatus,
         fecha_pago: pago.fechaPago || null,
         metodo_pago: pago.metodoPago || null,
         referencia: pago.referencia || null,
         notas: pago.notas || null,
+        valor_udi: pago.valorUdi ?? null,
+        monto_mxn: pago.montoMxn ?? null,
       }).eq('id', pagoId)
-      throw polizaError
+      throw error
     }
 
     await registrarHistorial(pago.polizaId, 'pago_registrado', 'recibo', pago.estatus, 'pagado', {
       pagoId,
       numeroRecibo: pago.numeroRecibo,
+      anualidad: pago.anualidad,
       monto: pago.monto,
+      moneda: pago.moneda,
+      valorUdi: esUdis ? valorUdi : undefined,
+      montoMxn,
       metodoPago: datos.metodoPago,
     })
     await Promise.all([fetchPagos(), fetchPolizas(), fetchHistorialPolizas()])
     toast.success(`Recibo ${pago.numeroRecibo}/${pago.totalRecibos} cobrado`)
+  }
+
+  const anularPago = async (pagoId: string, motivo: string) => {
+    const pago = pagos.find(item => item.id === pagoId)
+    if (!pago || pago.estatus !== 'pagado') throw new Error('Solo se puede anular un recibo pagado')
+    if (!motivo.trim()) throw new Error('El motivo de anulación es obligatorio')
+    const actor = getActor()
+    const { data: pagoAnulado, error } = await supabase.from('pagos').update({
+      estatus: 'pendiente',
+      fecha_pago: null,
+      metodo_pago: null,
+      referencia: null,
+      notas: null,
+      valor_udi: null,
+      monto_mxn: null,
+      anulado_en: new Date().toISOString(),
+      anulado_por: actor?.id || null,
+      motivo_anulacion: motivo.trim(),
+    }).eq('id', pagoId).eq('estatus', 'pagado').select('id').maybeSingle()
+    if (error) throw error
+    if (!pagoAnulado) throw new Error('El pago ya fue modificado por otro usuario')
+
+    try {
+      await sincronizarResumenCobranza(pago.polizaId)
+    } catch (error) {
+      await supabase.from('pagos').update({
+        estatus: 'pagado',
+        fecha_pago: pago.fechaPago || null,
+        metodo_pago: pago.metodoPago || null,
+        referencia: pago.referencia || null,
+        notas: pago.notas || null,
+        valor_udi: pago.valorUdi ?? null,
+        monto_mxn: pago.montoMxn ?? null,
+        anulado_en: null,
+        anulado_por: null,
+        motivo_anulacion: null,
+      }).eq('id', pagoId)
+      throw error
+    }
+
+    await registrarHistorial(pago.polizaId, 'pago_anulado', 'recibo', 'pagado', 'pendiente', {
+      pagoId,
+      numeroRecibo: pago.numeroRecibo,
+      anualidad: pago.anualidad,
+      monto: pago.monto,
+      moneda: pago.moneda,
+      fechaPago: pago.fechaPago,
+      metodoPago: pago.metodoPago,
+      referencia: pago.referencia,
+      valorUdi: pago.valorUdi,
+      montoMxn: pago.montoMxn,
+      motivo: motivo.trim(),
+    })
+    await Promise.all([fetchPagos(), fetchPolizas(), fetchHistorialPolizas()])
+    toast.success(`Pago del recibo ${pago.numeroRecibo}/${pago.totalRecibos} anulado`)
   }
 
   const iniciarRenovacion = async (polizaId: string): Promise<string | null> => {
@@ -1015,10 +1137,21 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   const agregarPoliza = async (poliza: Omit<Poliza, 'id'>): Promise<string | null> => {
     let polizaCreadaId: string | null = null
     try {
+      const vigencias = calcularVigenciasPoliza(
+        poliza.vigenciaInicio,
+        poliza.ramo === 'vida' ? poliza.vigenciaVidaPago : undefined,
+        poliza.ramo === 'vida' ? poliza.vigenciaVidaProducto ?? poliza.anosVidaProducto : undefined,
+      )
+      const primaTotalPlazo = poliza.ramo === 'vida'
+        ? calcularPrimaTotalPlazo(poliza.prima, poliza.vigenciaVidaPago)
+        : Number(poliza.primaTotal || poliza.prima)
+      if (poliza.divisas === 'UDIS' && (!poliza.valorUdiInicial || poliza.valorUdiInicial <= 0)) {
+        throw new Error('El valor UDI inicial debe ser mayor a 0')
+      }
       const recibos = generarRecibos({
-        primaTotal: Number(poliza.primaTotal || poliza.prima),
+        primaTotal: primaTotalPlazo,
         vigenciaInicio: poliza.vigenciaInicio,
-        vigenciaFin: poliza.vigenciaFin,
+        vigenciaFin: poliza.ramo === 'vida' ? vigencias.vigenciaPagoFin! : vigencias.vigenciaAnualFin,
         periodicidad: poliza.formaPago,
         primerRecibo: poliza.primerRecibo,
       })
@@ -1030,7 +1163,9 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
           ramo: poliza.ramo,
           numero_poliza: poliza.numeroPoliza,
           vigencia_inicio: poliza.vigenciaInicio,
-          vigencia_fin: poliza.vigenciaFin,
+          vigencia_fin: vigencias.vigenciaAnualFin,
+          vigencia_pago_fin: vigencias.vigenciaPagoFin || null,
+          vigencia_producto_fin: vigencias.vigenciaProductoFin || null,
           prima: poliza.prima,
           forma_pago: poliza.formaPago,
           estatus: poliza.estatus,
@@ -1039,7 +1174,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
           vendedor_id: poliza.vendedorId || null,
           folios: poliza.folios || null,
           tramites: poliza.tramites || 0,
-          prima_emitida: poliza.primaEmitida,
+          prima_emitida: primaTotalPlazo,
           prima_cobrada: poliza.primaCobrada || 0,
           fecha_emision: poliza.fechaEmision,
           periodo_gracia: poliza.periodoGracia || null,
@@ -1067,8 +1202,9 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
           recibos_subsecuentes: poliza.recibosSubsecuentes ?? null,
           dias_gracia_primer_recibo: poliza.diasGraciaPrimerRecibo ?? null,
           dias_gracia_subsecuentes: poliza.diasGraciaSubsecuentes ?? null,
-          prima_total: poliza.primaTotal ?? null,
+          prima_total: primaTotalPlazo,
           divisas: poliza.divisas || null,
+          valor_udi_inicial: poliza.divisas === 'UDIS' ? poliza.valorUdiInicial : null,
           vehiculo_amis: poliza.vehiculoAmis || null,
           vehiculo_clave: poliza.vehiculoClave || null,
           vehiculo_descripcion: poliza.vehiculoDescripcion || null,
@@ -1087,6 +1223,9 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
           monto: recibo.monto,
           numero_recibo: recibo.numeroRecibo,
           total_recibos: recibo.totalRecibos,
+          anualidad: recibo.anualidad,
+          moneda: poliza.divisas || 'MXN',
+          monto_udis: poliza.divisas === 'UDIS' ? recibo.monto : null,
           fecha_emision: recibo.fechaEmision,
           fecha_limite: recibo.fechaLimite,
           estatus: recibo.estatus,
@@ -1102,7 +1241,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       }
       await registrarHistorial(data.id, 'poliza_creada', undefined, undefined, {
         numeroPoliza: poliza.numeroPoliza,
-        primaTotal: poliza.primaTotal || poliza.prima,
+        primaTotal: primaTotalPlazo,
         formaPago: poliza.formaPago,
       })
       toast.success('Póliza creada exitosamente')
@@ -1122,6 +1261,37 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   const actualizarPoliza = async (id: string, poliza: Partial<Poliza>) => {
     try {
       const anterior = polizas.find(item => item.id === id)
+      if (anterior) {
+        const ramo = poliza.ramo ?? anterior.ramo
+        const vigenciaInicio = poliza.vigenciaInicio ?? anterior.vigenciaInicio
+        const vigenciaVidaPago = poliza.vigenciaVidaPago ?? anterior.vigenciaVidaPago
+        const vigenciaVidaProducto = poliza.vigenciaVidaProducto ?? anterior.vigenciaVidaProducto ?? anterior.anosVidaProducto
+        const actualizaVigencias = poliza.vigenciaInicio !== undefined || poliza.vigenciaFin !== undefined || poliza.ramo !== undefined || poliza.vigenciaVidaPago !== undefined || poliza.vigenciaVidaProducto !== undefined
+        const actualizaPrimaPlazo = ramo === 'vida' && (poliza.prima !== undefined || poliza.primaTotal !== undefined || poliza.vigenciaVidaPago !== undefined)
+        if (actualizaVigencias) {
+          const vigencias = calcularVigenciasPoliza(
+            vigenciaInicio,
+            ramo === 'vida' ? vigenciaVidaPago : undefined,
+            ramo === 'vida' ? vigenciaVidaProducto : undefined,
+          )
+          poliza = {
+            ...poliza,
+            vigenciaFin: vigencias.vigenciaAnualFin,
+            vigenciaPagoFin: vigencias.vigenciaPagoFin,
+            vigenciaProductoFin: vigencias.vigenciaProductoFin,
+          }
+        }
+        if (actualizaPrimaPlazo) {
+          const primaTotalPlazo = calcularPrimaTotalPlazo(poliza.prima ?? anterior.prima, vigenciaVidaPago)
+          poliza = { ...poliza, primaTotal: primaTotalPlazo, primaEmitida: primaTotalPlazo }
+        }
+        const divisas = poliza.divisas ?? anterior.divisas
+        const valorUdiInicial = poliza.valorUdiInicial ?? anterior.valorUdiInicial
+        if (divisas === 'UDIS' && (!valorUdiInicial || valorUdiInicial <= 0)) throw new Error('El valor UDI inicial debe ser mayor a 0')
+        if (poliza.divisas !== undefined && poliza.divisas !== anterior.divisas && pagos.some(item => item.polizaId === id && item.estatus === 'pagado')) {
+          throw new Error('No se puede cambiar la divisa porque la póliza ya tiene recibos pagados')
+        }
+      }
       const updateData: any = {}
       if (poliza.clienteId !== undefined) updateData.cliente_id = poliza.clienteId
       if (poliza.companiaId !== undefined) updateData.compania_id = poliza.companiaId
@@ -1129,6 +1299,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       if (poliza.numeroPoliza !== undefined) updateData.numero_poliza = poliza.numeroPoliza
       if (poliza.vigenciaInicio !== undefined) updateData.vigencia_inicio = poliza.vigenciaInicio
       if (poliza.vigenciaFin !== undefined) updateData.vigencia_fin = poliza.vigenciaFin
+      if (poliza.vigenciaPagoFin !== undefined) updateData.vigencia_pago_fin = poliza.vigenciaPagoFin || null
+      if (poliza.vigenciaProductoFin !== undefined) updateData.vigencia_producto_fin = poliza.vigenciaProductoFin || null
       if (poliza.prima !== undefined) {
         updateData.prima = poliza.prima
         // Mantiene Cobranza sincronizada incluso si otro formulario sólo actualiza prima.
@@ -1173,6 +1345,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       if (poliza.diasGraciaSubsecuentes !== undefined) updateData.dias_gracia_subsecuentes = poliza.diasGraciaSubsecuentes ?? null
       if (poliza.primaTotal !== undefined) updateData.prima_total = poliza.primaTotal ?? null
       if (poliza.divisas !== undefined) updateData.divisas = poliza.divisas || null
+      if (poliza.valorUdiInicial !== undefined) updateData.valor_udi_inicial = poliza.divisas === 'UDIS' || (poliza.divisas === undefined && anterior?.divisas === 'UDIS') ? poliza.valorUdiInicial : null
       if (poliza.vehiculoAmis !== undefined) updateData.vehiculo_amis = poliza.vehiculoAmis || null
       if (poliza.vehiculoClave !== undefined) updateData.vehiculo_clave = poliza.vehiculoClave || null
       if (poliza.vehiculoDescripcion !== undefined) updateData.vehiculo_descripcion = poliza.vehiculoDescripcion || null
@@ -1186,14 +1359,14 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
       if (anterior) {
         const camposRelevantes: Array<keyof Poliza> = [
-          'numeroPoliza', 'ramo', 'vigenciaInicio', 'vigenciaFin', 'prima', 'primaTotal',
+          'numeroPoliza', 'ramo', 'vigenciaInicio', 'vigenciaFin', 'vigenciaPagoFin', 'vigenciaProductoFin', 'prima', 'primaTotal',
           'formaPago', 'estatus', 'renovacionEstado', 'vendedorId', 'nombreAsegurado',
-          'agente', 'incisoEndoso', 'tipoPago', 'comentarios', 'notas',
+          'agente', 'incisoEndoso', 'tipoPago', 'divisas', 'valorUdiInicial', 'comentarios', 'notas',
         ]
         const cambios = camposRelevantes.filter(campo =>
           poliza[campo] !== undefined && JSON.stringify(anterior[campo]) !== JSON.stringify(poliza[campo]),
         )
-        const requiereRegeneracion = ['prima', 'primaTotal', 'formaPago', 'vigenciaInicio', 'vigenciaFin', 'primerRecibo']
+        const requiereRegeneracion = ['prima', 'primaTotal', 'formaPago', 'vigenciaInicio', 'vigenciaFin', 'vigenciaPagoFin', 'primerRecibo', 'divisas']
           .some(campo => poliza[campo as keyof Poliza] !== undefined && poliza[campo as keyof Poliza] !== anterior[campo as keyof Poliza])
         if (requiereRegeneracion) {
           try {
@@ -1203,7 +1376,9 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
               formaPago: poliza.formaPago,
               vigenciaInicio: poliza.vigenciaInicio,
               vigenciaFin: poliza.vigenciaFin,
+              vigenciaPagoFin: poliza.vigenciaPagoFin,
               primerRecibo: poliza.primerRecibo,
+              divisas: poliza.divisas,
             })
           } catch (error) {
             const { error: rollbackError } = await supabase.from('polizas').update({
@@ -1213,6 +1388,13 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
               forma_pago: anterior.formaPago,
               vigencia_inicio: anterior.vigenciaInicio,
               vigencia_fin: anterior.vigenciaFin,
+              vigencia_pago_fin: anterior.vigenciaPagoFin ?? null,
+              vigencia_producto_fin: anterior.vigenciaProductoFin ?? null,
+              vigencia_vida_pago: anterior.vigenciaVidaPago ?? null,
+              vigencia_vida_producto: anterior.vigenciaVidaProducto ?? anterior.anosVidaProducto ?? null,
+              anos_vida_producto: anterior.vigenciaVidaProducto ?? anterior.anosVidaProducto ?? null,
+              divisas: anterior.divisas || null,
+              valor_udi_inicial: anterior.valorUdiInicial ?? null,
               primer_recibo: anterior.primerRecibo ?? null,
               numero_recibo: anterior.numeroRecibo || null,
               prima_total_recibo: anterior.primaTotalRecibo ?? null,
@@ -1848,6 +2030,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       pagos,
       loadingPagos,
       registrarPago,
+      anularPago,
       regenerarRecibosPoliza,
       renovaciones,
       iniciarRenovacion,

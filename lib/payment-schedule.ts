@@ -19,9 +19,16 @@ export interface ReciboProgramado {
   monto: number
   numeroRecibo: number
   totalRecibos: number
+  anualidad: number
   fechaEmision: string
   fechaLimite: string
   estatus: 'pendiente'
+}
+
+export interface VigenciasPoliza {
+  vigenciaAnualFin: string
+  vigenciaPagoFin?: string
+  vigenciaProductoFin?: string
 }
 
 export interface GenerarRecibosInput {
@@ -48,6 +55,37 @@ const MESES_POR_PERIODICIDAD: Record<PeriodicidadPago, number> = {
   trimestral: 3,
   semestral: 6,
   anual: 12,
+}
+
+export function calcularVigenciasPoliza(
+  vigenciaInicio: string,
+  plazoPagoAnos?: number,
+  plazoProductoAnos?: number,
+): VigenciasPoliza {
+  const vigenciaAnualFin = addMonthsDateOnly(vigenciaInicio, 12)
+  if (plazoPagoAnos === undefined && plazoProductoAnos === undefined) return { vigenciaAnualFin }
+  if (!Number.isInteger(plazoPagoAnos) || Number(plazoPagoAnos) < 1) throw new Error('La vigencia de pago debe ser un número entero mayor a 0')
+  if (!Number.isInteger(plazoProductoAnos) || Number(plazoProductoAnos) < 1) throw new Error('La vigencia del producto debe ser un número entero mayor a 0')
+  if (Number(plazoPagoAnos) > Number(plazoProductoAnos)) throw new Error('La vigencia de pago no puede ser mayor que la vigencia del producto')
+
+  return {
+    vigenciaAnualFin,
+    vigenciaPagoFin: addMonthsDateOnly(vigenciaInicio, Number(plazoPagoAnos) * 12),
+    vigenciaProductoFin: addMonthsDateOnly(vigenciaInicio, Number(plazoProductoAnos) * 12),
+  }
+}
+
+export function calcularPrimaTotalPlazo(primaAnual: number, plazoPagoAnos?: number): number {
+  if (!Number.isFinite(primaAnual) || primaAnual < 0) throw new Error('La prima anual debe ser un importe válido')
+  const anos = plazoPagoAnos === undefined ? 1 : plazoPagoAnos
+  if (!Number.isInteger(anos) || anos < 1) throw new Error('La vigencia de pago debe ser un número entero mayor a 0')
+  return Math.round(primaAnual * anos * 100) / 100
+}
+
+export function calcularMontoMxnUdis(montoUdis: number, valorUdi: number): number {
+  if (!Number.isFinite(montoUdis) || montoUdis <= 0) throw new Error('El monto en UDIS debe ser mayor a 0')
+  if (!Number.isFinite(valorUdi) || valorUdi <= 0) throw new Error('El valor UDI debe ser mayor a 0')
+  return Math.round(montoUdis * valorUdi * 100) / 100
 }
 
 function toCents(value: number): number {
@@ -127,6 +165,7 @@ export function generarRecibos(input: GenerarRecibosInput): ReciboProgramado[] {
       monto,
       numeroRecibo,
       totalRecibos: pagados.length + pendientesCantidad,
+      anualidad: Math.floor(((numeroRecibo - 1) * meses) / 12) + 1,
       fechaEmision,
       fechaLimite: addDaysDateOnly(fechaEmision, 30),
       estatus: 'pendiente',
