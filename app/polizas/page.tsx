@@ -66,7 +66,7 @@ function PolizasContent() {
   const [busqueda, setBusqueda] = useState("")
   const [filtroCompania, setFiltroCompania] = useState("todas")
   const [filtroRamo, setFiltroRamo] = useState("todos")
-  const [filtroEstatus, setFiltroEstatus] = useState("todos")
+  const [filtroEstatus, setFiltroEstatus] = useState("activa")
   const [polizaSeleccionada, setPolizaSeleccionada] = useState<SPoliza | null>(null)
   const [modalNuevaPoliza, setModalNuevaPoliza] = useState(false)
   const [modalEditarPoliza, setModalEditarPoliza] = useState(false)
@@ -109,7 +109,7 @@ function PolizasContent() {
     tipoPago: "" as "efectivo" | "transferencia" | "tarjeta" | "domiciliacion" | "cheque" | "",
     vigenciaVidaPago: "", vigenciaVidaProducto: "", agente: "", vendedorId: "", ultimoDiaPago: "", numeroRecibo: "",
     registroSistemaCobranza: false, comentarios: "", notas: "", marcaActualizacion: false,
-    divisas: "MXN", valorUdiInicial: "", primaTotal: "", diasGraciaPrimerRecibo: "", diasGraciaSubsecuentes: "", primerRecibo: "", recibosSubsecuentes: "",
+    divisas: "MXN", primaTotal: "", diasGraciaPrimerRecibo: "", diasGraciaSubsecuentes: "", primerRecibo: "", recibosSubsecuentes: "",
   })
 
   const [nuevoCliente, setNuevoCliente] = useState({ nombre: "", email: "", telefono: "", empresa: "" })
@@ -122,7 +122,7 @@ function PolizasContent() {
     tipoPago: "" as string,
     ultimoDiaPago: "", vigenciaFin: "", vigenciaInicio: "", vigenciaPagoFin: "", vigenciaProductoFin: "",
     diasGraciaPrimerRecibo: "", diasGraciaSubsecuentes: "",
-    numeroRecibo: "", agente: "", vendedorId: "", divisas: "MXN", valorUdiInicial: "",
+    numeroRecibo: "", agente: "", vendedorId: "", divisas: "MXN",
     primerRecibo: "", recibosSubsecuentes: "",
     vigenciaVidaPago: "", vigenciaVidaProducto: "",
   })
@@ -186,6 +186,7 @@ function PolizasContent() {
       const pagados = pagos.filter(pago => pago.polizaId === polizaEditar.id && pago.estatus === "pagado")
       const recibos = generarRecibos({
         primaTotal: Number(editForm.primaTotal),
+        primaAnual: polizaEditar.ramo === "vida" ? Number(editForm.prima) : undefined,
         vigenciaInicio: editForm.vigenciaInicio,
         vigenciaFin: polizaEditar.ramo === "vida" ? editForm.vigenciaPagoFin : editForm.vigenciaFin,
         periodicidad: editForm.formaPago as SPoliza["formaPago"],
@@ -218,6 +219,7 @@ function PolizasContent() {
             : primaNum
           const recibos = generarRecibos({
             primaTotal: primaTotalCalculada,
+            primaAnual: nuevaPoliza.ramo === "vida" ? primaNum : undefined,
             vigenciaInicio: nuevaPoliza.vigenciaInicio,
             vigenciaFin: nuevaPoliza.ramo === "vida" ? nuevaPoliza.vigenciaPagoFin : nuevaPoliza.vigenciaFin,
             periodicidad: nuevaPoliza.formaPago as SPoliza["formaPago"],
@@ -273,7 +275,7 @@ function PolizasContent() {
       nombreAsegurado: "", vigenciaInicio: "", vigenciaFin: "", vigenciaPagoFin: "", vigenciaProductoFin: "", prima: "", formaPago: "",
       tipoPago: "", vigenciaVidaPago: "", vigenciaVidaProducto: "", agente: "", vendedorId: "", ultimoDiaPago: "", numeroRecibo: "",
       registroSistemaCobranza: false, comentarios: "", notas: "", marcaActualizacion: false,
-      divisas: "MXN", valorUdiInicial: "", primaTotal: "", diasGraciaPrimerRecibo: "", diasGraciaSubsecuentes: "", primerRecibo: "", recibosSubsecuentes: "",
+      divisas: "MXN", primaTotal: "", diasGraciaPrimerRecibo: "", diasGraciaSubsecuentes: "", primerRecibo: "", recibosSubsecuentes: "",
     })
     setNuevoCliente({ nombre: "", email: "", telefono: "", empresa: "" })
     setBusquedaCliente("")
@@ -304,10 +306,6 @@ function PolizasContent() {
     }
     if (nuevaPoliza.ramo === "vida" && Number(nuevaPoliza.vigenciaVidaPago) > Number(nuevaPoliza.vigenciaVidaProducto)) {
       toast.error("La vigencia de pago no puede ser mayor que la vigencia del producto")
-      return
-    }
-    if (nuevaPoliza.divisas === "UDIS" && (!nuevaPoliza.valorUdiInicial || Number(nuevaPoliza.valorUdiInicial) <= 0)) {
-      toast.error("Capture un valor UDI inicial mayor a 0")
       return
     }
     const primaNum = parseFloat(nuevaPoliza.prima)
@@ -380,7 +378,6 @@ function PolizasContent() {
         diasGraciaSubsecuentes: nuevaPoliza.diasGraciaSubsecuentes ? parseInt(nuevaPoliza.diasGraciaSubsecuentes) : undefined,
         primaTotal: nuevaPoliza.primaTotal ? parseFloat(nuevaPoliza.primaTotal) : undefined,
         divisas: nuevaPoliza.divisas || undefined,
-        valorUdiInicial: nuevaPoliza.divisas === "UDIS" ? Number(nuevaPoliza.valorUdiInicial) : undefined,
         vehiculoAmis: vehiculoSeleccionado?.amis || undefined,
         vehiculoClave: vehiculoSeleccionado?.claveCot || undefined,
         vehiculoDescripcion: vehiculoSeleccionado?.marcaDescripcion || undefined,
@@ -423,7 +420,6 @@ function PolizasContent() {
       agente: poliza.agente || "",
       vendedorId: poliza.vendedorId || "",
       divisas: poliza.divisas || "MXN",
-      valorUdiInicial: poliza.valorUdiInicial?.toString() || "",
       primerRecibo: poliza.primerRecibo?.toString() || "",
       recibosSubsecuentes: poliza.recibosSubsecuentes?.toString() || "",
       vigenciaVidaPago: poliza.vigenciaVidaPago?.toString() || "",
@@ -441,10 +437,6 @@ function PolizasContent() {
     }
     if (polizaEditar.ramo === "vida" && (!editForm.vigenciaVidaPago || !editForm.vigenciaVidaProducto || Number(editForm.vigenciaVidaPago) > Number(editForm.vigenciaVidaProducto))) {
       toast.error("Las vigencias de pago y producto son obligatorias; pago no puede superar producto")
-      return
-    }
-    if (editForm.divisas === "UDIS" && (!editForm.valorUdiInicial || Number(editForm.valorUdiInicial) <= 0)) {
-      toast.error("Capture un valor UDI inicial mayor a 0")
       return
     }
     const primaNum = parseFloat(editForm.prima)
@@ -466,7 +458,7 @@ function PolizasContent() {
       notas: editForm.notas || undefined,
       prima: primaPoliza,
       // Cobranza lee estos dos campos; se actualizan junto con la prima de la póliza.
-      primaEmitida: primaPoliza,
+      primaEmitida: isNaN(primaTotalNum) ? primaPoliza : primaTotalNum,
       primaTotalRecibo: primaRecibo,
       primaTotal: isNaN(primaTotalNum) ? undefined : primaTotalNum,
       formaPago: editForm.formaPago as SPoliza["formaPago"],
@@ -482,7 +474,6 @@ function PolizasContent() {
       agente: editForm.agente || undefined,
       vendedorId: editForm.vendedorId,
       divisas: editForm.divisas || undefined,
-      valorUdiInicial: editForm.divisas === "UDIS" ? Number(editForm.valorUdiInicial) : undefined,
       primerRecibo: isNaN(primerReciboNum) ? undefined : primerReciboNum,
       recibosSubsecuentes: isNaN(recibosSubsecuentesNum) ? undefined : recibosSubsecuentesNum,
       vigenciaVidaPago: editForm.vigenciaVidaPago ? parseInt(editForm.vigenciaVidaPago) : undefined,
@@ -549,7 +540,6 @@ function PolizasContent() {
       notas: `Renovación de póliza ${polizaAccion.numeroPoliza}`,
       marcaActualizacion: false,
       divisas: polizaAccion.divisas || "MXN",
-      valorUdiInicial: polizaAccion.valorUdiInicial?.toString() || "",
       primaTotal: polizaAccion.primaTotal?.toString() || "",
       diasGraciaPrimerRecibo: polizaAccion.diasGraciaPrimerRecibo?.toString() || "",
       diasGraciaSubsecuentes: polizaAccion.diasGraciaSubsecuentes?.toString() || "",
@@ -623,7 +613,7 @@ function PolizasContent() {
       )
     }
     return true
-  })
+  }).sort((a, b) => a.vigenciaFin.localeCompare(b.vigenciaFin))
 
   return (
     <ProtectedRoute>
@@ -690,7 +680,7 @@ function PolizasContent() {
                   <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="todos">Todos</SelectItem>
-                    <SelectItem value="activa">Activa</SelectItem>
+                    <SelectItem value="activa">Pólizas activas</SelectItem>
                     <SelectItem value="vigente">Vigente</SelectItem>
                     <SelectItem value="por-renovar">Por Renovar</SelectItem>
                     <SelectItem value="renovada">Renovada</SelectItem>
@@ -874,7 +864,6 @@ function PolizasContent() {
                         ["Días Gracia (Primer Recibo)", polizaSeleccionada.diasGraciaPrimerRecibo?.toString() || "—"],
                         ["Días Gracia (Subsecuentes)", polizaSeleccionada.diasGraciaSubsecuentes?.toString() || "—"],
                         ["Divisa", polizaSeleccionada.divisas || "MXN"],
-                        ...(polizaSeleccionada.divisas === "UDIS" ? [["Valor UDI inicial", polizaSeleccionada.valorUdiInicial?.toFixed(6) || "—"]] : []),
                         ...(polizaSeleccionada.vehiculoDescripcion ? [
                           ["Vehículo", polizaSeleccionada.vehiculoDescripcion],
                           ["AMIS", polizaSeleccionada.vehiculoAmis || "—"],
@@ -995,10 +984,13 @@ function PolizasContent() {
                     <Input type="number" value={editForm.prima} onChange={e => setEditForm(f => ({ ...f, prima: e.target.value }))} className="h-8" />
                   </div>
                   <div>
-                    <Label className="text-xs">Prima total del plazo</Label>
+                    <Label className="text-xs">Prima total</Label>
                     <Input type="number" value={editForm.primaTotal} readOnly className="h-8 bg-muted" />
                   </div>
                 </div>
+                <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                  Si la prima aumenta o disminuye, los recibos ya cobrados se conservan y el saldo se redistribuye entre los pendientes. No se permite reducir el total por debajo de lo ya cobrado.
+                </p>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label className="text-xs">Forma de Pago</Label>
@@ -1075,10 +1067,7 @@ function PolizasContent() {
                   </div>
                 </div>
                 {editForm.divisas === "UDIS" && (
-                  <div>
-                    <Label className="text-xs">Valor UDI inicial (MXN)</Label>
-                    <Input type="number" min="0" step="0.000001" value={editForm.valorUdiInicial} onChange={e => setEditForm(f => ({ ...f, valorUdiInicial: e.target.value }))} className="h-8" placeholder="Ej: 8.547321" />
-                  </div>
+                  <p className="col-span-2 text-xs text-muted-foreground">El tipo de conversión se consulta al momento de cobrar cada recibo.</p>
                 )}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -1335,18 +1324,13 @@ function PolizasContent() {
                   </div>
                 </div>
                 {nuevaPoliza.divisas === "UDIS" && (
-                  <div className="space-y-2">
-                    <Label>Valor UDI inicial (MXN) *</Label>
-                    <Input type="number" min="0" step="0.000001" placeholder="Ej: 8.547321" value={nuevaPoliza.valorUdiInicial}
-                      onChange={e => setNuevaPoliza(p => ({ ...p, valorUdiInicial: e.target.value }))} />
-                    <p className="text-xs text-muted-foreground">En cada cobro se capturará el valor UDI aplicable a ese recibo.</p>
-                  </div>
+                  <p className="text-xs text-muted-foreground">El valor en pesos se obtiene dinámicamente de Banco de México al cobrar cada recibo.</p>
                 )}
 
                 {/* Prima anual y forma de pago */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Prima total del plazo</Label>
+                    <Label>Prima total</Label>
                     <Input type="number" placeholder="Auto-calculada" value={nuevaPoliza.primaTotal}
                       onChange={e => setNuevaPoliza(p => ({ ...p, primaTotal: e.target.value }))}
                       disabled className="bg-muted" />

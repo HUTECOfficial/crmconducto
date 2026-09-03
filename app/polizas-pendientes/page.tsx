@@ -19,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useSupabase, type Poliza } from "@/contexts/supabase-context"
 import { formatDateOnly, todayDateOnly } from "@/lib/date-only"
+import { obtenerValorUdiActual } from "@/lib/udi"
 
 function obtenerPrimaRecibo(poliza: Poliza) {
   const primaEmitida = Number(poliza.primaEmitida || poliza.prima || 0)
@@ -45,7 +46,6 @@ function PolizasPendientesContent() {
   const { polizas, clientes, companias, pagos, registrarPago, anularPago, actualizarPoliza, loadingPolizas, marcarComoVencido } = useSupabase()
 
   const [filtroEstatus, setFiltroEstatus] = useState<"todas" | "activa" | "gracia" | "vencida" | "por-renovar" | "pagadas">("todas")
-  const [filtroMovimiento, setFiltroMovimiento] = useState<"todas" | "con-movimiento" | "sin-movimiento">("todas")
   const [editandoId, setEditandoId] = useState<string | null>(null)
   const [comentarioTemp, setComentarioTemp] = useState("")
   const [verComentarioId, setVerComentarioId] = useState<string | null>(null)
@@ -57,7 +57,23 @@ function PolizasPendientesContent() {
   const [motivoAccion, setMotivoAccion] = useState("")
   const [tipoPagoAccion, setTipoPagoAccion] = useState<"efectivo" | "transferencia" | "tarjeta" | "domiciliacion" | "cheque" | "">("")
   const [valorUdiAccion, setValorUdiAccion] = useState("")
+  const [cargandoUdi, setCargandoUdi] = useState(false)
+  const [errorUdi, setErrorUdi] = useState("")
   const [comprobante, setComprobante] = useState<File | null>(null)
+
+  const cargarValorUdi = async () => {
+    setCargandoUdi(true)
+    setErrorUdi("")
+    try {
+      const udi = await obtenerValorUdiActual()
+      setValorUdiAccion(udi.valor.toString())
+    } catch (error: any) {
+      setValorUdiAccion("")
+      setErrorUdi(error.message || "No fue posible consultar el valor UDI actual")
+    } finally {
+      setCargandoUdi(false)
+    }
+  }
 
   // Aplicar filtro desde URL si viene de dashboard
   useEffect(() => {
@@ -77,12 +93,6 @@ function PolizasPendientesContent() {
     } else {
       polizasPendientes = polizasPendientes.filter(p => p.estatus === filtroEstatus)
     }
-  }
-
-  if (filtroMovimiento === "sin-movimiento") {
-    polizasPendientes = polizasPendientes.filter(p => (p.primaCobrada || 0) === 0)
-  } else if (filtroMovimiento === "con-movimiento") {
-    polizasPendientes = polizasPendientes.filter(p => (p.primaCobrada || 0) > 0)
   }
 
   // Ordenar por fecha de vencimiento (más cercanas o vencidas primero)
@@ -109,7 +119,8 @@ function PolizasPendientesContent() {
     setTipoAccion(tipo)
     setMotivoAccion("")
     setTipoPagoAccion("")
-    setValorUdiAccion(poliza.divisas === "UDIS" ? poliza.valorUdiInicial?.toString() || "" : "")
+    setValorUdiAccion("")
+    if (tipo === "pagada" && poliza.divisas === "UDIS") void cargarValorUdi()
     setComprobante(null)
     setModalAccion(true)
   }
@@ -204,7 +215,7 @@ function PolizasPendientesContent() {
         <Sidebar />
         <main className="main-content-aligned">
           <PageHeader
-            title="Pólizas Pendientes de Pago"
+            title="Facturación · Pólizas pendientes de pago"
             subtitle="Gestión y seguimiento de cobranza"
           />
 
@@ -301,41 +312,6 @@ function PolizasPendientesContent() {
                 </div>
               </div>
 
-              <div>
-                <p className="text-sm font-medium mb-2">Filtrar por Movimiento a Cartera:</p>
-                <div className="flex gap-2 flex-wrap">
-                  <button
-                    onClick={() => setFiltroMovimiento("todas")}
-                    className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
-                      filtroMovimiento === "todas"
-                        ? "bg-purple-600 text-white"
-                        : "bg-muted text-muted-foreground hover:bg-muted/80"
-                    }`}
-                  >
-                    Todas
-                  </button>
-                  <button
-                    onClick={() => setFiltroMovimiento("sin-movimiento")}
-                    className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
-                      filtroMovimiento === "sin-movimiento"
-                        ? "bg-red-600 text-white"
-                        : "bg-muted text-muted-foreground hover:bg-muted/80"
-                    }`}
-                  >
-                    Sin Movimiento a Cartera
-                  </button>
-                  <button
-                    onClick={() => setFiltroMovimiento("con-movimiento")}
-                    className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
-                      filtroMovimiento === "con-movimiento"
-                        ? "bg-green-600 text-white"
-                        : "bg-muted text-muted-foreground hover:bg-muted/80"
-                    }`}
-                  >
-                    Con Movimiento a Cartera
-                  </button>
-                </div>
-              </div>
             </div>
           </GlassCard>
 
@@ -350,6 +326,7 @@ function PolizasPendientesContent() {
                     <th className="p-3 text-left font-bold border-r border-zinc-700">COMPAÑÍA</th>
                     <th className="p-3 text-left font-bold border-r border-zinc-700">RAMO</th>
                     <th className="p-3 text-left font-bold border-r border-zinc-700">NOMBRE</th>
+                    <th className="p-3 text-left font-bold border-r border-zinc-700">INICIO DE VIGENCIA</th>
                     <th className="p-3 text-left font-bold border-r border-zinc-700">ÚLTIMO DÍA DE PAGO</th>
                     <th className="p-3 text-left font-bold border-r border-zinc-700"># RECIBO</th>
                     <th className="p-3 text-left font-bold border-r border-zinc-700">PRIMA TOTAL DE RECIBO</th>
@@ -397,6 +374,9 @@ function PolizasPendientesContent() {
                           <div>
                             <p className="font-medium">{poliza.nombreAsegurado || cliente?.nombre}</p>
                           </div>
+                        </td>
+                        <td className="p-4 border-r border-pink-200 dark:border-pink-900 font-medium align-top">
+                          {formatDateOnly(poliza.vigenciaInicio)}
                         </td>
                         <td className="p-4 border-r border-pink-200 dark:border-pink-900 font-medium align-top">
                           {reciboPendiente?.fechaLimite
@@ -603,6 +583,10 @@ function PolizasPendientesContent() {
 
                     {/* Detalles en grid */}
                     <div className="grid grid-cols-2 gap-3 text-xs mb-3">
+                      <div>
+                        <p className="text-muted-foreground">Inicio de vigencia</p>
+                        <p className="font-medium">{formatDateOnly(poliza.vigenciaInicio)}</p>
+                      </div>
                       <div>
                         <p className="text-muted-foreground">Último día pago</p>
                         <p className="font-medium">
@@ -826,10 +810,9 @@ function PolizasPendientesContent() {
             )}
 
             {tipoAccion === "pagada" && polizaAccion?.divisas === "UDIS" && (
-              <div className="space-y-2">
-                <Label>Valor UDI aplicado (MXN) *</Label>
-                <Input type="number" min="0" step="0.000001" value={valorUdiAccion} onChange={event => setValorUdiAccion(event.target.value)} />
-                {valorUdiAccion && Number(valorUdiAccion) > 0 && <p className="text-xs text-muted-foreground">Equivalente: ${(obtenerPrimaRecibo(polizaAccion) * Number(valorUdiAccion)).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN</p>}
+              <div className="space-y-2 rounded-lg bg-muted/40 p-3">
+                <Label>Valor UDI actual (Banco de México)</Label>
+                {cargandoUdi ? <p className="text-sm text-muted-foreground">Consultando valor actual...</p> : valorUdiAccion ? <p className="text-sm">UDI {Number(valorUdiAccion).toFixed(6)} · Equivalente: ${(obtenerPrimaRecibo(polizaAccion) * Number(valorUdiAccion)).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN</p> : <div className="flex items-center gap-2"><p className="text-sm text-destructive">{errorUdi || "Valor no disponible"}</p><Button size="sm" variant="outline" onClick={() => void cargarValorUdi()}>Reintentar</Button></div>}
               </div>
             )}
 

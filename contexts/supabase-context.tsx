@@ -779,6 +779,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
     const recibos = generarRecibos({
       primaTotal: totalConfigurado,
+      primaAnual: configuracion.ramo === 'vida' ? configuracion.prima : undefined,
       vigenciaInicio: configuracion.vigenciaInicio,
       vigenciaFin: configuracion.ramo === 'vida' ? configuracion.vigenciaPagoFin || configuracion.vigenciaFin : configuracion.vigenciaFin,
       periodicidad: configuracion.formaPago,
@@ -1145,11 +1146,9 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       const primaTotalPlazo = poliza.ramo === 'vida'
         ? calcularPrimaTotalPlazo(poliza.prima, poliza.vigenciaVidaPago)
         : Number(poliza.primaTotal || poliza.prima)
-      if (poliza.divisas === 'UDIS' && (!poliza.valorUdiInicial || poliza.valorUdiInicial <= 0)) {
-        throw new Error('El valor UDI inicial debe ser mayor a 0')
-      }
       const recibos = generarRecibos({
         primaTotal: primaTotalPlazo,
+        primaAnual: poliza.ramo === 'vida' ? poliza.prima : undefined,
         vigenciaInicio: poliza.vigenciaInicio,
         vigenciaFin: poliza.ramo === 'vida' ? vigencias.vigenciaPagoFin! : vigencias.vigenciaAnualFin,
         periodicidad: poliza.formaPago,
@@ -1286,8 +1285,6 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
           poliza = { ...poliza, primaTotal: primaTotalPlazo, primaEmitida: primaTotalPlazo }
         }
         const divisas = poliza.divisas ?? anterior.divisas
-        const valorUdiInicial = poliza.valorUdiInicial ?? anterior.valorUdiInicial
-        if (divisas === 'UDIS' && (!valorUdiInicial || valorUdiInicial <= 0)) throw new Error('El valor UDI inicial debe ser mayor a 0')
         if (poliza.divisas !== undefined && poliza.divisas !== anterior.divisas && pagos.some(item => item.polizaId === id && item.estatus === 'pagado')) {
           throw new Error('No se puede cambiar la divisa porque la póliza ya tiene recibos pagados')
         }
@@ -1343,7 +1340,11 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       if (poliza.recibosSubsecuentes !== undefined) updateData.recibos_subsecuentes = poliza.recibosSubsecuentes ?? null
       if (poliza.diasGraciaPrimerRecibo !== undefined) updateData.dias_gracia_primer_recibo = poliza.diasGraciaPrimerRecibo ?? null
       if (poliza.diasGraciaSubsecuentes !== undefined) updateData.dias_gracia_subsecuentes = poliza.diasGraciaSubsecuentes ?? null
-      if (poliza.primaTotal !== undefined) updateData.prima_total = poliza.primaTotal ?? null
+      if (poliza.primaTotal !== undefined) {
+        updateData.prima_total = poliza.primaTotal ?? null
+        // La facturación siempre refleja el total vigente del plazo.
+        updateData.prima_emitida = poliza.primaTotal ?? null
+      }
       if (poliza.divisas !== undefined) updateData.divisas = poliza.divisas || null
       if (poliza.valorUdiInicial !== undefined) updateData.valor_udi_inicial = poliza.divisas === 'UDIS' || (poliza.divisas === undefined && anterior?.divisas === 'UDIS') ? poliza.valorUdiInicial : null
       if (poliza.vehiculoAmis !== undefined) updateData.vehiculo_amis = poliza.vehiculoAmis || null

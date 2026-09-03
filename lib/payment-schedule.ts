@@ -33,6 +33,8 @@ export interface VigenciasPoliza {
 
 export interface GenerarRecibosInput {
   primaTotal: number
+  /** Prima de cada anualidad. En Vida se distribuye cada anualidad por separado. */
+  primaAnual?: number
   vigenciaInicio: string
   vigenciaFin: string
   periodicidad: PeriodicidadPago
@@ -148,13 +150,30 @@ export function generarRecibos(input: GenerarRecibosInput): ReciboProgramado[] {
 
   const fechasBase = fechasEmisionPorPeriodicidad(input.vigenciaInicio, input.vigenciaFin, input.periodicidad)
   const totalObjetivo = Math.max(fechasBase.length, pagados.length + 1)
-  const pendientesCantidad = Math.max(1, totalObjetivo - pagados.length)
-  const montos = distributeAmount(
-    saldo,
-    pendientesCantidad,
-    pagados.length === 0 ? input.primerRecibo : undefined,
-  )
   const meses = MESES_POR_PERIODICIDAD[input.periodicidad]
+  const usaPrimaAnual = input.primaAnual !== undefined
+  if (usaPrimaAnual && (!Number.isFinite(input.primaAnual) || Number(input.primaAnual) < 0)) {
+    throw new Error('La prima anual debe ser un importe válido')
+  }
+
+  // Vida se cobra por anualidades: cada anualidad descuenta su primer recibo
+  // y distribuye el remanente entre sus recibos subsecuentes.
+  const montosPlaneados = usaPrimaAnual
+    ? fechasBase.map((_, index) => {
+        const anualidad = Math.floor((index * meses) / 12) + 1
+        const indicesAnualidad = fechasBase
+          .map((__, candidate) => candidate)
+          .filter(candidate => Math.floor((candidate * meses) / 12) + 1 === anualidad)
+        const posicionAnual = indicesAnualidad.indexOf(index)
+        return distributeAmount(Number(input.primaAnual), indicesAnualidad.length, input.primerRecibo)[posicionAnual]
+      })
+    : distributeAmount(input.primaTotal, totalObjetivo, input.primerRecibo)
+  const pendientesCantidad = Math.max(1, totalObjetivo - pagados.length)
+  const montos = montosPlaneados.slice(pagados.length, pagados.length + pendientesCantidad)
+  // Las modificaciones nunca alteran recibos cobrados; su diferencia se ajusta
+  // en el último recibo pendiente para que el saldo siempre cuadre.
+  const diferenciaSaldo = Math.round((saldo - montos.reduce((sum, monto) => sum + monto, 0)) * 100) / 100
+  if (montos.length > 0) montos[montos.length - 1] = Math.round((montos[montos.length - 1] + diferenciaSaldo) * 100) / 100
 
   return montos.map((monto, index) => {
     const numeroRecibo = pagados.length + index + 1

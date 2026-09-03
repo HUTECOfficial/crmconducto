@@ -43,7 +43,14 @@ const navigation = [
   { name: "Clientes", href: "/clientes", icon: UserCheck, permiso: "prospeccion" as const },
   // { name: "Multicotizador", href: "/multicotizador", icon: Calculator, permiso: "prospeccion" as const },
   { name: "Pólizas", href: "/polizas", icon: FileText, permiso: "polizas" as const },
-  { name: "Pólizas Pendientes", href: "/polizas-pendientes", icon: AlertCircle, permiso: "polizas" as const },
+  {
+    name: "Facturación",
+    icon: CreditCard,
+    permiso: "polizas" as const,
+    submenu: [
+      { name: "Pólizas pendientes de pago", href: "/polizas-pendientes", permiso: "polizas" as const },
+    ],
+  },
   { name: "Consulta Pólizas", href: "/consulta-polizas", icon: Search, permiso: "consulta-polizas" as const },
   { name: "Folios", href: "/folios", icon: FolderOpen, permiso: "polizas" as const },
   { name: "Siniestros", href: "/siniestros", icon: AlertCircle, permiso: "polizas" as const },

@@ -105,6 +105,19 @@ test('una póliza de vida genera recibos durante todo el plazo de pago por anual
   assert.deepEqual(recibos.map(recibo => recibo.monto), [6_000, 6_000, 6_000, 6_000, 6_000, 6_000])
 })
 
+test('en Vida, los recibos subsecuentes salen de prima anual menos primer recibo', () => {
+  const recibos = generarRecibos({
+    primaTotal: 24_000,
+    primaAnual: 12_000,
+    vigenciaInicio: '2026-01-15',
+    vigenciaFin: '2028-01-15',
+    periodicidad: 'trimestral',
+    primerRecibo: 4_500,
+  })
+  assert.deepEqual(recibos.map(recibo => recibo.monto), [4_500, 2_500, 2_500, 2_500, 4_500, 2_500, 2_500, 2_500])
+  assert.deepEqual(recibos.map(recibo => recibo.anualidad), [1, 1, 1, 1, 2, 2, 2, 2])
+})
+
 test('convierte manualmente un recibo UDIS a MXN con precisión monetaria', () => {
   assert.equal(calcularMontoMxnUdis(1_250.5, 8.547321), 10_688.42)
   assert.throws(() => calcularMontoMxnUdis(1_250.5, 0))
