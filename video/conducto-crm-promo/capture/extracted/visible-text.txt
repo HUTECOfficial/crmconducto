@@ -1,0 +1,15 @@
+[h1] CONDUCTO CRM
+[p] Gestión Inteligente
+[h2] Iniciar Sesión
+[label] Correo electrónico
+[button] Ingresar
+[h2] Acceso Rápido
+[p] Mauricio Portillo
+[p] administrador
+[p] Javier Garcia
+[p] gerencia
+[p] Monse
+[p] gerencia
+[p] Daniela
+[p] gerencia
+[p] Sistema de demostración - Selecciona cualquier usuario para acceder

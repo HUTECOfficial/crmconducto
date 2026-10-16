@@ -13,6 +13,8 @@ import { Search, RefreshCw, Eye, Download, Clock, CheckCircle, AlertCircle } fro
 import { ProtectedRoute } from "@/components/protected-route"
 import { useSupabase } from "@/contexts/supabase-context"
 import { formatDateOnly } from "@/lib/date-only"
+import { RAMOS, etiquetaRamo } from "@/lib/ramos"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 interface ConsultaResult {
   id: string
@@ -34,12 +36,15 @@ export default function ConsultaPolizasPage() {
   const [numeroPoliza, setNumeroPoliza] = useState("")
   const [nombreCliente, setNombreCliente] = useState("")
   const [nombreAsegurado, setNombreAsegurado] = useState("")
+  const [ramo, setRamo] = useState("todos")
+  const [grupo, setGrupo] = useState("")
+  const hayCriterio = !!(numeroPoliza || nombreCliente || nombreAsegurado || grupo || ramo !== "todos")
   const [isLoading, setIsLoading] = useState(false)
   const [resultados, setResultados] = useState<ConsultaResult[]>([])
   const [ultimaConsulta, setUltimaConsulta] = useState<Date | null>(null)
 
   const handleConsulta = async () => {
-    if (!numeroPoliza && !nombreCliente && !nombreAsegurado) return
+    if (!hayCriterio) return
 
     setIsLoading(true)
     await new Promise(resolve => setTimeout(resolve, 600))
@@ -55,7 +60,9 @@ export default function ConsultaPolizasPage() {
       const matchAsegurado = nombreAsegurado
         ? (poliza.nombreAsegurado || "").toLowerCase().includes(nombreAsegurado.toLowerCase())
         : true
-      return matchNumero && matchNombre && matchAsegurado
+      const matchRamo = ramo === "todos" || poliza.ramo === ramo
+      const matchGrupo = grupo ? (poliza.grupo || "").toLowerCase().includes(grupo.toLowerCase()) : true
+      return matchNumero && matchNombre && matchAsegurado && matchRamo && matchGrupo
     })
 
     const mapped: ConsultaResult[] = encontradas.map(poliza => {
@@ -67,7 +74,7 @@ export default function ConsultaPolizasPage() {
         cliente: cliente?.nombre || "Cliente no encontrado",
         asegurado: poliza.nombreAsegurado || cliente?.nombre || "No especificado",
         compania: compania?.nombre || "Compañía no encontrada",
-        ramo: poliza.ramo.replace("-", " "),
+        ramo: poliza.grupo ? `${etiquetaRamo(poliza.ramo)} · ${poliza.grupo}` : etiquetaRamo(poliza.ramo),
         estatus: poliza.estatus,
         vigenciaInicio: poliza.vigenciaInicio,
         vigenciaFin: poliza.vigenciaFin,
@@ -170,9 +177,26 @@ export default function ConsultaPolizasPage() {
                     />
                   </div>
                   
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Ramo</Label>
+                      <Select value={ramo} onValueChange={setRamo}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="todos">Todos</SelectItem>
+                          {RAMOS.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="grupo">Grupo / colectividad</Label>
+                      <Input id="grupo" value={grupo} onChange={(e) => setGrupo(e.target.value)} placeholder="Ej: Colectivo ABC" />
+                    </div>
+                  </div>
+
                   <Button 
                     onClick={handleConsulta} 
-                    disabled={isLoading || (!numeroPoliza && !nombreCliente && !nombreAsegurado)}
+                    disabled={isLoading || !hayCriterio}
                     className="w-full gap-2"
                   >
                     {isLoading ? (

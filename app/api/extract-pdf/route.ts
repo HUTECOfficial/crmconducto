@@ -70,7 +70,7 @@ DATOS DEL CLIENTE:
 DATOS DE LA PÓLIZA:
 - numeroPoliza: Número de póliza (tal cual aparece en el documento)
 - compania: Nombre de la aseguradora (GNP, AXA, MetLife, Mapfre, Zurich, etc.)
-- ramo: Tipo de seguro. Usa uno de: autos, vida, gastos-medicos, empresa, hogar, flotilla
+- ramo: Tipo de seguro. Usa uno de: autos, vida, gastos-medicos, accidentes-personales, danos, empresa, hogar, flotilla
 - prima: Prima o monto del recibo (número sin símbolos)
 - primaTotal: Prima total anual o del periodo (número sin símbolos)
 - formaPago: Forma de pago. Usa uno de: mensual, trimestral, semestral, anual

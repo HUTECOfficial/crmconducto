@@ -5,8 +5,10 @@ import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/auth-context'
 import { auditLogger, AuditEventType } from '@/lib/security/audit-logger'
-import { calcularMontoMxnUdis, calcularPrimaTotalPlazo, calcularVigenciasPoliza, generarRecibos, type EstadoRecibo } from '@/lib/payment-schedule'
-import { todayDateOnly } from '@/lib/date-only'
+import { calcularMontoMxnUdis, calcularPrimaTotalPlazo, calcularVigenciasPoliza, generarRecibos, reciboComprometido, reciboPorCobrar, type EstadoRecibo } from '@/lib/payment-schedule'
+import { compareDateOnly, todayDateOnly } from '@/lib/date-only'
+import type { Ramo } from '@/lib/ramos'
+import { baseComisionRecibo, calcularComision, estadoComisionAlAnularPago, type EstadoComision } from '@/lib/comisiones'
 import { cancelarEstadoRenovacion, completarEstadoRenovacion, iniciarEstadoRenovacion } from '@/lib/renewal-state'
 import { normalizarNumeroInciso, numeroIncisoDisponible, validarNumeroInciso } from '@/lib/fleet'
 
@@ -48,7 +50,11 @@ export interface Poliza {
   id: string
   clienteId: string
   companiaId: string
-  ramo: 'autos' | 'vida' | 'gastos-medicos' | 'empresa' | 'hogar' | 'flotilla'
+  ramo: Ramo
+  /** Grupo o colectividad (Vida, GMM y AP colectivos). */
+  grupo?: string
+  /** % de comisión del agente sobre cada recibo validado. */
+  porcentajeComision?: number
   numeroPoliza: string
   vigenciaInicio: string
   vigenciaFin: string
@@ -145,6 +151,82 @@ export interface PagoPoliza {
   anuladoEn?: string
   anuladoPor?: string
   motivoAnulacion?: string
+  registradoEn?: string
+  registradoPor?: string
+  validadoEn?: string
+  validadoPor?: string
+  comprobanteUrl?: string
+  comprobantePath?: string
+  /** Fecha del valor UDI aplicado (la fecha de pago). */
+  fechaValorUdi?: string
+}
+
+export interface DatosRegistroPago {
+  metodoPago: string
+  /** Fecha en que el cliente pagó; por defecto hoy. En UDIS define el valor UDI aplicado. */
+  fechaPago?: string
+  referencia?: string
+  notas?: string
+  valorUdi?: number
+  /** Fecha a la que corresponde valorUdi; debe ser igual a fechaPago. */
+  fechaValorUdi?: string
+  comprobante?: File | null
+}
+
+export interface Comision {
+  id: string
+  polizaId: string
+  pagoId: string
+  vendedorId?: string
+  numeroRecibo: number
+  anualidad: number
+  base: number
+  porcentaje: number
+  monto: number
+  estatus: EstadoComision
+  generadaEn: string
+  pagadaEn?: string
+  referenciaPago?: string
+  canceladaEn?: string
+  motivoCancelacion?: string
+  notas?: string
+}
+
+type CambiosRegeneracion = Partial<Pick<Poliza, 'prima' | 'primaTotal' | 'formaPago' | 'vigenciaInicio' | 'vigenciaFin' | 'vigenciaPagoFin' | 'primerRecibo' | 'divisas' | 'diasGraciaPrimerRecibo' | 'diasGraciaSubsecuentes'>>
+
+const ESTATUS_POLIZA_CANCELADA: Poliza['estatus'][] = ['cancelada', 'cancelada-cliente', 'cancelada-falta-pago']
+
+function mapearPago(item: any): PagoPoliza {
+  return {
+    id: item.id,
+    polizaId: item.poliza_id,
+    clienteId: item.cliente_id,
+    monto: Number(item.monto || 0),
+    numeroRecibo: Number(item.numero_recibo || 1),
+    totalRecibos: Number(item.total_recibos || 1),
+    anualidad: Number(item.anualidad || 1),
+    moneda: item.moneda || 'MXN',
+    montoUdis: item.monto_udis == null ? undefined : Number(item.monto_udis),
+    valorUdi: item.valor_udi == null ? undefined : Number(item.valor_udi),
+    montoMxn: item.monto_mxn == null ? undefined : Number(item.monto_mxn),
+    fechaEmision: item.fecha_emision || item.created_at?.slice(0, 10),
+    fechaLimite: item.fecha_limite || item.created_at?.slice(0, 10),
+    fechaPago: item.fecha_pago || undefined,
+    metodoPago: item.metodo_pago || undefined,
+    referencia: item.referencia || undefined,
+    estatus: item.estatus as EstadoRecibo,
+    notas: item.notas || undefined,
+    anuladoEn: item.anulado_en || undefined,
+    anuladoPor: item.anulado_por || undefined,
+    motivoAnulacion: item.motivo_anulacion || undefined,
+    registradoEn: item.registrado_en || undefined,
+    registradoPor: item.registrado_por || undefined,
+    validadoEn: item.validado_en || undefined,
+    validadoPor: item.validado_por || undefined,
+    comprobanteUrl: item.comprobante_url || undefined,
+    comprobantePath: item.comprobante_path || undefined,
+    fechaValorUdi: item.fecha_valor_udi || undefined,
+  }
 }
 
 export interface Renovacion {
@@ -276,9 +358,19 @@ interface SupabaseContextType {
   usuariosSistema: UsuarioSistema[]
   pagos: PagoPoliza[]
   loadingPagos: boolean
-  registrarPago: (pagoId: string, datos: { metodoPago: string; referencia?: string; notas?: string; valorUdi?: number }) => Promise<void>
+  /** Registra el pago de un recibo; queda "por validar" hasta que alguien lo valide. */
+  registrarPago: (pagoId: string, datos: DatosRegistroPago) => Promise<void>
+  validarPago: (pagoId: string) => Promise<void>
+  /** Regresa a pendiente un recibo pagado o por validar (anulación o rechazo). */
   anularPago: (pagoId: string, motivo: string) => Promise<void>
-  regenerarRecibosPoliza: (polizaId: string, cambios?: Partial<Pick<Poliza, 'prima' | 'primaTotal' | 'formaPago' | 'vigenciaInicio' | 'vigenciaFin' | 'vigenciaPagoFin' | 'primerRecibo' | 'divisas'>>) => Promise<void>
+  regenerarRecibosPoliza: (polizaId: string, cambios?: CambiosRegeneracion) => Promise<void>
+
+  comisiones: Comision[]
+  marcarComisionesPagadas: (ids: string[], datos: { fecha: string; referencia?: string }) => Promise<void>
+  /** Cierra una comisión por revertir una vez descontada por la aseguradora. */
+  resolverComisionPorRevertir: (id: string, notas: string) => Promise<void>
+  /** Genera las comisiones que falten para recibos ya validados. Devuelve cuántas se crearon. */
+  generarComisionesFaltantes: () => Promise<number>
 
   renovaciones: Renovacion[]
   iniciarRenovacion: (polizaId: string) => Promise<string | null>
@@ -350,6 +442,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   const [loadingPolizas, setLoadingPolizas] = useState(true)
   const [usuariosSistema, setUsuariosSistema] = useState<UsuarioSistema[]>([])
   const [pagos, setPagos] = useState<PagoPoliza[]>([])
+  const [comisiones, setComisiones] = useState<Comision[]>([])
   const [loadingPagos, setLoadingPagos] = useState(true)
   const [renovaciones, setRenovaciones] = useState<Renovacion[]>([])
   const [historialPolizas, setHistorialPolizas] = useState<PolizaHistorial[]>([])
@@ -531,6 +624,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         clienteId: p.cliente_id,
         companiaId: p.compania_id,
         ramo: p.ramo as Poliza['ramo'],
+        grupo: p.grupo || undefined,
+        porcentajeComision: p.porcentaje_comision == null ? undefined : Number(p.porcentaje_comision),
         numeroPoliza: p.numero_poliza,
         vigenciaInicio: p.vigencia_inicio,
         vigenciaFin: p.vigencia_fin,
@@ -607,34 +702,38 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       setLoadingPagos(true)
       const { data, error } = await supabase.from('pagos').select('*').order('fecha_limite')
       if (error) throw error
-      setPagos((data || []).map((item: any) => ({
-        id: item.id,
-        polizaId: item.poliza_id,
-        clienteId: item.cliente_id,
-        monto: Number(item.monto || 0),
-        numeroRecibo: Number(item.numero_recibo || 1),
-        totalRecibos: Number(item.total_recibos || 1),
-        anualidad: Number(item.anualidad || 1),
-        moneda: item.moneda || 'MXN',
-        montoUdis: item.monto_udis == null ? undefined : Number(item.monto_udis),
-        valorUdi: item.valor_udi == null ? undefined : Number(item.valor_udi),
-        montoMxn: item.monto_mxn == null ? undefined : Number(item.monto_mxn),
-        fechaEmision: item.fecha_emision || item.created_at?.slice(0, 10),
-        fechaLimite: item.fecha_limite || item.created_at?.slice(0, 10),
-        fechaPago: item.fecha_pago || undefined,
-        metodoPago: item.metodo_pago || undefined,
-        referencia: item.referencia || undefined,
-        estatus: item.estatus as EstadoRecibo,
-        notas: item.notas || undefined,
-        anuladoEn: item.anulado_en || undefined,
-        anuladoPor: item.anulado_por || undefined,
-        motivoAnulacion: item.motivo_anulacion || undefined,
-      })))
+      setPagos((data || []).map(mapearPago))
     } catch (err: any) {
       console.error('Error fetching pagos:', err.message)
     } finally {
       setLoadingPagos(false)
     }
+  }
+
+  const fetchComisiones = async () => {
+    const { data, error } = await supabase.from('comisiones').select('*').order('generada_en', { ascending: false })
+    if (error) {
+      if (error.code === '42P01') return
+      throw error
+    }
+    setComisiones((data || []).map((item: any) => ({
+      id: item.id,
+      polizaId: item.poliza_id,
+      pagoId: item.pago_id,
+      vendedorId: item.vendedor_id || undefined,
+      numeroRecibo: Number(item.numero_recibo || 1),
+      anualidad: Number(item.anualidad || 1),
+      base: Number(item.base || 0),
+      porcentaje: Number(item.porcentaje || 0),
+      monto: Number(item.monto || 0),
+      estatus: item.estatus as EstadoComision,
+      generadaEn: item.generada_en,
+      pagadaEn: item.pagada_en || undefined,
+      referenciaPago: item.referencia_pago || undefined,
+      canceladaEn: item.cancelada_en || undefined,
+      motivoCancelacion: item.motivo_cancelacion || undefined,
+      notas: item.notas || undefined,
+    })))
   }
 
   const fetchRenovaciones = async () => {
@@ -741,20 +840,29 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
   const regenerarRecibosPoliza = async (
     polizaId: string,
-    cambios: Partial<Pick<Poliza, 'prima' | 'primaTotal' | 'formaPago' | 'vigenciaInicio' | 'vigenciaFin' | 'vigenciaPagoFin' | 'primerRecibo' | 'divisas'>> = {},
+    cambios: CambiosRegeneracion = {},
   ) => {
     const actual = polizas.find(item => item.id === polizaId)
     if (!actual) throw new Error('No se encontró la póliza para regenerar sus recibos')
     const cambiosDefinidos = Object.fromEntries(Object.entries(cambios).filter(([, value]) => value !== undefined))
     const configuracion = { ...actual, ...cambiosDefinidos } as Poliza
-    const pagados = pagos.filter(item => item.polizaId === polizaId && item.estatus === 'pagado')
-    const pendientes = pagos.filter(item => item.polizaId === polizaId && item.estatus !== 'pagado' && item.estatus !== 'cancelado')
+    // Se leen los recibos de la base y no del estado en memoria: otro usuario pudo registrar
+    // o validar un pago desde que se cargó la página.
+    const { data: recibosDb, error: recibosError } = await supabase.from('pagos').select('*').eq('poliza_id', polizaId)
+    if (recibosError) throw recibosError
+    const recibosActuales = (recibosDb || []).map(mapearPago)
+    // Los recibos por validar se conservan igual que los pagados: ya hay un pago registrado.
+    const comprometidos = recibosActuales.filter(reciboComprometido)
+    const pendientes = recibosActuales.filter(reciboPorCobrar)
     const totalConfigurado = Number(configuracion.primaTotal || configuracion.prima || 0)
-    const totalPagado = pagados.reduce((sum, item) => sum + item.monto, 0)
-    if (totalConfigurado < totalPagado) throw new Error('La prima total del plazo no puede ser menor que el importe ya cobrado')
+    const totalComprometido = comprometidos.reduce((sum, item) => sum + item.monto, 0)
+    const totalPagado = comprometidos.filter(item => item.estatus === 'pagado').reduce((sum, item) => sum + item.monto, 0)
+    if (totalConfigurado < totalComprometido) throw new Error('La prima total del plazo no puede ser menor que el importe ya cobrado o por validar')
     const actor = getActor()
+    let canceladosIds: string[] = []
     const restaurarPendientes = async () => {
-      const resultados = await Promise.all(pendientes.map(item => supabase.from('pagos').update({
+      const cancelados = pendientes.filter(item => canceladosIds.includes(item.id))
+      const resultados = await Promise.all(cancelados.map(item => supabase.from('pagos').update({
         estatus: item.estatus,
         cancelado_en: null,
         cancelado_por: null,
@@ -765,7 +873,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     }
 
     if (pendientes.length > 0) {
-      const { error } = await supabase
+      const { data: cancelados, error } = await supabase
         .from('pagos')
         .update({
           estatus: 'cancelado',
@@ -774,7 +882,14 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
           motivo_cancelacion: 'regeneracion_periodicidad',
         })
         .in('id', pendientes.map(item => item.id))
+        .in('estatus', ['pendiente', 'vencido'])
+        .select('id')
       if (error) throw error
+      canceladosIds = (cancelados || []).map((item: any) => item.id)
+      if (canceladosIds.length !== pendientes.length) {
+        await restaurarPendientes()
+        throw new Error('Se registró un pago en esta póliza mientras se editaba; vuelve a intentarlo')
+      }
     }
 
     const recibos = generarRecibos({
@@ -784,7 +899,9 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       vigenciaFin: configuracion.ramo === 'vida' ? configuracion.vigenciaPagoFin || configuracion.vigenciaFin : configuracion.vigenciaFin,
       periodicidad: configuracion.formaPago,
       primerRecibo: configuracion.primerRecibo,
-      recibosPagados: pagados,
+      recibosPagados: comprometidos,
+      diasGraciaPrimerRecibo: configuracion.diasGraciaPrimerRecibo,
+      diasGraciaSubsecuentes: configuracion.diasGraciaSubsecuentes,
     })
 
     if (recibos.length > 0) {
@@ -826,7 +943,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         throw polizaError
       }
     } else {
-      const ultimoPagado = [...pagados].sort((left, right) => right.numeroRecibo - left.numeroRecibo)[0]
+      const ultimoPagado = [...comprometidos].sort((left, right) => right.numeroRecibo - left.numeroRecibo)[0]
       const { error } = await supabase.from('polizas').update({
         prima_cobrada: totalPagado,
         numero_recibo: ultimoPagado ? `${ultimoPagado.numeroRecibo}/${ultimoPagado.totalRecibos}` : null,
@@ -852,8 +969,11 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
     const activos = pagosActuales || []
     const pagadosActuales = activos.filter((item: any) => item.estatus === 'pagado')
-    const cobrado = pagadosActuales.reduce((sum: number, item: any) => sum + Number(item.monto), 0)
-    const siguiente = activos.filter((item: any) => item.estatus !== 'pagado').sort((left: any, right: any) => left.numero_recibo - right.numero_recibo)[0]
+    // Sólo los pagos validados cuentan como prima cobrada.
+    const cobrado = Math.round(pagadosActuales.reduce((sum: number, item: any) => sum + Number(item.monto), 0) * 100) / 100
+    const porNumero = (left: any, right: any) => left.numero_recibo - right.numero_recibo
+    const siguiente = activos.filter((item: any) => reciboPorCobrar(item)).sort(porNumero)[0]
+      ?? activos.filter((item: any) => item.estatus === 'por_validar').sort(porNumero)[0]
     const ultimoPagado = [...pagadosActuales].sort((left: any, right: any) => right.numero_recibo - left.numero_recibo)[0]
     const updateData: Record<string, unknown> = {
       prima_cobrada: cobrado,
@@ -869,25 +989,54 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     if (error) throw error
   }
 
-  const registrarPago = async (pagoId: string, datos: { metodoPago: string; referencia?: string; notas?: string; valorUdi?: number }) => {
+  const subirComprobantePago = async (pago: PagoPoliza, file: File) => {
+    const path = `comprobantes-pagos/${pago.polizaId}/${pago.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+    const { error } = await supabase.storage
+      .from(BUCKET)
+      .upload(path, file, { upsert: false, contentType: file.type || 'application/octet-stream' })
+    if (error) throw new Error('No fue posible subir el comprobante: ' + error.message)
+    const { data } = supabase.storage.from(BUCKET).getPublicUrl(path)
+    return { path, url: data.publicUrl }
+  }
+
+  const registrarPago = async (pagoId: string, datos: DatosRegistroPago) => {
     const pago = pagos.find(item => item.id === pagoId)
-    if (!pago || pago.estatus === 'pagado' || pago.estatus === 'cancelado') return
+    if (!pago || !reciboPorCobrar(pago)) throw new Error('El recibo ya tiene un pago registrado o fue cancelado')
     const esUdis = pago.moneda === 'UDIS'
     const valorUdi = datos.valorUdi === undefined ? undefined : Number(datos.valorUdi)
     if (esUdis && (!valorUdi || valorUdi <= 0)) throw new Error('Captura el valor UDI aplicado a este recibo')
-    const montoMxn = esUdis ? calcularMontoMxnUdis(pago.montoUdis || pago.monto, Number(valorUdi)) : pago.monto
-    const fechaPago = todayDateOnly()
+    const fechaPago = datos.fechaPago || todayDateOnly()
+    if (compareDateOnly(fechaPago, todayDateOnly()) > 0) throw new Error('La fecha de pago no puede ser futura')
+    if (esUdis && datos.fechaValorUdi !== fechaPago) throw new Error('El valor UDI no corresponde a la fecha de pago; vuelve a consultarlo')
+    // USD/EUR no tienen conversión: no se guarda un importe en MXN que no lo es.
+    const montoMxn = esUdis ? calcularMontoMxnUdis(pago.montoUdis || pago.monto, Number(valorUdi)) : pago.moneda === 'MXN' ? pago.monto : null
+    const actor = getActor()
+    const comprobante = datos.comprobante ? await subirComprobantePago(pago, datos.comprobante) : undefined
+    const eliminarComprobante = async () => {
+      if (comprobante) await supabase.storage.from(BUCKET).remove([comprobante.path])
+    }
+
     const { data: pagoActualizado, error } = await supabase.from('pagos').update({
-      estatus: 'pagado',
+      estatus: 'por_validar',
       fecha_pago: fechaPago,
       metodo_pago: datos.metodoPago,
       referencia: datos.referencia || null,
       notas: datos.notas || null,
       valor_udi: esUdis ? valorUdi : null,
+      fecha_valor_udi: esUdis ? fechaPago : null,
       monto_mxn: montoMxn,
-    }).eq('id', pagoId).neq('estatus', 'pagado').neq('estatus', 'cancelado').select('id').maybeSingle()
-    if (error) throw error
-    if (!pagoActualizado) throw new Error('El recibo ya fue cobrado o cancelado por otro usuario')
+      registrado_en: new Date().toISOString(),
+      registrado_por: actor?.id || null,
+      validado_en: null,
+      validado_por: null,
+      comprobante_url: comprobante?.url || null,
+      comprobante_path: comprobante?.path || null,
+    }).eq('id', pagoId).in('estatus', ['pendiente', 'vencido']).select('id').maybeSingle()
+    if (error || !pagoActualizado) {
+      await eliminarComprobante()
+      if (error) throw error
+      throw new Error('El recibo ya fue registrado o cancelado por otro usuario')
+    }
 
     try {
       await sincronizarResumenCobranza(pago.polizaId, datos.metodoPago)
@@ -899,42 +1048,184 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         referencia: pago.referencia || null,
         notas: pago.notas || null,
         valor_udi: pago.valorUdi ?? null,
+        fecha_valor_udi: pago.fechaValorUdi ?? null,
         monto_mxn: pago.montoMxn ?? null,
+        registrado_en: null,
+        registrado_por: null,
+        comprobante_url: null,
+        comprobante_path: null,
       }).eq('id', pagoId)
+      await eliminarComprobante()
       throw error
     }
 
-    await registrarHistorial(pago.polizaId, 'pago_registrado', 'recibo', pago.estatus, 'pagado', {
+    await registrarHistorial(pago.polizaId, 'pago_registrado', 'recibo', pago.estatus, 'por_validar', {
       pagoId,
       numeroRecibo: pago.numeroRecibo,
       anualidad: pago.anualidad,
       monto: pago.monto,
       moneda: pago.moneda,
       valorUdi: esUdis ? valorUdi : undefined,
+      fechaValorUdi: esUdis ? fechaPago : undefined,
+      fechaPago,
       montoMxn,
       metodoPago: datos.metodoPago,
+      referencia: datos.referencia,
+      comprobanteUrl: comprobante?.url,
     })
     await Promise.all([fetchPagos(), fetchPolizas(), fetchHistorialPolizas()])
-    toast.success(`Recibo ${pago.numeroRecibo}/${pago.totalRecibos} cobrado`)
+    toast.success(`Pago del recibo ${pago.numeroRecibo}/${pago.totalRecibos} registrado; queda pendiente de validar`)
+  }
+
+  // ==================== COMISIONES ====================
+  const generarComisionRecibo = async (pago: PagoPoliza): Promise<boolean> => {
+    const poliza = polizas.find(item => item.id === pago.polizaId)
+    const porcentaje = Number(poliza?.porcentajeComision || 0)
+    if (!poliza || porcentaje <= 0 || pago.estatus !== 'pagado') return false
+    // Una comisión por revertir no bloquea la nueva: el recibo se volvió a pagar y validar.
+    if (comisiones.some(item => item.pagoId === pago.id && (item.estatus === 'pendiente' || item.estatus === 'pagada'))) return false
+    const base = baseComisionRecibo(pago)
+    const { error } = await supabase.from('comisiones').insert([{
+      poliza_id: poliza.id,
+      pago_id: pago.id,
+      vendedor_id: poliza.vendedorId || null,
+      numero_recibo: pago.numeroRecibo,
+      anualidad: pago.anualidad,
+      base,
+      porcentaje,
+      monto: calcularComision(base, porcentaje),
+      estatus: 'pendiente',
+    }])
+    // 23505: el índice único ya tiene una comisión activa para este recibo.
+    if (error && error.code !== '23505') throw error
+    return !error
+  }
+
+  const ajustarComisionPorAnulacion = async (pago: PagoPoliza, motivo: string) => {
+    const { data, error } = await supabase.from('comisiones').select('id, estatus').eq('pago_id', pago.id).neq('estatus', 'cancelada')
+    if (error) {
+      if (error.code === '42P01') return
+      throw error
+    }
+    for (const comision of data || []) {
+      const nuevoEstado = estadoComisionAlAnularPago(comision.estatus as EstadoComision)
+      if (nuevoEstado === comision.estatus) continue
+      const { error: updateError } = await supabase.from('comisiones').update({
+        estatus: nuevoEstado,
+        cancelada_en: nuevoEstado === 'cancelada' ? new Date().toISOString() : null,
+        motivo_cancelacion: `Pago anulado: ${motivo}`,
+      }).eq('id', comision.id).eq('estatus', comision.estatus)
+      if (updateError) throw updateError
+    }
+  }
+
+  const marcarComisionesPagadas = async (ids: string[], datos: { fecha: string; referencia?: string }) => {
+    if (ids.length === 0) return
+    const { error } = await supabase.from('comisiones').update({
+      estatus: 'pagada',
+      pagada_en: datos.fecha,
+      referencia_pago: datos.referencia?.trim() || null,
+    }).in('id', ids).eq('estatus', 'pendiente')
+    if (error) throw error
+    await fetchComisiones()
+    toast.success(ids.length === 1 ? 'Comisión marcada como pagada' : `${ids.length} comisiones marcadas como pagadas`)
+  }
+
+  const resolverComisionPorRevertir = async (id: string, notas: string) => {
+    if (!notas.trim()) throw new Error('Describe cómo se revirtió la comisión')
+    const { error } = await supabase.from('comisiones').update({
+      estatus: 'cancelada',
+      cancelada_en: new Date().toISOString(),
+      notas: notas.trim(),
+    }).eq('id', id).eq('estatus', 'por_revertir')
+    if (error) throw error
+    await fetchComisiones()
+    toast.success('Comisión revertida')
+  }
+
+  const generarComisionesFaltantes = async (): Promise<number> => {
+    let creadas = 0
+    for (const pago of pagos.filter(item => item.estatus === 'pagado')) {
+      try {
+        if (await generarComisionRecibo(pago)) creadas++
+      } catch (error) {
+        // Recibos UDIS antiguos sin importe en MXN: se omiten.
+        console.warn('Comisión omitida para el recibo', pago.id, error)
+      }
+    }
+    await fetchComisiones()
+    return creadas
+  }
+
+  const validarPago = async (pagoId: string) => {
+    const pago = pagos.find(item => item.id === pagoId)
+    if (!pago || pago.estatus !== 'por_validar') throw new Error('Sólo se pueden validar pagos registrados pendientes de validación')
+    const actor = getActor()
+    const { data: pagoValidado, error } = await supabase.from('pagos').update({
+      estatus: 'pagado',
+      validado_en: new Date().toISOString(),
+      validado_por: actor?.id || null,
+    }).eq('id', pagoId).eq('estatus', 'por_validar').select('id').maybeSingle()
+    if (error) throw error
+    if (!pagoValidado) throw new Error('El pago ya fue validado o modificado por otro usuario')
+
+    try {
+      await sincronizarResumenCobranza(pago.polizaId)
+    } catch (error) {
+      await supabase.from('pagos').update({ estatus: 'por_validar', validado_en: null, validado_por: null }).eq('id', pagoId)
+      throw error
+    }
+
+    await registrarHistorial(pago.polizaId, 'pago_validado', 'recibo', 'por_validar', 'pagado', {
+      pagoId,
+      numeroRecibo: pago.numeroRecibo,
+      anualidad: pago.anualidad,
+      monto: pago.monto,
+      moneda: pago.moneda,
+      montoMxn: pago.montoMxn,
+    })
+    // La comisión no debe impedir la validación; si falla se puede regenerar desde Comisiones.
+    try {
+      await generarComisionRecibo({ ...pago, estatus: 'pagado' })
+    } catch (error: any) {
+      toast.warning('Pago validado, pero no se generó la comisión: ' + error.message)
+    }
+    await Promise.all([fetchPagos(), fetchPolizas(), fetchHistorialPolizas(), fetchComisiones().catch(error => console.error('Error fetching comisiones:', error.message))])
+    toast.success(`Pago del recibo ${pago.numeroRecibo}/${pago.totalRecibos} validado`)
   }
 
   const anularPago = async (pagoId: string, motivo: string) => {
     const pago = pagos.find(item => item.id === pagoId)
-    if (!pago || pago.estatus !== 'pagado') throw new Error('Solo se puede anular un recibo pagado')
+    if (!pago || !reciboComprometido(pago)) throw new Error('Sólo se puede anular un recibo pagado o por validar')
     if (!motivo.trim()) throw new Error('El motivo de anulación es obligatorio')
     const actor = getActor()
+    // En una póliza cancelada el recibo no vuelve a cobranza: queda cancelado.
+    const polizaCancelada = ESTATUS_POLIZA_CANCELADA.includes(polizas.find(item => item.id === pago.polizaId)?.estatus as Poliza['estatus'])
+    const estatusFinal: EstadoRecibo = polizaCancelada ? 'cancelado' : 'pendiente'
     const { data: pagoAnulado, error } = await supabase.from('pagos').update({
-      estatus: 'pendiente',
+      estatus: estatusFinal,
+      ...(polizaCancelada ? {
+        cancelado_en: new Date().toISOString(),
+        cancelado_por: actor?.id || null,
+        motivo_cancelacion: 'poliza_cancelada',
+      } : {}),
       fecha_pago: null,
       metodo_pago: null,
       referencia: null,
       notas: null,
       valor_udi: null,
+      fecha_valor_udi: null,
       monto_mxn: null,
+      registrado_en: null,
+      registrado_por: null,
+      validado_en: null,
+      validado_por: null,
+      comprobante_url: null,
+      comprobante_path: null,
       anulado_en: new Date().toISOString(),
       anulado_por: actor?.id || null,
       motivo_anulacion: motivo.trim(),
-    }).eq('id', pagoId).eq('estatus', 'pagado').select('id').maybeSingle()
+    }).eq('id', pagoId).eq('estatus', pago.estatus).select('id').maybeSingle()
     if (error) throw error
     if (!pagoAnulado) throw new Error('El pago ya fue modificado por otro usuario')
 
@@ -942,13 +1233,23 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       await sincronizarResumenCobranza(pago.polizaId)
     } catch (error) {
       await supabase.from('pagos').update({
-        estatus: 'pagado',
+        estatus: pago.estatus,
         fecha_pago: pago.fechaPago || null,
         metodo_pago: pago.metodoPago || null,
         referencia: pago.referencia || null,
         notas: pago.notas || null,
         valor_udi: pago.valorUdi ?? null,
+        fecha_valor_udi: pago.fechaValorUdi ?? null,
         monto_mxn: pago.montoMxn ?? null,
+        registrado_en: pago.registradoEn || null,
+        registrado_por: pago.registradoPor || null,
+        validado_en: pago.validadoEn || null,
+        validado_por: pago.validadoPor || null,
+        comprobante_url: pago.comprobanteUrl || null,
+        comprobante_path: pago.comprobantePath || null,
+        cancelado_en: null,
+        cancelado_por: null,
+        motivo_cancelacion: null,
         anulado_en: null,
         anulado_por: null,
         motivo_anulacion: null,
@@ -956,7 +1257,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       throw error
     }
 
-    await registrarHistorial(pago.polizaId, 'pago_anulado', 'recibo', 'pagado', 'pendiente', {
+    await registrarHistorial(pago.polizaId, pago.estatus === 'por_validar' ? 'pago_rechazado' : 'pago_anulado', 'recibo', pago.estatus, estatusFinal, {
       pagoId,
       numeroRecibo: pago.numeroRecibo,
       anualidad: pago.anualidad,
@@ -967,10 +1268,19 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       referencia: pago.referencia,
       valorUdi: pago.valorUdi,
       montoMxn: pago.montoMxn,
+      comprobanteUrl: pago.comprobanteUrl,
+      validadoEn: pago.validadoEn,
       motivo: motivo.trim(),
     })
-    await Promise.all([fetchPagos(), fetchPolizas(), fetchHistorialPolizas()])
-    toast.success(`Pago del recibo ${pago.numeroRecibo}/${pago.totalRecibos} anulado`)
+    if (pago.estatus === 'pagado') {
+      try {
+        await ajustarComisionPorAnulacion(pago, motivo.trim())
+      } catch (error: any) {
+        toast.warning('El pago se anuló, pero no se ajustó su comisión: ' + error.message)
+      }
+    }
+    await Promise.all([fetchPagos(), fetchPolizas(), fetchHistorialPolizas(), fetchComisiones().catch(error => console.error('Error fetching comisiones:', error.message))])
+    toast.success(`Pago del recibo ${pago.numeroRecibo}/${pago.totalRecibos} ${pago.estatus === 'por_validar' ? 'rechazado' : 'anulado'}`)
   }
 
   const iniciarRenovacion = async (polizaId: string): Promise<string | null> => {
@@ -1143,6 +1453,11 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         poliza.ramo === 'vida' ? poliza.vigenciaVidaPago : undefined,
         poliza.ramo === 'vida' ? poliza.vigenciaVidaProducto ?? poliza.anosVidaProducto : undefined,
       )
+      // Fuera de Vida se respeta un fin de vigencia capturado (pólizas semestrales, a corto plazo...).
+      const vigenciaFinCapturada = poliza.ramo !== 'vida' && poliza.vigenciaFin && compareDateOnly(poliza.vigenciaFin, poliza.vigenciaInicio) > 0
+        ? poliza.vigenciaFin
+        : undefined
+      const vigenciaFin = vigenciaFinCapturada ?? vigencias.vigenciaAnualFin
       const primaTotalPlazo = poliza.ramo === 'vida'
         ? calcularPrimaTotalPlazo(poliza.prima, poliza.vigenciaVidaPago)
         : Number(poliza.primaTotal || poliza.prima)
@@ -1150,9 +1465,11 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         primaTotal: primaTotalPlazo,
         primaAnual: poliza.ramo === 'vida' ? poliza.prima : undefined,
         vigenciaInicio: poliza.vigenciaInicio,
-        vigenciaFin: poliza.ramo === 'vida' ? vigencias.vigenciaPagoFin! : vigencias.vigenciaAnualFin,
+        vigenciaFin: poliza.ramo === 'vida' ? vigencias.vigenciaPagoFin! : vigenciaFin,
         periodicidad: poliza.formaPago,
         primerRecibo: poliza.primerRecibo,
+        diasGraciaPrimerRecibo: poliza.diasGraciaPrimerRecibo,
+        diasGraciaSubsecuentes: poliza.diasGraciaSubsecuentes,
       })
       const { data, error } = await supabase
         .from('polizas')
@@ -1160,9 +1477,11 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
           cliente_id: poliza.clienteId,
           compania_id: poliza.companiaId,
           ramo: poliza.ramo,
+          grupo: poliza.grupo || null,
+          porcentaje_comision: poliza.porcentajeComision ?? null,
           numero_poliza: poliza.numeroPoliza,
           vigencia_inicio: poliza.vigenciaInicio,
-          vigencia_fin: vigencias.vigenciaAnualFin,
+          vigencia_fin: vigenciaFin,
           vigencia_pago_fin: vigencias.vigenciaPagoFin || null,
           vigencia_producto_fin: vigencias.vigenciaProductoFin || null,
           prima: poliza.prima,
@@ -1273,9 +1592,13 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
             ramo === 'vida' ? vigenciaVidaPago : undefined,
             ramo === 'vida' ? vigenciaVidaProducto : undefined,
           )
+          const vigenciaFinCapturada = ramo !== 'vida' ? poliza.vigenciaFin : undefined
+          if (vigenciaFinCapturada && compareDateOnly(vigenciaFinCapturada, vigenciaInicio) <= 0) {
+            throw new Error('El fin de vigencia debe ser posterior al inicio')
+          }
           poliza = {
             ...poliza,
-            vigenciaFin: vigencias.vigenciaAnualFin,
+            vigenciaFin: vigenciaFinCapturada ?? vigencias.vigenciaAnualFin,
             vigenciaPagoFin: vigencias.vigenciaPagoFin,
             vigenciaProductoFin: vigencias.vigenciaProductoFin,
           }
@@ -1285,14 +1608,17 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
           poliza = { ...poliza, primaTotal: primaTotalPlazo, primaEmitida: primaTotalPlazo }
         }
         const divisas = poliza.divisas ?? anterior.divisas
-        if (poliza.divisas !== undefined && poliza.divisas !== anterior.divisas && pagos.some(item => item.polizaId === id && item.estatus === 'pagado')) {
-          throw new Error('No se puede cambiar la divisa porque la póliza ya tiene recibos pagados')
+        if (poliza.divisas !== undefined && poliza.divisas !== anterior.divisas && pagos.some(item => item.polizaId === id && reciboComprometido(item))) {
+          throw new Error('No se puede cambiar la divisa porque la póliza ya tiene recibos pagados o por validar')
         }
       }
       const updateData: any = {}
       if (poliza.clienteId !== undefined) updateData.cliente_id = poliza.clienteId
       if (poliza.companiaId !== undefined) updateData.compania_id = poliza.companiaId
       if (poliza.ramo !== undefined) updateData.ramo = poliza.ramo
+      if (poliza.grupo !== undefined) updateData.grupo = poliza.grupo.trim() || null
+      // La clave presente con valor vacío borra el % (deja de generar comisiones).
+      if ('porcentajeComision' in poliza) updateData.porcentaje_comision = poliza.porcentajeComision ?? null
       if (poliza.numeroPoliza !== undefined) updateData.numero_poliza = poliza.numeroPoliza
       if (poliza.vigenciaInicio !== undefined) updateData.vigencia_inicio = poliza.vigenciaInicio
       if (poliza.vigenciaFin !== undefined) updateData.vigencia_fin = poliza.vigenciaFin
@@ -1360,16 +1686,44 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
       if (anterior) {
         const camposRelevantes: Array<keyof Poliza> = [
-          'numeroPoliza', 'ramo', 'vigenciaInicio', 'vigenciaFin', 'vigenciaPagoFin', 'vigenciaProductoFin', 'prima', 'primaTotal',
+          'numeroPoliza', 'ramo', 'grupo', 'porcentajeComision', 'vigenciaInicio', 'vigenciaFin', 'vigenciaPagoFin', 'vigenciaProductoFin', 'prima', 'primaTotal',
           'formaPago', 'estatus', 'renovacionEstado', 'vendedorId', 'nombreAsegurado',
           'agente', 'incisoEndoso', 'tipoPago', 'divisas', 'valorUdiInicial', 'comentarios', 'notas',
         ]
         const cambios = camposRelevantes.filter(campo =>
           poliza[campo] !== undefined && JSON.stringify(anterior[campo]) !== JSON.stringify(poliza[campo]),
         )
-        const requiereRegeneracion = ['prima', 'primaTotal', 'formaPago', 'vigenciaInicio', 'vigenciaFin', 'vigenciaPagoFin', 'primerRecibo', 'divisas']
+        const cancelada = poliza.estatus !== undefined && ESTATUS_POLIZA_CANCELADA.includes(poliza.estatus) && !ESTATUS_POLIZA_CANCELADA.includes(anterior.estatus)
+        const reactivada = poliza.estatus !== undefined && !ESTATUS_POLIZA_CANCELADA.includes(poliza.estatus) && ESTATUS_POLIZA_CANCELADA.includes(anterior.estatus)
+        const requiereRegeneracion = reactivada || ['prima', 'primaTotal', 'formaPago', 'vigenciaInicio', 'vigenciaFin', 'vigenciaPagoFin', 'primerRecibo', 'divisas', 'diasGraciaPrimerRecibo', 'diasGraciaSubsecuentes']
           .some(campo => poliza[campo as keyof Poliza] !== undefined && poliza[campo as keyof Poliza] !== anterior[campo as keyof Poliza])
-        if (requiereRegeneracion) {
+        if (cancelada) {
+          // Una póliza cancelada deja de generar cobranza: sus recibos por cobrar se cancelan.
+          // Los pagos por validar se conservan para validarlos o rechazarlos.
+          const { data: recibosCancelados, error: cancelarError } = await supabase.from('pagos').update({
+            estatus: 'cancelado',
+            cancelado_en: new Date().toISOString(),
+            cancelado_por: getActor()?.id || null,
+            motivo_cancelacion: 'poliza_cancelada',
+          }).eq('poliza_id', id).in('estatus', ['pendiente', 'vencido']).select('id, fecha_limite')
+          try {
+            if (cancelarError) throw cancelarError
+            await sincronizarResumenCobranza(id)
+          } catch (error) {
+            // Sin recibos cancelados la póliza no puede quedar cancelada: se revierte todo.
+            const hoyRollback = todayDateOnly()
+            await Promise.all((recibosCancelados || []).map((item: any) => supabase.from('pagos').update({
+              estatus: compareDateOnly(item.fecha_limite, hoyRollback) < 0 ? 'vencido' : 'pendiente',
+              cancelado_en: null,
+              cancelado_por: null,
+              motivo_cancelacion: null,
+            }).eq('id', item.id)))
+            await supabase.from('polizas').update({ estatus: anterior.estatus }).eq('id', id)
+            await fetchPolizas()
+            throw error
+          }
+          await fetchPagos()
+        } else if (requiereRegeneracion) {
           try {
             await regenerarRecibosPoliza(id, {
               prima: poliza.prima,
@@ -1380,6 +1734,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
               vigenciaPagoFin: poliza.vigenciaPagoFin,
               primerRecibo: poliza.primerRecibo,
               divisas: poliza.divisas,
+              diasGraciaPrimerRecibo: poliza.diasGraciaPrimerRecibo,
+              diasGraciaSubsecuentes: poliza.diasGraciaSubsecuentes,
             })
           } catch (error) {
             const { error: rollbackError } = await supabase.from('polizas').update({
@@ -1397,6 +1753,9 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
               divisas: anterior.divisas || null,
               valor_udi_inicial: anterior.valorUdiInicial ?? null,
               primer_recibo: anterior.primerRecibo ?? null,
+              dias_gracia_primer_recibo: anterior.diasGraciaPrimerRecibo ?? null,
+              dias_gracia_subsecuentes: anterior.diasGraciaSubsecuentes ?? null,
+              estatus: anterior.estatus,
               numero_recibo: anterior.numeroRecibo || null,
               prima_total_recibo: anterior.primaTotalRecibo ?? null,
               ultimo_dia_pago: anterior.ultimoDiaPago || null,
@@ -1997,6 +2356,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       fetchUsuariosSistema(),
       fetchPagos(),
       fetchRenovaciones(),
+      fetchComisiones().catch(error => console.error('Error fetching comisiones:', error.message)),
       fetchHistorialPolizas(),
       fetchFlotillaUnidades(),
       fetchProspectos(),
@@ -2031,8 +2391,13 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       pagos,
       loadingPagos,
       registrarPago,
+      validarPago,
       anularPago,
       regenerarRecibosPoliza,
+      comisiones,
+      marcarComisionesPagadas,
+      resolverComisionPorRevertir,
+      generarComisionesFaltantes,
       renovaciones,
       iniciarRenovacion,
       completarRenovacion,

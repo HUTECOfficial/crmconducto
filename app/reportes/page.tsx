@@ -5,6 +5,8 @@ import { PageHeader } from "@/components/page-header"
 import { GlassCard } from "@/components/glass-card"
 import { NeoButton } from "@/components/neo-button"
 import { useSupabase } from "@/contexts/supabase-context"
+import { RAMOS } from "@/lib/ramos"
+import { situacionRenovacion } from "@/lib/renovaciones"
 import { ProtectedRoute } from "@/components/protected-route"
 import { Download } from "lucide-react"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
@@ -24,11 +26,10 @@ export default function ReportesPage() {
   })
 
   // Distribución por ramo
-  const ramos = ["autos", "vida", "gastos-medicos", "empresa", "hogar"]
-  const distribucionRamos = ramos.map((ramo) => {
+  const distribucionRamos = RAMOS.map(({ value: ramo, label }) => {
     const polizasRamo = polizas.filter((p) => p.ramo === ramo && p.estatus === "activa")
     return {
-      nombre: ramo.replace("-", " "),
+      nombre: label,
       cantidad: polizasRamo.length,
       total: polizasRamo.reduce((sum, p) => sum + p.prima, 0),
     }
@@ -36,7 +37,7 @@ export default function ReportesPage() {
 
   // Renovaciones
   const renovaciones = {
-    porRenovar: polizas.filter((p) => p.estatus === "por-renovar").length,
+    porRenovar: polizas.filter((p) => situacionRenovacion(p).generaAviso).length,
     activas: polizas.filter((p) => p.estatus === "activa").length,
     vencidas: polizas.filter((p) => p.estatus === "vencida").length,
   }

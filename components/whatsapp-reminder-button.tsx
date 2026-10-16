@@ -4,13 +4,16 @@ import { Button } from "@/components/ui/button"
 import { MessageCircle } from "lucide-react"
 import { useState } from "react"
 import { useSupabase, type Poliza } from "@/contexts/supabase-context"
+import { etiquetaRamo } from "@/lib/ramos"
 
 interface WhatsAppReminderButtonProps {
   poliza: Poliza
   className?: string
+  /** Saldo calculado desde los recibos por cobrar; sin él se usa prima emitida - cobrada. */
+  montoPendiente?: number
 }
 
-export function WhatsAppReminderButton({ poliza, className }: WhatsAppReminderButtonProps) {
+export function WhatsAppReminderButton({ poliza, className, montoPendiente }: WhatsAppReminderButtonProps) {
   const { clientes } = useSupabase()
   const [enviando, setEnviando] = useState(false)
 
@@ -25,7 +28,7 @@ export function WhatsAppReminderButton({ poliza, className }: WhatsAppReminderBu
     const numeroWhatsApp = "524775805382" // Tu número
 
     // Calcular prima pendiente
-    const primaPendiente = poliza.primaEmitida - poliza.primaCobrada
+    const primaPendiente = montoPendiente ?? poliza.primaEmitida - poliza.primaCobrada
 
     // Crear mensaje amable
     const mensaje = `¡Hola ${cliente.nombre}! 👋
@@ -35,7 +38,7 @@ Te escribo para recordarte que tu póliza ${poliza.numeroPoliza} tiene un pago p
 📋 *Detalles de tu Póliza:*
 • Número: ${poliza.numeroPoliza}
 • Compañía: ${poliza.companiaId.toUpperCase()}
-• Ramo: ${poliza.ramo}
+• Ramo: ${etiquetaRamo(poliza.ramo)}
 • Prima Pendiente: $${primaPendiente.toLocaleString()}
 • Estatus: ${poliza.estatus}
 • Vigencia: ${poliza.vigenciaInicio} a ${poliza.vigenciaFin}
@@ -61,7 +64,7 @@ Si tienes dudas, no dudes en contactarnos.
   }
 
   // Solo mostrar si hay prima pendiente
-  const primaPendiente = poliza.primaEmitida - poliza.primaCobrada
+  const primaPendiente = montoPendiente ?? poliza.primaEmitida - poliza.primaCobrada
   if (primaPendiente <= 0) return null
 
   return (

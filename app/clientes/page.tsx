@@ -20,6 +20,7 @@ import { WhatsAppShareButton } from "@/components/whatsapp-share-button"
 import { motion } from "framer-motion"
 import { toast } from "sonner"
 import { todayDateOnly } from "@/lib/date-only"
+import { etiquetaRamo } from "@/lib/ramos"
 import {
   Plus, Search, X, User, Mail, Phone, Building2, FileText,
   Edit2, Trash2, Users, CheckCircle, XCircle, FolderOpen
@@ -527,7 +528,7 @@ export default function ClientesPage() {
                           <div key={p.id} className="flex items-center justify-between text-xs p-2 rounded-lg bg-muted/40">
                             <span className="font-mono font-medium">{p.numeroPoliza}</span>
                             <div className="flex items-center gap-2">
-                              <span className="capitalize text-muted-foreground">{p.ramo}</span>
+                              <span className="text-muted-foreground">{etiquetaRamo(p.ramo)}{p.grupo ? ` · ${p.grupo}` : ""}</span>
                               <Badge variant="outline" className="text-xs">{p.estatus}</Badge>
                             </div>
                           </div>

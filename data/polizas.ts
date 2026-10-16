@@ -2,7 +2,7 @@ export interface Poliza {
   id: string
   clienteId: string
   companiaId: string
-  ramo: "autos" | "vida" | "gastos-medicos" | "empresa" | "hogar" | "flotilla"
+  ramo: "autos" | "vida" | "gastos-medicos" | "accidentes-personales" | "danos" | "empresa" | "hogar" | "flotilla"
   numeroPoliza: string
   vigenciaInicio: string
   vigenciaFin: string

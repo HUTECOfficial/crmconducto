@@ -1,8 +1,20 @@
 import { addDaysDateOnly, addMonthsDateOnly, compareDateOnly, differenceInCalendarDays, todayDateOnly } from './date-only'
 
 export type PeriodicidadPago = 'mensual' | 'trimestral' | 'semestral' | 'anual'
-export type EstadoRecibo = 'pendiente' | 'pagado' | 'vencido' | 'cancelado'
-export type EstadoCobranza = 'pagado' | 'vigente' | 'proximo_vencer' | 'vencido' | 'cancelado'
+export type EstadoRecibo = 'pendiente' | 'por_validar' | 'pagado' | 'vencido' | 'cancelado'
+export type EstadoCobranza = 'pagado' | 'por_validar' | 'vigente' | 'proximo_vencer' | 'vencido' | 'cancelado'
+
+/** Recibos que ya no deben regenerarse: cobrados o con un pago registrado en espera de validación. */
+export function reciboComprometido(recibo: Pick<ReciboExistente, 'estatus'>): boolean {
+  return recibo.estatus === 'pagado' || recibo.estatus === 'por_validar'
+}
+
+/** Recibos que todavía requieren que el cliente pague. */
+export function reciboPorCobrar(recibo: Pick<ReciboExistente, 'estatus'>): boolean {
+  return recibo.estatus === 'pendiente' || recibo.estatus === 'vencido'
+}
+
+export const DIAS_GRACIA_DEFAULT = 30
 
 export interface ReciboExistente {
   id: string
@@ -39,16 +51,21 @@ export interface GenerarRecibosInput {
   vigenciaFin: string
   periodicidad: PeriodicidadPago
   primerRecibo?: number
+  /** Recibos cobrados o por validar; se conservan intactos. */
   recibosPagados?: ReciboExistente[]
+  diasGraciaPrimerRecibo?: number
+  diasGraciaSubsecuentes?: number
 }
 
 export interface ResumenCobranza {
-  estatus: 'pagada' | 'pendiente' | 'vencida' | 'sin_recibos'
+  estatus: 'pagada' | 'por_validar' | 'pendiente' | 'vencida' | 'sin_recibos'
   total: number
   cobrado: number
   pendiente: number
+  porValidar: number
   recibosPagados: number
   recibosPendientes: number
+  recibosPorValidar: number
   proximoPago?: ReciboExistente
 }
 
@@ -142,7 +159,7 @@ export function generarRecibos(input: GenerarRecibosInput): ReciboProgramado[] {
   }
 
   const pagados = [...(input.recibosPagados || [])]
-    .filter(recibo => recibo.estatus === 'pagado')
+    .filter(reciboComprometido)
     .sort((left, right) => left.numeroRecibo - right.numeroRecibo)
   const cobrado = pagados.reduce((sum, recibo) => sum + recibo.monto, 0)
   const saldo = Math.max(0, Math.round((input.primaTotal - cobrado) * 100) / 100)
@@ -175,6 +192,11 @@ export function generarRecibos(input: GenerarRecibosInput): ReciboProgramado[] {
   const diferenciaSaldo = Math.round((saldo - montos.reduce((sum, monto) => sum + monto, 0)) * 100) / 100
   if (montos.length > 0) montos[montos.length - 1] = Math.round((montos[montos.length - 1] + diferenciaSaldo) * 100) / 100
 
+  const diasGracia = (numeroRecibo: number) => {
+    const dias = numeroRecibo === 1 ? input.diasGraciaPrimerRecibo : input.diasGraciaSubsecuentes
+    return Number.isInteger(dias) && Number(dias) >= 0 ? Number(dias) : DIAS_GRACIA_DEFAULT
+  }
+
   return montos.map((monto, index) => {
     const numeroRecibo = pagados.length + index + 1
     const fechaEmision = fechasBase[numeroRecibo - 1]
@@ -186,7 +208,7 @@ export function generarRecibos(input: GenerarRecibosInput): ReciboProgramado[] {
       totalRecibos: pagados.length + pendientesCantidad,
       anualidad: Math.floor(((numeroRecibo - 1) * meses) / 12) + 1,
       fechaEmision,
-      fechaLimite: addDaysDateOnly(fechaEmision, 30),
+      fechaLimite: addDaysDateOnly(fechaEmision, diasGracia(numeroRecibo)),
       estatus: 'pendiente',
     }
   })
@@ -197,7 +219,7 @@ export function estadoCobranzaRecibo(
   hoy = todayDateOnly(),
   diasProximoVencimiento = 7,
 ): EstadoCobranza {
-  if (recibo.estatus === 'pagado' || recibo.estatus === 'cancelado') return recibo.estatus
+  if (recibo.estatus === 'pagado' || recibo.estatus === 'cancelado' || recibo.estatus === 'por_validar') return recibo.estatus
   const dias = differenceInCalendarDays(recibo.fechaLimite, hoy)
   if (dias < 0) return 'vencido'
   if (dias <= diasProximoVencimiento) return 'proximo_vencer'
@@ -207,23 +229,25 @@ export function estadoCobranzaRecibo(
 export function resumirCobranza(recibos: ReciboExistente[], primaTotal: number, hoy = todayDateOnly()): ResumenCobranza {
   const activos = recibos.filter(recibo => recibo.estatus !== 'cancelado')
   if (activos.length === 0) {
-    return { estatus: 'sin_recibos', total: primaTotal, cobrado: 0, pendiente: primaTotal, recibosPagados: 0, recibosPendientes: 0 }
+    return { estatus: 'sin_recibos', total: primaTotal, cobrado: 0, pendiente: primaTotal, porValidar: 0, recibosPagados: 0, recibosPendientes: 0, recibosPorValidar: 0 }
   }
 
+  const sumar = (items: ReciboExistente[]) => Math.round(items.reduce((sum, recibo) => sum + recibo.monto, 0) * 100) / 100
   const pagados = activos.filter(recibo => recibo.estatus === 'pagado')
-  const pendientes = activos.filter(recibo => recibo.estatus !== 'pagado')
-  const cobrado = pagados.reduce((sum, recibo) => sum + recibo.monto, 0)
-  const pendiente = pendientes.reduce((sum, recibo) => sum + recibo.monto, 0)
-  const proximoPago = [...pendientes].sort((left, right) => left.fechaLimite.localeCompare(right.fechaLimite))[0]
+  const porValidar = activos.filter(recibo => recibo.estatus === 'por_validar')
+  const pendientes = activos.filter(reciboPorCobrar)
+  const proximoPago = [...pendientes, ...porValidar].sort((left, right) => left.fechaLimite.localeCompare(right.fechaLimite))[0]
   const tieneVencidos = pendientes.some(recibo => estadoCobranzaRecibo(recibo, hoy) === 'vencido')
 
   return {
-    estatus: pendientes.length === 0 ? 'pagada' : tieneVencidos ? 'vencida' : 'pendiente',
+    estatus: tieneVencidos ? 'vencida' : pendientes.length > 0 ? 'pendiente' : porValidar.length > 0 ? 'por_validar' : 'pagada',
     total: primaTotal,
-    cobrado,
-    pendiente,
+    cobrado: sumar(pagados),
+    pendiente: sumar(pendientes),
+    porValidar: sumar(porValidar),
     recibosPagados: pagados.length,
     recibosPendientes: pendientes.length,
+    recibosPorValidar: porValidar.length,
     proximoPago,
   }
 }

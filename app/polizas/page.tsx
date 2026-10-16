@@ -23,8 +23,11 @@ import { VehiculoSelector } from "@/components/vehiculo-selector"
 import { FlotillaUnidades } from "@/components/flotilla-unidades"
 import type { VehiculoAxa } from "@/contexts/supabase-context"
 import { formatDateOnly, todayDateOnly } from "@/lib/date-only"
-import { calcularPrimaTotalPlazo, calcularVigenciasPoliza, estadoCobranzaRecibo, generarRecibos, resumirCobranza } from "@/lib/payment-schedule"
+import { calcularPrimaTotalPlazo, calcularVigenciasPoliza, generarRecibos, reciboComprometido } from "@/lib/payment-schedule"
 import { toast } from "sonner"
+import { RAMOS, etiquetaRamo } from "@/lib/ramos"
+import { situacionRenovacion } from "@/lib/renovaciones"
+import { PolizaCobranzaPanel } from "@/components/poliza-cobranza-panel"
 
 const ESTATUS_COLORS: Record<string, string> = {
   activa: "bg-green-500/10 text-green-500 border-green-500/20",
@@ -67,6 +70,7 @@ function PolizasContent() {
   const [filtroCompania, setFiltroCompania] = useState("todas")
   const [filtroRamo, setFiltroRamo] = useState("todos")
   const [filtroEstatus, setFiltroEstatus] = useState("activa")
+  const [filtroGrupo, setFiltroGrupo] = useState("todos")
   const [polizaSeleccionada, setPolizaSeleccionada] = useState<SPoliza | null>(null)
   const [modalNuevaPoliza, setModalNuevaPoliza] = useState(false)
   const [modalEditarPoliza, setModalEditarPoliza] = useState(false)
@@ -110,6 +114,7 @@ function PolizasContent() {
     vigenciaVidaPago: "", vigenciaVidaProducto: "", agente: "", vendedorId: "", ultimoDiaPago: "", numeroRecibo: "",
     registroSistemaCobranza: false, comentarios: "", notas: "", marcaActualizacion: false,
     divisas: "MXN", primaTotal: "", diasGraciaPrimerRecibo: "", diasGraciaSubsecuentes: "", primerRecibo: "", recibosSubsecuentes: "",
+    grupo: "", porcentajeComision: "",
   })
 
   const [nuevoCliente, setNuevoCliente] = useState({ nombre: "", email: "", telefono: "", empresa: "" })
@@ -125,11 +130,12 @@ function PolizasContent() {
     numeroRecibo: "", agente: "", vendedorId: "", divisas: "MXN",
     primerRecibo: "", recibosSubsecuentes: "",
     vigenciaVidaPago: "", vigenciaVidaProducto: "",
+    ramo: "" as SPoliza["ramo"] | "", grupo: "", porcentajeComision: "",
   })
 
   useEffect(() => {
     const filtro = searchParams.get("filtro")
-    if (filtro === "renovaciones") setFiltroEstatus("por-renovar")
+    if (filtro === "renovaciones") setFiltroEstatus("pendientes-renovar")
   }, [searchParams])
 
   useEffect(() => {
@@ -159,9 +165,11 @@ function PolizasContent() {
         polizaEditar?.ramo === "vida" && editForm.vigenciaVidaPago ? Number(editForm.vigenciaVidaPago) : undefined,
         polizaEditar?.ramo === "vida" && editForm.vigenciaVidaProducto ? Number(editForm.vigenciaVidaProducto) : undefined,
       )
+      // Fuera de Vida se conserva el fin capturado mientras no cambie el inicio de vigencia.
+      const conservarFin = polizaEditar?.ramo !== "vida" && editForm.vigenciaInicio === polizaEditar?.vigenciaInicio
       setEditForm(form => ({
         ...form,
-        vigenciaFin: vigencias.vigenciaAnualFin,
+        vigenciaFin: conservarFin && form.vigenciaFin ? form.vigenciaFin : vigencias.vigenciaAnualFin,
         vigenciaPagoFin: vigencias.vigenciaPagoFin || "",
         vigenciaProductoFin: vigencias.vigenciaProductoFin || "",
       }))
@@ -183,7 +191,7 @@ function PolizasContent() {
   useEffect(() => {
     if (!polizaEditar || !editForm.formaPago || !editForm.vigenciaInicio || !editForm.vigenciaFin || !editForm.primaTotal) return
     try {
-      const pagados = pagos.filter(pago => pago.polizaId === polizaEditar.id && pago.estatus === "pagado")
+      const pagados = pagos.filter(pago => pago.polizaId === polizaEditar.id && reciboComprometido(pago))
       const recibos = generarRecibos({
         primaTotal: Number(editForm.primaTotal),
         primaAnual: polizaEditar.ramo === "vida" ? Number(editForm.prima) : undefined,
@@ -276,6 +284,7 @@ function PolizasContent() {
       tipoPago: "", vigenciaVidaPago: "", vigenciaVidaProducto: "", agente: "", vendedorId: "", ultimoDiaPago: "", numeroRecibo: "",
       registroSistemaCobranza: false, comentarios: "", notas: "", marcaActualizacion: false,
       divisas: "MXN", primaTotal: "", diasGraciaPrimerRecibo: "", diasGraciaSubsecuentes: "", primerRecibo: "", recibosSubsecuentes: "",
+      grupo: "", porcentajeComision: "",
     })
     setNuevoCliente({ nombre: "", email: "", telefono: "", empresa: "" })
     setBusquedaCliente("")
@@ -344,6 +353,8 @@ function PolizasContent() {
         clienteId: clienteIdFinal,
         companiaId: nuevaPoliza.companiaId,
         ramo: nuevaPoliza.ramo as SPoliza["ramo"],
+        grupo: nuevaPoliza.grupo.trim() || undefined,
+        porcentajeComision: nuevaPoliza.porcentajeComision ? parseFloat(nuevaPoliza.porcentajeComision) : undefined,
         numeroPoliza: nuevaPoliza.numeroPoliza,
         vigenciaInicio: nuevaPoliza.vigenciaInicio,
         vigenciaFin: nuevaPoliza.vigenciaFin,
@@ -424,6 +435,9 @@ function PolizasContent() {
       recibosSubsecuentes: poliza.recibosSubsecuentes?.toString() || "",
       vigenciaVidaPago: poliza.vigenciaVidaPago?.toString() || "",
       vigenciaVidaProducto: (poliza.vigenciaVidaProducto ?? poliza.anosVidaProducto)?.toString() || "",
+      ramo: poliza.ramo,
+      grupo: poliza.grupo || "",
+      porcentajeComision: poliza.porcentajeComision?.toString() || "",
     })
     setPolizaSeleccionada(null)
     setModalEditarPoliza(true)
@@ -437,6 +451,15 @@ function PolizasContent() {
     }
     if (polizaEditar.ramo === "vida" && (!editForm.vigenciaVidaPago || !editForm.vigenciaVidaProducto || Number(editForm.vigenciaVidaPago) > Number(editForm.vigenciaVidaProducto))) {
       toast.error("Las vigencias de pago y producto son obligatorias; pago no puede superar producto")
+      return
+    }
+    const porcentajeComisionNum = editForm.porcentajeComision === "" ? undefined : parseFloat(editForm.porcentajeComision)
+    if (porcentajeComisionNum !== undefined && (isNaN(porcentajeComisionNum) || porcentajeComisionNum < 0 || porcentajeComisionNum > 100)) {
+      toast.error("El % de comisión debe estar entre 0 y 100")
+      return
+    }
+    if (polizaEditar.ramo !== "vida" && editForm.vigenciaFin && editForm.vigenciaFin <= editForm.vigenciaInicio) {
+      toast.error("El fin de vigencia debe ser posterior al inicio")
       return
     }
     const primaNum = parseFloat(editForm.prima)
@@ -454,6 +477,9 @@ function PolizasContent() {
 
     await actualizarPoliza(polizaEditar.id, {
       estatus: editForm.estatus as SPoliza["estatus"],
+      ramo: editForm.ramo && editForm.ramo !== polizaEditar.ramo ? editForm.ramo : undefined,
+      grupo: editForm.grupo,
+      porcentajeComision: porcentajeComisionNum,
       comentarios: editForm.comentarios || undefined,
       notas: editForm.notas || undefined,
       prima: primaPoliza,
@@ -545,6 +571,8 @@ function PolizasContent() {
       diasGraciaSubsecuentes: polizaAccion.diasGraciaSubsecuentes?.toString() || "",
       primerRecibo: polizaAccion.primerRecibo?.toString() || "",
       recibosSubsecuentes: polizaAccion.recibosSubsecuentes?.toString() || "",
+      grupo: polizaAccion.grupo || "",
+      porcentajeComision: polizaAccion.porcentajeComision?.toString() || "",
     })
     setBusquedaCliente("")
     setVehiculoSeleccionado(null)
@@ -599,7 +627,10 @@ function PolizasContent() {
   const polizasFiltradas = polizas.filter(p => {
     if (filtroCompania !== "todas" && p.companiaId !== filtroCompania) return false
     if (filtroRamo !== "todos" && p.ramo !== filtroRamo) return false
-    if (filtroEstatus !== "todos" && p.estatus !== filtroEstatus) return false
+    if (filtroGrupo !== "todos" && (p.grupo || "") !== (filtroGrupo === "__sin_grupo__" ? "" : filtroGrupo)) return false
+    if (filtroEstatus === "pendientes-renovar") {
+      if (!situacionRenovacion(p).generaAviso) return false
+    } else if (filtroEstatus !== "todos" && p.estatus !== filtroEstatus) return false
     if (busqueda) {
       const q = busqueda.toLowerCase()
       const cliente = clientes.find(c => c.id === p.clienteId)
@@ -609,11 +640,16 @@ function PolizasContent() {
         (cliente?.nombre || "").toLowerCase().includes(q) ||
         (compania?.nombre || "").toLowerCase().includes(q) ||
         (p.nombreAsegurado || "").toLowerCase().includes(q) ||
-        p.ramo.toLowerCase().includes(q)
+        (p.grupo || "").toLowerCase().includes(q) ||
+        etiquetaRamo(p.ramo).toLowerCase().includes(q)
       )
     }
     return true
   }).sort((a, b) => a.vigenciaFin.localeCompare(b.vigenciaFin))
+
+  const gruposDisponibles = Array.from(new Set(
+    polizas.filter(p => filtroRamo === "todos" || p.ramo === filtroRamo).map(p => p.grupo).filter((grupo): grupo is string => !!grupo),
+  )).sort((a, b) => a.localeCompare(b, "es"))
 
   return (
     <ProtectedRoute>
@@ -646,7 +682,7 @@ function PolizasContent() {
 
           {/* Filtros */}
           <GlassCard className="p-4 mb-4">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div>
                 <label className="text-xs font-medium mb-1 block text-muted-foreground">Aseguradora</label>
                 <Select value={filtroCompania} onValueChange={setFiltroCompania}>
@@ -661,16 +697,22 @@ function PolizasContent() {
               </div>
               <div>
                 <label className="text-xs font-medium mb-1 block text-muted-foreground">Ramo</label>
-                <Select value={filtroRamo} onValueChange={setFiltroRamo}>
+                <Select value={filtroRamo} onValueChange={value => { setFiltroRamo(value); setFiltroGrupo("todos") }}>
                   <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="todos">Todos</SelectItem>
-                    <SelectItem value="autos">Autos</SelectItem>
-                    <SelectItem value="vida">Vida</SelectItem>
-                    <SelectItem value="gastos-medicos">Gastos Médicos</SelectItem>
-                    <SelectItem value="empresa">Empresa</SelectItem>
-                    <SelectItem value="hogar">Hogar</SelectItem>
-                    <SelectItem value="flotilla">Flotilla</SelectItem>
+                    {RAMOS.map(ramo => <SelectItem key={ramo.value} value={ramo.value}>{ramo.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-medium mb-1 block text-muted-foreground">Grupo / colectividad</label>
+                <Select value={filtroGrupo} onValueChange={setFiltroGrupo}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos</SelectItem>
+                    <SelectItem value="__sin_grupo__">Sin grupo</SelectItem>
+                    {gruposDisponibles.map(grupo => <SelectItem key={grupo} value={grupo}>{grupo}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -682,6 +724,7 @@ function PolizasContent() {
                     <SelectItem value="todos">Todos</SelectItem>
                     <SelectItem value="activa">Pólizas activas</SelectItem>
                     <SelectItem value="vigente">Vigente</SelectItem>
+                    <SelectItem value="pendientes-renovar">Pendientes de renovar (60 días)</SelectItem>
                     <SelectItem value="por-renovar">Por Renovar</SelectItem>
                     <SelectItem value="renovada">Renovada</SelectItem>
                     <SelectItem value="en-movimientos">En Movimientos</SelectItem>
@@ -745,7 +788,10 @@ function PolizasContent() {
                             {compania?.nombre || "—"}
                           </Badge>
                         </td>
-                        <td className="p-3 capitalize">{poliza.ramo.replace("-", " ")}</td>
+                        <td className="p-3">
+                          <p>{etiquetaRamo(poliza.ramo)}</p>
+                          {poliza.grupo && <p className="text-xs text-muted-foreground">{poliza.grupo}</p>}
+                        </td>
                         <td className="p-3 text-xs">
                           <p>{formatDateOnly(poliza.vigenciaInicio)}</p>
                           <p className="text-muted-foreground">{formatDateOnly(poliza.vigenciaFin)}</p>
@@ -812,7 +858,7 @@ function PolizasContent() {
                     </div>
                     <div className="flex items-center gap-2 mb-2">
                       <Badge variant="outline" style={{ borderColor: compania?.color, color: compania?.color }}>{compania?.nombre}</Badge>
-                      <span className="text-xs capitalize text-muted-foreground">{poliza.ramo.replace("-", " ")}</span>
+                      <span className="text-xs text-muted-foreground">{etiquetaRamo(poliza.ramo)}{poliza.grupo ? ` · ${poliza.grupo}` : ""}</span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
                       <p className="font-semibold">${poliza.prima.toLocaleString()} <span className="text-xs font-normal text-muted-foreground capitalize">/ {poliza.formaPago}</span></p>
@@ -835,8 +881,6 @@ function PolizasContent() {
                 const cliente = clientes.find(c => c.id === polizaSeleccionada.clienteId)
                 const compania = companias.find(c => c.id === polizaSeleccionada.companiaId)
                 const vendedor = usuariosSistema.find(item => item.id === polizaSeleccionada.vendedorId)
-                const recibosPoliza = pagos.filter(item => item.polizaId === polizaSeleccionada.id && item.estatus !== "cancelado")
-                const resumen = resumirCobranza(recibosPoliza, polizaSeleccionada.primaTotal || polizaSeleccionada.prima)
                 const historial = historialPolizas.filter(item => item.polizaId === polizaSeleccionada.id).slice(0, 20)
                 return (
                   <div className="space-y-4 mt-2">
@@ -846,7 +890,9 @@ function PolizasContent() {
                         ["# Póliza", polizaSeleccionada.numeroPoliza],
                         ["Asegurado", polizaSeleccionada.nombreAsegurado || cliente?.nombre || "—"],
                         ["Aseguradora", compania?.nombre || "—"],
-                        ["Ramo", polizaSeleccionada.ramo.replace("-", " ")],
+                        ["Ramo", etiquetaRamo(polizaSeleccionada.ramo)],
+                        ["Grupo / colectividad", polizaSeleccionada.grupo || "—"],
+                        ["% Comisión", polizaSeleccionada.porcentajeComision != null ? `${polizaSeleccionada.porcentajeComision}%` : "—"],
                         ["Prima total", `$${polizaSeleccionada.prima.toLocaleString()}`],
                         ["Forma de Pago", polizaSeleccionada.formaPago],
                         ...(polizaSeleccionada.ramo === "vida" ? [
@@ -883,37 +929,7 @@ function PolizasContent() {
                         {getEstatusLabel(getEstatusVisible(polizaSeleccionada))}
                       </Badge>
                     </div>
-                    <div className="rounded-xl border border-border/50 p-4 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-semibold">Cobranza</p>
-                          <p className="text-xs text-muted-foreground capitalize">Periodicidad {polizaSeleccionada.formaPago}</p>
-                        </div>
-                        <Badge variant={resumen.estatus === "pagada" ? "default" : resumen.estatus === "vencida" ? "destructive" : "secondary"}>{resumen.estatus.replace("_", " ")}</Badge>
-                      </div>
-                      <div className="grid grid-cols-3 gap-3 text-sm">
-                        <div><p className="text-xs text-muted-foreground">Prima total</p><p className="font-semibold">${resumen.total.toLocaleString()}</p></div>
-                        <div><p className="text-xs text-muted-foreground">Cobrado</p><p className="font-semibold text-green-600">${resumen.cobrado.toLocaleString()}</p></div>
-                        <div><p className="text-xs text-muted-foreground">Pendiente</p><p className="font-semibold text-orange-600">${resumen.pendiente.toLocaleString()}</p></div>
-                      </div>
-                      {recibosPoliza.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">Sin recibos generados. Se crearán al guardar la póliza con la nueva estructura.</p>
-                      ) : (
-                        <div className="space-y-1 max-h-44 overflow-y-auto">
-                          {recibosPoliza.map(recibo => {
-                            const estado = estadoCobranzaRecibo(recibo)
-                            return (
-                              <div key={recibo.id} className="grid grid-cols-[80px_1fr_1fr_auto] gap-2 items-center rounded-lg bg-muted/30 p-2 text-xs">
-                                <span className="font-mono">{recibo.numeroRecibo}/{recibo.totalRecibos}</span>
-                                <span>${recibo.monto.toLocaleString()}</span>
-                                <span>{formatDateOnly(recibo.fechaLimite)}</span>
-                                <Badge variant={estado === "pagado" ? "default" : estado === "vencido" ? "destructive" : "outline"}>{estado.replace("_", " ")}</Badge>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
+                    <PolizaCobranzaPanel poliza={polizaSeleccionada} conAcciones />
                     {polizaSeleccionada.ramo === "flotilla" && <FlotillaUnidades polizaId={polizaSeleccionada.id} />}
                     <div className="rounded-xl border border-border/50 p-4 space-y-2">
                       <p className="text-sm font-semibold">Historial de cambios</p>
@@ -951,10 +967,10 @@ function PolizasContent() {
 
           {/* Modal Editar Póliza */}
           <Dialog open={modalEditarPoliza} onOpenChange={setModalEditarPoliza}>
-            <DialogContent className="glass-strong max-w-lg">
+            <DialogContent className="glass-strong max-w-3xl">
               <DialogHeader>
                 <DialogTitle className="font-serif text-xl">Editar Póliza: {polizaEditar?.numeroPoliza}</DialogTitle>
-                <DialogDescription>Modifica los datos de la póliza</DialogDescription>
+                <DialogDescription>Modifica los datos de la póliza; recibos, cobranza y renovación se actualizan en todos los módulos.</DialogDescription>
               </DialogHeader>
               <div className="space-y-4 mt-2 max-h-[70vh] overflow-y-auto pr-2">
                 <div>
@@ -977,6 +993,29 @@ function PolizasContent() {
                       <SelectItem value="rehabilitada">Rehabilitada</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <Label className="text-xs">Ramo</Label>
+                    {polizaEditar?.ramo === "vida" || polizaEditar?.ramo === "flotilla" ? (
+                      <Input value={etiquetaRamo(polizaEditar.ramo)} readOnly className="h-8 bg-muted" />
+                    ) : (
+                      <Select value={editForm.ramo} onValueChange={v => setEditForm(f => ({ ...f, ramo: v as SPoliza["ramo"] }))}>
+                        <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {RAMOS.filter(ramo => ramo.value !== "vida" && ramo.value !== "flotilla").map(ramo => <SelectItem key={ramo.value} value={ramo.value}>{ramo.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                  <div>
+                    <Label className="text-xs">Grupo / colectividad</Label>
+                    <Input value={editForm.grupo} onChange={e => setEditForm(f => ({ ...f, grupo: e.target.value }))} className="h-8" placeholder="Opcional" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">% Comisión</Label>
+                    <Input type="number" min="0" max="100" step="0.01" value={editForm.porcentajeComision} onChange={e => setEditForm(f => ({ ...f, porcentajeComision: e.target.value }))} className="h-8" placeholder="Ej: 10" />
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -1024,8 +1063,12 @@ function PolizasContent() {
                     <Input type="date" value={editForm.vigenciaInicio} onChange={e => setEditForm(f => ({ ...f, vigenciaInicio: e.target.value }))} className="h-8" />
                   </div>
                   <div>
-                    <Label className="text-xs">Fin de vigencia anual</Label>
-                    <Input type="date" value={editForm.vigenciaFin} readOnly className="h-8 bg-muted" />
+                    <Label className="text-xs">{polizaEditar?.ramo === "vida" ? "Fin de vigencia anual" : "Fin de vigencia"}</Label>
+                    {polizaEditar?.ramo === "vida" ? (
+                      <Input type="date" value={editForm.vigenciaFin} readOnly className="h-8 bg-muted" />
+                    ) : (
+                      <Input type="date" value={editForm.vigenciaFin} min={editForm.vigenciaInicio} onChange={e => setEditForm(f => ({ ...f, vigenciaFin: e.target.value }))} className="h-8" />
+                    )}
                   </div>
                 </div>
                 {polizaEditar?.ramo === "vida" && (
@@ -1067,7 +1110,7 @@ function PolizasContent() {
                   </div>
                 </div>
                 {editForm.divisas === "UDIS" && (
-                  <p className="col-span-2 text-xs text-muted-foreground">El tipo de conversión se consulta al momento de cobrar cada recibo.</p>
+                  <p className="col-span-2 text-xs text-muted-foreground">Los recibos se conservan en UDIS y se convierten a MXN con el valor UDI de Banco de México de la fecha de pago.</p>
                 )}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -1117,6 +1160,12 @@ function PolizasContent() {
                   <Label className="text-xs">Notas</Label>
                   <Textarea value={editForm.notas} onChange={e => setEditForm(f => ({ ...f, notas: e.target.value }))} className="min-h-[60px] text-sm" />
                 </div>
+                {polizaEditar && (
+                  <div className="space-y-2 border-t border-border/50 pt-4">
+                    <p className="text-sm font-semibold">Cobranza, pagos, renovación y comisiones</p>
+                    <PolizaCobranzaPanel poliza={polizaEditar} conAcciones />
+                  </div>
+                )}
               </div>
               <div className="flex justify-end gap-2 mt-2">
                 <Button variant="outline" onClick={() => setModalEditarPoliza(false)}>Cancelar</Button>
@@ -1265,14 +1314,22 @@ function PolizasContent() {
                     <Select value={nuevaPoliza.ramo} onValueChange={v => setNuevaPoliza(p => ({ ...p, ramo: v as any }))}>
                       <SelectTrigger><SelectValue placeholder="Selecciona" /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="autos">Autos</SelectItem>
-                        <SelectItem value="vida">Vida</SelectItem>
-                        <SelectItem value="gastos-medicos">Gastos Médicos</SelectItem>
-                        <SelectItem value="empresa">Empresa</SelectItem>
-                        <SelectItem value="hogar">Hogar</SelectItem>
-                        <SelectItem value="flotilla">Flotilla</SelectItem>
+                        {RAMOS.map(ramo => <SelectItem key={ramo.value} value={ramo.value}>{ramo.label}</SelectItem>)}
                       </SelectContent>
                     </Select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Grupo / colectividad</Label>
+                    <Input placeholder="Ej: Colectivo Empresa ABC" value={nuevaPoliza.grupo}
+                      onChange={e => setNuevaPoliza(p => ({ ...p, grupo: e.target.value }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>% Comisión</Label>
+                    <Input type="number" min="0" max="100" step="0.01" placeholder="Ej: 10" value={nuevaPoliza.porcentajeComision}
+                      onChange={e => setNuevaPoliza(p => ({ ...p, porcentajeComision: e.target.value }))} />
                   </div>
                 </div>
 

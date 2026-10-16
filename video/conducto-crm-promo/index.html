@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Conducto CRM — Product Promo</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      :root {
+        --canvas: #fdfdff;
+        --ink: #090b0f;
+        --blue: #0100ff;
+        --brand-blue: #0014ff;
+        --electric: #2166ff;
+        --muted: #52555b;
+        --border: #d2d8e2;
+        --orange: #f37513;
+        --green: #2ea957;
+        --soft-blue: rgba(0, 20, 255, 0.12);
+      }
+
+      * { box-sizing: border-box; }
+      html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+      body { background: var(--canvas); color: var(--ink); font-family: Inter, Arial, sans-serif; }
+      [data-composition-id="conducto-promo"] { width: 1920px; height: 1080px; position: relative; overflow: hidden; background: var(--canvas); }
+
+      .scene { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; overflow: hidden; }
+      .scene-content { position: relative; width: 100%; height: 100%; padding: 74px 92px; display: flex; flex-direction: column; gap: 28px; }
+      .display { font-family: "Playfair Display", Georgia, serif; }
+      .muted { color: var(--muted); }
+      .glass { background: rgba(255, 255, 255, 0.86); border: 1px solid rgba(0, 20, 255, 0.15); box-shadow: 0 8px 32px rgba(0, 20, 255, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.1); backdrop-filter: blur(24px) saturate(1.8); }
+      .blue-glow { position: absolute; width: 720px; height: 720px; border-radius: 50%; background: radial-gradient(circle, rgba(33,102,255,.16) 0%, rgba(33,102,255,.06) 36%, rgba(33,102,255,0) 72%); pointer-events: none; }
+      .tiny-label { font-size: 18px; letter-spacing: .12em; text-transform: uppercase; font-weight: 700; }
+      .pill { display: inline-flex; align-items: center; gap: 10px; border-radius: 999px; padding: 12px 18px; font-size: 20px; font-weight: 700; }
+      .icon-chip { width: 52px; height: 52px; border-radius: 16px; display: flex; align-items: center; justify-content: center; background: rgba(0,20,255,.10); color: var(--blue); font-size: 25px; }
+
+      /* Beat 1 */
+      #scene-1 { background: linear-gradient(135deg, #ffffff 0%, #fdfdff 58%, #f4f8ff 100%); }
+      .s1-content { align-items: center; justify-content: center; padding: 60px 140px; }
+      .s1-kicker { color: var(--blue); margin-bottom: -14px; }
+      .s1-title { margin: 0; text-align: center; font-size: 76px; line-height: .98; letter-spacing: -.025em; }
+      .s1-subtitle { margin: 0; font-size: 27px; color: var(--muted); text-align: center; }
+      .s1-frame { width: 1280px; height: 610px; border-radius: 28px; overflow: hidden; position: relative; box-shadow: 0 30px 80px rgba(0,20,255,.16); border: 1px solid rgba(0,20,255,.18); background: #fff; }
+      .s1-frame img { width: 100%; height: 100%; object-fit: cover; object-position: center; display: block; }
+      .s1-vignette { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(255,255,255,.02), rgba(255,255,255,0), rgba(0,20,255,.04)); pointer-events: none; }
+      .s1-orbit { position: absolute; inset: 0; pointer-events: none; }
+      .s1-line { position: absolute; left: 12%; top: 28%; width: 76%; height: 44%; overflow: visible; }
+      .s1-line path { fill: none; stroke: rgba(0,20,255,.36); stroke-width: 3; stroke-dasharray: 1 12; stroke-linecap: round; }
+      .s1-tag { position: absolute; padding: 15px 20px; border-radius: 18px; background: rgba(255,255,255,.92); border: 1px solid rgba(0,20,255,.18); box-shadow: 0 10px 30px rgba(0,20,255,.13); font-size: 22px; font-weight: 700; color: var(--ink); }
+      .s1-tag span { color: var(--blue); margin-right: 8px; }
+      .tag-a { left: 4%; top: 15%; }
+      .tag-b { right: 4%; top: 27%; }
+      .tag-c { right: 11%; bottom: 14%; }
+
+      /* Beat 2 */
+      #scene-2 { background: #f8fbff; }
+      .s2-content { padding: 68px 84px 68px 84px; }
+      .dashboard-shell { display: flex; height: 100%; gap: 30px; }
+      .rail { width: 285px; padding: 28px 22px; border-radius: 28px; display: flex; flex-direction: column; gap: 22px; flex-shrink: 0; }
+      .rail-logo { font-size: 29px; line-height: 1; margin: 0 0 12px 8px; }
+      .rail-user { display: flex; align-items: center; gap: 12px; padding: 16px; border-radius: 18px; background: rgba(0,20,255,.06); }
+      .avatar { width: 40px; height: 40px; border-radius: 14px; display: flex; align-items: center; justify-content: center; color: white; background: linear-gradient(135deg, #0100ff, #2166ff); font-weight: 800; }
+      .rail-user strong { display: block; font-size: 17px; }
+      .rail-user small { color: var(--muted); font-size: 15px; }
+      .rail-nav { display: flex; flex-direction: column; gap: 8px; }
+      .rail-item { padding: 14px 15px; border-radius: 15px; display: flex; align-items: center; gap: 13px; color: var(--muted); font-size: 18px; font-weight: 600; }
+      .rail-item.active { color: white; background: linear-gradient(100deg, var(--blue), var(--electric)); box-shadow: 0 10px 24px rgba(0,20,255,.18); }
+      .rail-dot { width: 11px; height: 11px; border-radius: 50%; background: currentColor; }
+      .dash-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 23px; }
+      .dash-top { display: flex; justify-content: space-between; align-items: flex-end; }
+      .dash-top h2 { margin: 0 0 8px; font-size: 47px; line-height: 1; }
+      .dash-top p { margin: 0; font-size: 21px; color: var(--muted); }
+      .search { width: 330px; height: 56px; border-radius: 18px; display: flex; align-items: center; gap: 12px; padding: 0 20px; color: var(--muted); font-size: 18px; }
+      .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+      .kpi { min-height: 150px; border-radius: 22px; padding: 22px; display: flex; justify-content: space-between; align-items: flex-start; }
+      .kpi-label { font-size: 18px; color: var(--muted); font-weight: 600; }
+      .kpi-value { margin-top: 10px; font-size: 48px; line-height: 1; }
+      .kpi-change { margin-top: 12px; font-size: 17px; color: var(--green); font-weight: 700; }
+      .dash-lower { display: grid; grid-template-columns: 1.25fr .75fr; gap: 22px; flex: 1; min-height: 0; }
+      .panel { border-radius: 24px; padding: 25px; min-height: 0; }
+      .panel-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+      .panel-heading h3 { margin: 0; font-size: 27px; }
+      .panel-heading span { color: var(--blue); font-size: 17px; font-weight: 700; }
+      .mini-row { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 15px 0; border-top: 1px solid rgba(210,216,226,.8); }
+      .mini-row:first-of-type { border-top: 0; }
+      .mini-name { font-size: 19px; font-weight: 700; }
+      .mini-meta { margin-top: 5px; color: var(--muted); font-size: 16px; }
+      .status { padding: 9px 12px; border-radius: 999px; font-size: 15px; font-weight: 800; white-space: nowrap; }
+      .status.blue { color: var(--blue); background: rgba(0,20,255,.09); }
+      .status.orange { color: var(--orange); background: rgba(243,117,19,.12); }
+      .collection { display: flex; flex-direction: column; justify-content: space-between; }
+      .collection-number { font-size: 68px; line-height: 1; margin: 24px 0 10px; }
+      .collection-copy { margin: 0; color: var(--muted); font-size: 20px; }
+      .progress { height: 16px; margin-top: 28px; border-radius: 999px; background: #e7edfb; overflow: hidden; }
+      .progress-fill { width: 72%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--blue), var(--electric)); }
+      .collection-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 22px; font-size: 17px; color: var(--muted); }
+
+      /* Beat 3 */
+      #scene-3 { background: #f7faff; }
+      .s3-content { padding: 88px 150px; }
+      .s3-top { display: flex; justify-content: space-between; align-items: flex-end; }
+      .s3-top h2 { margin: 0; font-size: 61px; line-height: .98; }
+      .s3-top p { margin: 0; width: 485px; color: var(--muted); font-size: 23px; line-height: 1.35; }
+      .queue-layout { display: grid; grid-template-columns: 1.5fr .72fr; gap: 28px; flex: 1; min-height: 0; }
+      .queue-card { border-radius: 28px; padding: 32px; }
+      .queue-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+      .queue-head h3 { margin: 0; font-size: 28px; }
+      .queue-head .count { font-size: 18px; color: var(--muted); }
+      .queue-row { display: grid; grid-template-columns: 1.4fr 1fr 150px 130px; align-items: center; gap: 18px; min-height: 90px; border-top: 1px solid rgba(210,216,226,.8); }
+      .queue-row:first-of-type { border-top: 0; }
+      .client strong { display: block; font-size: 22px; }
+      .client span { display: block; margin-top: 5px; color: var(--muted); font-size: 17px; }
+      .insurer { font-size: 20px; font-weight: 700; }
+      .insurer small { display: block; margin-top: 4px; color: var(--muted); font-size: 16px; font-weight: 400; }
+      .due { font-size: 19px; font-weight: 800; }
+      .due small { display: block; margin-top: 4px; color: var(--muted); font-size: 15px; font-weight: 400; }
+      .signal-card { border-radius: 28px; padding: 32px; display: flex; flex-direction: column; }
+      .signal-card h3 { margin: 0; font-size: 28px; }
+      .signal-card p { color: var(--muted); font-size: 19px; line-height: 1.4; }
+      .signal-ring { width: 190px; height: 190px; border-radius: 50%; margin: 20px auto; display: flex; align-items: center; justify-content: center; background: conic-gradient(var(--green) 0 76%, #e9eef9 76% 100%); position: relative; }
+      .signal-ring::after { content: ""; position: absolute; inset: 15px; border-radius: 50%; background: #fff; }
+      .signal-ring strong { position: relative; z-index: 1; font-size: 46px; }
+      .signal-list { display: flex; flex-direction: column; gap: 13px; margin-top: auto; }
+      .signal-item { display: flex; align-items: center; justify-content: space-between; padding: 13px 15px; background: rgba(0,20,255,.05); border-radius: 14px; font-size: 17px; }
+      .signal-item b { color: var(--green); }
+
+      /* Beat 4 */
+      #scene-4 { background: radial-gradient(circle at 50% 42%, #ffffff 0%, #f8fbff 58%, #eef5ff 100%); }
+      .s4-content { align-items: center; justify-content: center; text-align: center; padding: 70px 180px; }
+      .s4-orbit { position: absolute; width: 1180px; height: 620px; border: 1px solid rgba(0,20,255,.10); border-radius: 50%; pointer-events: none; }
+      .s4-orbit::before, .s4-orbit::after { content: ""; position: absolute; width: 12px; height: 12px; border-radius: 50%; background: var(--blue); box-shadow: 0 0 24px rgba(0,20,255,.55); }
+      .s4-orbit::before { left: 18%; top: 10%; }
+      .s4-orbit::after { right: 13%; bottom: 14%; background: var(--electric); }
+      .s4-title { margin: 0; font-size: 112px; line-height: .9; letter-spacing: -.035em; }
+      .s4-subtitle { margin: 26px 0 0; color: var(--muted); font-size: 31px; }
+      .cta { margin-top: 48px; padding: 19px 28px; border-radius: 17px; background: var(--blue); color: white; font-size: 22px; font-weight: 800; box-shadow: 0 14px 34px rgba(0,20,255,.22); }
+      .s4-note { margin-top: 28px; font-size: 18px; color: var(--muted); }
+
+      .transition-panel { position: absolute; inset: 0; background: var(--blue); opacity: 0; z-index: 20; pointer-events: none; }
+      .decor-dot { position: absolute; width: 10px; height: 10px; border-radius: 50%; background: var(--electric); box-shadow: 0 0 26px rgba(33,102,255,.6); }
+    </style>
+  </head>
+  <body>
+    <div data-hf-id="hf-g77k" data-composition-id="conducto-promo" data-width="1920" data-height="1080" data-duration="20" data-start="0">
+      <section data-hf-id="hf-k674" id="scene-1" class="scene">
+        <div data-hf-id="hf-o80j" class="blue-glow" style="left:-250px;top:-220px;"></div>
+        <div data-hf-id="hf-6xc3" class="blue-glow" style="right:-300px;bottom:-300px;transform:scale(.8);"></div>
+        <div data-hf-id="hf-p848" class="scene-content s1-content">
+          <div data-hf-id="hf-o87o" class="tiny-label s1-kicker">Gestión inteligente</div>
+          <h1 data-hf-id="hf-6dp2" class="display s1-title">De pólizas dispersas<br data-hf-id="hf-x5px"> a una operación bajo control.</h1>
+          <p data-hf-id="hf-o5py" class="s1-subtitle">La cartera completa, en una sola mirada.</p>
+          <div data-hf-id="hf-sz2s" class="s1-frame">
+            <img data-hf-id="hf-wrwd" class="s1-shot" src="capture/screenshots/scroll-000.png" alt="Captura real del acceso de Conducto CRM">
+            <div data-hf-id="hf-ixmb" class="s1-vignette"></div>
+            <div data-hf-id="hf-e0cr" class="s1-orbit">
+              <svg data-hf-id="hf-cl8r" class="s1-line" viewBox="0 0 1000 400" aria-hidden="true"><path data-hf-id="hf-7waw" d="M20 210 C200 20 350 20 500 200 C650 380 800 380 980 180" /></svg>
+              <div data-hf-id="hf-kxbe" class="s1-tag tag-a"><span data-hf-id="hf-p81i">01</span>Clientes</div>
+              <div data-hf-id="hf-3qmw" class="s1-tag tag-b"><span data-hf-id="hf-pmcj">02</span>Renovaciones</div>
+              <div data-hf-id="hf-4oyf" class="s1-tag tag-c"><span data-hf-id="hf-q0nk">03</span>Cobranza</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section data-hf-id="hf-v1or" id="scene-2" class="scene">
+        <div data-hf-id="hf-ayzu" class="blue-glow" style="right:-240px;top:-300px;"></div>
+        <div data-hf-id="hf-ipcj" class="scene-content s2-content">
+          <div data-hf-id="hf-2p5x" class="dashboard-shell">
+            <aside data-hf-id="hf-hfyz" class="rail glass">
+              <h2 data-hf-id="hf-s8v6" class="display rail-logo">CONDUCTO<br data-hf-id="hf-rsrt">CRM</h2>
+              <div data-hf-id="hf-ui8k" class="rail-user"><div data-hf-id="hf-qx2e" class="avatar">MP</div><div data-hf-id="hf-yeow"><strong data-hf-id="hf-j0x2">Mauricio Portillo</strong><small data-hf-id="hf-sm2h">Administrador</small></div></div>
+              <nav data-hf-id="hf-fihm" class="rail-nav">
+                <div data-hf-id="hf-sh9y" class="rail-item active"><span data-hf-id="hf-9avz" class="rail-dot"></span>Dashboard</div>
+                <div data-hf-id="hf-m43z" class="rail-item"><span data-hf-id="hf-2d3z" class="rail-dot"></span>Clientes</div>
+                <div data-hf-id="hf-gnvk" class="rail-item"><span data-hf-id="hf-1ysy" class="rail-dot"></span>Pólizas</div>
+                <div data-hf-id="hf-2njp" class="rail-item"><span data-hf-id="hf-1khx" class="rail-dot"></span>Facturación</div>
+                <div data-hf-id="hf-tn66" class="rail-item"><span data-hf-id="hf-4cn4" class="rail-dot"></span>Calendario</div>
+                <div data-hf-id="hf-mg8i" class="rail-item"><span data-hf-id="hf-3yc3" class="rail-dot"></span>Reportes</div>
+              </nav>
+              <div data-hf-id="hf-vf2h" class="rail-item"><span data-hf-id="hf-3k12" class="rail-dot"></span>Ajustes</div>
+            </aside>
+            <main data-hf-id="hf-afqm" class="dash-main">
+              <div data-hf-id="hf-4v72" class="dash-top"><div data-hf-id="hf-y7yw"><h2 data-hf-id="hf-7w8h" class="display">Dashboard</h2><p data-hf-id="hf-8ahr">Resumen general de tu cartera de seguros</p></div><div data-hf-id="hf-vbor" class="search glass">⌕&#160;&#160;Buscar... <span data-hf-id="hf-fjp2" style="margin-left:auto;color:#52555b;">⌘K</span></div></div>
+              <div data-hf-id="hf-w3q5" class="kpis">
+                <div data-hf-id="hf-lhfe" class="kpi glass"><div data-hf-id="hf-x11t"><div data-hf-id="hf-kglt" class="kpi-label">Pólizas por Cobrar</div><div data-hf-id="hf-thb3" class="display kpi-value kpi-count" data-value="24">24</div><div data-hf-id="hf-1sqi" class="kpi-change">+12% este mes</div></div><div data-hf-id="hf-u1r6" class="icon-chip">$</div></div>
+                <div data-hf-id="hf-0s2m" class="kpi glass"><div data-hf-id="hf-xfcu"><div data-hf-id="hf-2ezu" class="kpi-label">Próximas Renovaciones</div><div data-hf-id="hf-jtmn" class="display kpi-value kpi-count" data-value="8">8</div><div data-hf-id="hf-csck" class="kpi-change">60 días</div></div><div data-hf-id="hf-gwa3" class="icon-chip">↻</div></div>
+                <div data-hf-id="hf-16dn" class="kpi glass"><div data-hf-id="hf-w8fr"><div data-hf-id="hf-jo9p" class="kpi-label">Registro Póliza</div><div data-hf-id="hf-6s8z" class="display kpi-value kpi-count" data-value="17">17</div><div data-hf-id="hf-ogiv" class="kpi-change">Activo</div></div><div data-hf-id="hf-mk8z" class="icon-chip">▣</div></div>
+                <div data-hf-id="hf-1koo" class="kpi glass"><div data-hf-id="hf-wmqs"><div data-hf-id="hf-a959" class="kpi-label">Trámite en Proceso</div><div data-hf-id="hf-2qsn" class="display kpi-value kpi-count" data-value="5">5</div><div data-hf-id="hf-k6tn" class="kpi-change">En seguimiento</div></div><div data-hf-id="hf-7r8g" class="icon-chip">→</div></div>
+              </div>
+              <div data-hf-id="hf-00nk" class="dash-lower">
+                <div data-hf-id="hf-b2xu" class="panel glass"><div data-hf-id="hf-j8x7" class="panel-heading"><h3 data-hf-id="hf-5cw1" class="display">Renovaciones Pendientes</h3><span data-hf-id="hf-ij77">Ver todas →</span></div><div data-hf-id="hf-f87a" class="mini-row"><div data-hf-id="hf-vftp"><div data-hf-id="hf-xl41" class="mini-name">María González</div><div data-hf-id="hf-zzu7" class="mini-meta">AXA-AUTO-2024-001 · AXA</div></div><div data-hf-id="hf-03fo" class="status orange">7 días</div></div><div data-hf-id="hf-symi" class="mini-row"><div data-hf-id="hf-vu4q"><div data-hf-id="hf-qum4" class="mini-name">Carlos Rodríguez</div><div data-hf-id="hf-46ry" class="mini-meta">GNP-GM-2024-001 · GNP</div></div><div data-hf-id="hf-lse6" class="status blue">14 días</div></div><div data-hf-id="hf-tcxj" class="mini-row"><div data-hf-id="hf-1043"><div data-hf-id="hf-f0bp" class="mini-name">Ana Martínez</div><div data-hf-id="hf-mbtf" class="mini-meta">MAP-EMP-2024-001 · Mapfre</div></div><div data-hf-id="hf-grpu" class="status blue">21 días</div></div></div>
+                <div data-hf-id="hf-vbwe" class="panel glass collection"><div data-hf-id="hf-1ef4"><div data-hf-id="hf-0wjv" class="panel-heading"><h3 data-hf-id="hf-s3hq" class="display">Cobranza</h3><span data-hf-id="hf-zhpv">Live</span></div><div data-hf-id="hf-ry18" class="display collection-number">76%</div><p data-hf-id="hf-izl3" class="collection-copy">de primas cobradas<br data-hf-id="hf-szow">en el periodo actual</p><div data-hf-id="hf-31j5" class="progress"><div data-hf-id="hf-b9gd" class="progress-fill"></div></div></div><div data-hf-id="hf-deuh" class="collection-foot"><span data-hf-id="hf-ej2s">Objetivo mensual</span><strong data-hf-id="hf-s4zo">$248,400</strong></div></div>
+              </div>
+            </main>
+          </div>
+        </div>
+      </section>
+
+      <section data-hf-id="hf-r3kq" id="scene-3" class="scene">
+        <div data-hf-id="hf-9106" class="blue-glow" style="left:-300px;bottom:-320px;"></div>
+        <div data-hf-id="hf-gds2" class="scene-content s3-content">
+          <div data-hf-id="hf-6tqo" class="s3-top"><div data-hf-id="hf-c4s8"><div data-hf-id="hf-848f" class="tiny-label" style="color:var(--blue);margin-bottom:18px;">Seguimiento accionable</div><h2 data-hf-id="hf-iiyg" class="display">Actúa antes<br data-hf-id="hf-sldv">de los vencimientos.</h2></div><p data-hf-id="hf-lvo6">Detecta señales, prioriza pendientes y mantén cada oportunidad en movimiento.</p></div>
+          <div data-hf-id="hf-e7iw" class="queue-layout">
+            <div data-hf-id="hf-3tow" class="queue-card glass"><div data-hf-id="hf-wky0" class="queue-head"><h3 data-hf-id="hf-bret" class="display">Pólizas pendientes de atención</h3><div data-hf-id="hf-p5i3" class="count">3 señales activas</div></div><div data-hf-id="hf-f4hq" class="queue-row"><div data-hf-id="hf-qcph" class="client"><strong data-hf-id="hf-kstw">María González</strong><span data-hf-id="hf-ot66">AXA-AUTO-2024-001</span></div><div data-hf-id="hf-vyhs" class="insurer">AXA<small data-hf-id="hf-ydxd">Pago pendiente</small></div><div data-hf-id="hf-behq" class="due"><span data-hf-id="hf-no2b" class="status orange">7 días</span><small data-hf-id="hf-5f69">Vence pronto</small></div><div data-hf-id="hf-tyeu" class="pill" style="background:rgba(243,117,19,.12);color:var(--orange);justify-content:center;">Prioridad</div></div><div data-hf-id="hf-62jm" class="queue-row"><div data-hf-id="hf-cyyx" class="client"><strong data-hf-id="hf-wvz1">Carlos Rodríguez</strong><span data-hf-id="hf-jxqo">GNP-GM-2024-001</span></div><div data-hf-id="hf-2p6r" class="insurer">GNP<small data-hf-id="hf-ik54">Recordatorio listo</small></div><div data-hf-id="hf-rapu" class="due"><span data-hf-id="hf-ufk5" class="status orange">14 días</span><small data-hf-id="hf-r6hn">Seguimiento</small></div><div data-hf-id="hf-uz1m" class="pill" style="background:rgba(0,20,255,.08);color:var(--blue);justify-content:center;">Contactar</div></div><div data-hf-id="hf-6gun" class="queue-row"><div data-hf-id="hf-e5w0" class="client"><strong data-hf-id="hf-2moo">Ana Martínez</strong><span data-hf-id="hf-22fz">MAP-EMP-2024-001</span></div><div data-hf-id="hf-dcp5" class="insurer">Mapfre<small data-hf-id="hf-0ctb">En renovación</small></div><div data-hf-id="hf-rp0v" class="due"><span data-hf-id="hf-wljf" class="status blue">21 días</span><small data-hf-id="hf-187a">En proceso</small></div><div data-hf-id="hf-lfqt" class="pill" style="background:rgba(46,169,87,.12);color:var(--green);justify-content:center;">Avanza</div></div></div>
+            <div data-hf-id="hf-dws7" class="signal-card glass"><h3 data-hf-id="hf-53g2" class="display">Salud de cartera</h3><p data-hf-id="hf-1dq6">Una lectura clara para decidir qué sigue.</p><div data-hf-id="hf-7fjr" class="signal-ring"><strong data-hf-id="hf-dqwi">76%</strong></div><div data-hf-id="hf-dr01" class="signal-list"><div data-hf-id="hf-s4fw" class="signal-item"><span data-hf-id="hf-gmxc">Pagos al día</span><b data-hf-id="hf-n4y4">18</b></div><div data-hf-id="hf-fjlg" class="signal-item"><span data-hf-id="hf-dxjh">En seguimiento</span><b data-hf-id="hf-hb1n" style="color:var(--orange);">5</b></div><div data-hf-id="hf-ecod" class="signal-item"><span data-hf-id="hf-ua06">Renovadas</span><b data-hf-id="hf-j5vu">12</b></div></div></div>
+          </div>
+        </div>
+      </section>
+
+      <section data-hf-id="hf-8bv1" id="scene-4" class="scene">
+        <div data-hf-id="hf-sqc2" class="s4-orbit"></div><div data-hf-id="hf-yvab" class="decor-dot" style="left:18%;top:25%;"></div><div data-hf-id="hf-alcw" class="decor-dot" style="right:18%;top:32%;background:var(--green);"></div>
+        <div data-hf-id="hf-xqxp" class="scene-content s4-content"><div data-hf-id="hf-7lch" class="tiny-label" style="color:var(--blue);">Una operación más clara</div><h2 data-hf-id="hf-j6zw" class="display s4-title">CONDUCTO<br data-hf-id="hf-qluq">CRM</h2><p data-hf-id="hf-49za" class="s4-subtitle">Gestión Inteligente</p><div data-hf-id="hf-uie8" class="cta">Organiza tu cartera&#160;&#160; →</div><p data-hf-id="hf-uvlf" class="s4-note">Menos pendientes. Más claridad.</p></div>
+      </section>
+      <div data-hf-id="hf-jzke" class="transition-panel" id="transition-panel"></div>
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+gsap.set("[data-hf-id=\"hf-7fjr\"]", { x: 4.319, y: 14.055 });
+      const tl = gsap.timeline({ paused: true, defaults: { ease: "power3.out" } });
+      const countTo = (selector, value, at) => {
+        const proxy = { value: 0 };
+        tl.to(proxy, { value, duration: 1.0, ease: "power2.out", onUpdate: () => { document.querySelector(selector).textContent = Math.round(proxy.value); } }, at);
+      };
+
+      // Beat 1: every visible layer enters; the captured website carries the visual proof.
+      tl.fromTo("#scene-1", { opacity: 0, scale: 1.02 }, { opacity: 1, scale: 1, duration: .7 }, 0);
+      tl.fromTo(".s1-kicker", { y: 26, opacity: 0 }, { y: 0, opacity: 1, duration: .45 }, .15);
+      tl.fromTo(".s1-title", { y: 35, opacity: 0 }, { y: 0, opacity: 1, duration: .65 }, .25);
+      tl.fromTo(".s1-subtitle", { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: .5 }, .42);
+      tl.fromTo(".s1-frame", { y: 45, opacity: 0, scale: .97 }, { y: 0, opacity: 1, scale: 1, duration: .75 }, .55);
+      tl.fromTo(".s1-line path", { strokeDashoffset: 1600 }, { strokeDashoffset: 0, duration: 1.15, ease: "power2.out" }, 1.15);
+      tl.fromTo(".s1-tag", { y: 18, opacity: 0 }, { y: 0, opacity: 1, duration: .42, stagger: .12 }, 1.35);
+      tl.to(".s1-frame", { scale: 1.025, duration: 2.9, ease: "none" }, 1.3);
+      tl.to(".s1-tag", { y: -5, duration: 1.2, yoyo: true, repeat: 1, stagger: .08, ease: "sine.inOut" }, 1.85);
+
+      // Transition into the dashboard.
+      tl.to("#transition-panel", { opacity: 1, duration: .22 }, 3.65);
+      tl.fromTo("#scene-2", { opacity: 0, scale: 1.025 }, { opacity: 1, scale: 1, duration: .55 }, 3.88);
+      tl.to("#transition-panel", { opacity: 0, duration: .36 }, 4.12);
+
+      // Beat 2: staggered product UI and live-looking counters.
+      tl.fromTo(".rail", { x: -28, opacity: 0 }, { x: 0, opacity: 1, duration: .55 }, 4.05);
+      tl.fromTo(".dash-top", { y: -22, opacity: 0 }, { y: 0, opacity: 1, duration: .5 }, 4.12);
+      tl.fromTo(".kpi", { y: 26, opacity: 0 }, { y: 0, opacity: 1, duration: .5, stagger: .1 }, 4.28);
+      tl.fromTo(".dash-lower > *", { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: .55, stagger: .12 }, 4.62);
+      tl.to(".progress-fill", { width: "76%", duration: 1.5, ease: "power2.out" }, 5.0);
+      tl.to(".icon-chip", { scale: 1.08, duration: .8, yoyo: true, repeat: 3, stagger: .1, ease: "sine.inOut" }, 5.5);
+
+      // Transition into the action queue.
+      tl.to("#transition-panel", { opacity: 1, duration: .22 }, 9.55);
+      tl.fromTo("#scene-3", { opacity: 0, scale: 1.025 }, { opacity: 1, scale: 1, duration: .55 }, 9.78);
+      tl.to("#transition-panel", { opacity: 0, duration: .36 }, 10.02);
+
+      // Beat 3: clear attention hierarchy.
+      tl.fromTo(".s3-top > *", { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: .55, stagger: .1 }, 9.98);
+      tl.fromTo(".queue-card", { x: -34, opacity: 0 }, { x: 0, opacity: 1, duration: .6 }, 10.2);
+      tl.fromTo(".signal-card", { x: 34, opacity: 0 }, { x: 0, opacity: 1, duration: .6 }, 10.3);
+      tl.fromTo(".queue-row", { x: -18, opacity: 0 }, { x: 0, opacity: 1, duration: .42, stagger: .18 }, 10.6);
+      tl.fromTo(".signal-ring", { scale: .75, opacity: 0 }, { scale: 1, opacity: 1, duration: .55 }, 10.75);
+      tl.fromTo(".signal-item", { y: 16, opacity: 0 }, { y: 0, opacity: 1, duration: .4, stagger: .12 }, 11.05);
+      tl.to(".signal-ring", { keyframes: { "80.071%": { rotation: 12 }, "100%": { rotation: 1.417, ease: "none" }, easeEach: "sine.inOut" }, duration: 3.497 }, 11.4);
+      tl.to(".status.orange", { scale: 1.07, duration: .55, yoyo: true, repeat: 3, stagger: .08, ease: "sine.inOut" }, 12.0);
+
+      // Transition into the final lockup.
+      tl.to("#transition-panel", { opacity: 1, duration: .22 }, 15.72);
+      tl.fromTo("#scene-4", { opacity: 0, scale: 1.035 }, { opacity: 1, scale: 1, duration: .58 }, 15.95);
+      tl.to("#transition-panel", { opacity: 0, duration: .36 }, 16.18);
+
+      // Beat 4: final lockup holds through 20s.
+      tl.fromTo(".s4-orbit", { scale: .86, opacity: 0 }, { scale: 1, opacity: 1, duration: .8 }, 16.1);
+      tl.fromTo(".s4-content > *", { y: 28, opacity: 0 }, { y: 0, opacity: 1, duration: .55, stagger: .13 }, 16.22);
+      tl.to(".s4-orbit", { rotation: 8, duration: 3.2, ease: "sine.inOut" }, 16.5);
+      tl.to(".cta", { scale: 1.045, duration: .75, yoyo: true, repeat: 3, ease: "sine.inOut" }, 17.2);
+
+      window.__timelines["conducto-promo"] = tl;
+    </script>
+  </body>
+</html>

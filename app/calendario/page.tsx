@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils"
 import { ProtectedRoute } from "@/components/protected-route"
 import { toast } from "sonner"
 import { differenceInCalendarDays, toDateOnly, todayDateOnly } from "@/lib/date-only"
+import { situacionRenovacion } from "@/lib/renovaciones"
 
 // Colores de prioridad: Verde (baja), Amarillo (media), Rojo (alta)
 const PRIORIDAD_COLORS = {
@@ -103,25 +104,21 @@ export default function CalendarioPage() {
       })
     })
 
-    // 2. Renovaciones de pólizas (próximos 60 días)
+    // 2. Renovaciones de pólizas (regla única de 60 días, ver lib/renovaciones)
     polizas.forEach(poliza => {
-      const diasParaVencer = differenceInCalendarDays(poliza.vigenciaFin, hoy)
-      
-      if (diasParaVencer > 0 && diasParaVencer <= 60 && poliza.estatus !== "renovada" && poliza.renovacionEstado !== "renovada") {
+      const renovacion = situacionRenovacion(poliza, hoy)
+
+      if (renovacion.generaAviso) {
         const cliente = clientes.find(c => c.id === poliza.clienteId)
         const compania = companias.find(c => c.id === poliza.companiaId)
         
-        let prioridad: 'alta' | 'media' | 'baja' = 'baja'
-        if (diasParaVencer <= 7) prioridad = 'alta'
-        else if (diasParaVencer <= 30) prioridad = 'media'
-        
         todosEventos.push({
           id: `poliza-${poliza.id}`,
-          titulo: `Renovación: ${poliza.numeroPoliza}`,
+          titulo: `${renovacion.estado === 'vencida_sin_renovar' ? 'Vencida sin renovar' : 'Renovación'}: ${poliza.numeroPoliza}`,
           descripcion: `${cliente?.nombre || 'Cliente'} - ${compania?.nombre || 'Compañía'} - $${poliza.prima.toLocaleString()}`,
-          fecha: poliza.vigenciaFin,
+          fecha: renovacion.fecha,
           tipo: 'renovacion',
-          prioridad,
+          prioridad: renovacion.prioridad,
           polizaId: poliza.id,
           clienteId: poliza.clienteId,
           completado: false,

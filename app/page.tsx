@@ -13,25 +13,35 @@ import { ProtectedRoute } from "@/components/protected-route"
 import { useAuth } from "@/contexts/auth-context"
 import { useRouter } from "next/navigation"
 import { useSupabase } from "@/contexts/supabase-context"
-import { differenceInCalendarDays, todayDateOnly } from "@/lib/date-only"
+import { todayDateOnly } from "@/lib/date-only"
+import { compararPorVencimiento, situacionCobranzaPoliza } from "@/lib/cobranza"
+import { situacionRenovacion } from "@/lib/renovaciones"
 
 export default function DashboardPage() {
   const { usuario } = useAuth()
   const router = useRouter()
-  const { polizas, clientes, companias } = useSupabase()
+  const { polizas, clientes, companias, pagos } = useSupabase()
 
   const hoy = todayDateOnly()
 
-  // Pólizas por cobrar: activas, en gracia, por-renovar y vencidas
-  const polizasPorCobrar = polizas.filter(p =>
-    p.estatus === "activa" || p.estatus === "gracia" || p.estatus === "por-renovar" || p.estatus === "vencida"
-  ).length
+  // Cobranza calculada desde los recibos: sólo cuenta lo que realmente falta por pagar.
+  const cobranzaPolizas = polizas
+    .filter(p => p.estatus === "activa" || p.estatus === "gracia" || p.estatus === "por-renovar" || p.estatus === "vencida")
+    .map(poliza => ({
+      poliza,
+      situacion: situacionCobranzaPoliza(pagos.filter(pago => pago.polizaId === poliza.id), {
+        primaTotal: Number(poliza.primaEmitida || poliza.prima || 0),
+        primaCobrada: Number(poliza.primaCobrada || 0),
+        fechaVencimiento: poliza.ultimoDiaPago || poliza.vigenciaFin,
+      }, hoy),
+    }))
+    .filter(({ situacion }) => situacion.estado !== "pagada")
 
-  // Próximas renovaciones (próximos 60 días)
-  const renovacionesProximas = polizas.filter(p => {
-    const dias = differenceInCalendarDays(p.vigenciaFin, hoy)
-    return dias > 0 && dias <= 60 && p.estatus !== "renovada" && p.renovacionEstado !== "renovada"
-  }).length
+  // Pólizas por cobrar: con recibos pendientes o pagos por validar
+  const polizasPorCobrar = cobranzaPolizas.length
+
+  // Renovaciones pendientes (regla única de 60 días, ver lib/renovaciones)
+  const renovacionesProximas = polizas.filter(p => situacionRenovacion(p, hoy).generaAviso).length
 
   // Registro de pólizas activas
   const registroPolizas = polizas.filter(p => p.estatus === "activa").length
@@ -40,15 +50,9 @@ export default function DashboardPage() {
   const totalPolizas = polizas.length
   const registroMovimientos = totalPolizas
 
-  // Pólizas pendientes de pago (primaCobrada < primaEmitida) ordenadas por urgencia
-  const renovacionesCercanas = polizas
-    .filter(p => (p.primaCobrada || 0) < (p.primaEmitida || 0))
-    .sort((a, b) => {
-      const diasA = differenceInCalendarDays(a.vigenciaFin, hoy)
-      const diasB = differenceInCalendarDays(b.vigenciaFin, hoy)
-      if (diasA !== diasB) return diasA - diasB
-      return (b.primaEmitida - b.primaCobrada) - (a.primaEmitida - a.primaCobrada)
-    })
+  // Próximos cobros: del más próximo a vencer (o más vencido) al más lejano
+  const cobranzaProxima = [...cobranzaPolizas]
+    .sort((a, b) => compararPorVencimiento(a.situacion, b.situacion))
     .slice(0, 5)
 
   return (
@@ -60,17 +64,14 @@ export default function DashboardPage() {
 
           {/* ALERTA DE PAGOS - Prominent Alert Section */}
           {(() => {
-            const polizasVencidas = polizas.filter(p => {
-              const diasDiferencia = differenceInCalendarDays(p.vigenciaFin, hoy)
-              return diasDiferencia < 0 && (p.estatus === "activa" || p.estatus === "gracia")
-            })
+            const polizasVencidas = cobranzaPolizas.filter(({ situacion }) => situacion.estado === "vencida")
             const polizasEnGracia = polizas.filter(p => p.estatus === "gracia")
-            const polizasPorVencer = polizas.filter(p => {
-              const diasDiferencia = differenceInCalendarDays(p.vigenciaFin, hoy)
-              return diasDiferencia > 0 && diasDiferencia <= 7 && p.estatus === "activa"
-            })
-            
-            if (polizasVencidas.length > 0 || polizasEnGracia.length > 0 || polizasPorVencer.length > 0) {
+            const polizasPorVencer = cobranzaPolizas.filter(({ situacion }) =>
+              situacion.semaforo === "rojo" && situacion.diasRestantes !== undefined && situacion.diasRestantes >= 0
+            )
+            const polizasPorValidar = cobranzaPolizas.filter(({ situacion }) => situacion.porValidar > 0)
+
+            if (polizasVencidas.length > 0 || polizasEnGracia.length > 0 || polizasPorVencer.length > 0 || polizasPorValidar.length > 0) {
               return (
                 <motion.div
                   initial={{ opacity: 0, y: -20 }}
@@ -102,8 +103,16 @@ export default function DashboardPage() {
                         )}
                         {polizasPorVencer.length > 0 && (
                           <div className="flex items-center justify-between p-3 bg-yellow-500/20 rounded-lg">
-                            <span className="font-semibold text-yellow-700">{polizasPorVencer.length} Por Vencer (≤7 días)</span>
-                            <Button size="sm" variant="outline" onClick={() => router.push('/polizas-pendientes?filtro=por-renovar')}>
+                            <span className="font-semibold text-yellow-700">{polizasPorVencer.length} Por Vencer (0–5 días)</span>
+                            <Button size="sm" variant="outline" onClick={() => router.push('/polizas-pendientes')}>
+                              Ver
+                            </Button>
+                          </div>
+                        )}
+                        {polizasPorValidar.length > 0 && (
+                          <div className="flex items-center justify-between p-3 bg-purple-500/20 rounded-lg">
+                            <span className="font-semibold text-purple-700 dark:text-purple-300">{polizasPorValidar.length} Pagos por validar</span>
+                            <Button size="sm" variant="outline" onClick={() => router.push('/polizas-pendientes?filtro=por-validar')}>
                               Ver
                             </Button>
                           </div>
@@ -163,8 +172,8 @@ export default function DashboardPage() {
                     <Calendar className="w-5 h-5 text-primary" />
                   </div>
                   <div>
-                    <h2 className="text-xl font-bold font-serif">Renovaciones Pendientes</h2>
-                    <p className="text-sm text-muted-foreground">{renovacionesCercanas.length} pólizas pendientes por renovar</p>
+                    <h2 className="text-xl font-bold font-serif">Cobranza Próxima</h2>
+                    <p className="text-sm text-muted-foreground">{polizasPorCobrar} pólizas con pago pendiente o por validar</p>
                   </div>
                 </div>
                 <Button 
@@ -179,12 +188,20 @@ export default function DashboardPage() {
               </div>
 
               <div className="space-y-3">
-                {renovacionesCercanas.length > 0 ? (
-                  renovacionesCercanas.map((poliza, index) => {
+                {cobranzaProxima.length > 0 ? (
+                  cobranzaProxima.map(({ poliza, situacion }, index) => {
                     const cliente = clientes.find((c) => c.id === poliza.clienteId)
                     const compania = companias.find((c) => c.id === poliza.companiaId)
-                    const diasDiferencia = differenceInCalendarDays(poliza.vigenciaFin, hoy)
+                    const diasDiferencia = situacion.diasRestantes ?? 0
                     const yaVencida = diasDiferencia < 0
+                    const colorSemaforo = {
+                      morado: "bg-purple-600 text-white",
+                      rojo: "bg-red-600 text-white",
+                      naranja: "bg-orange-500 text-white",
+                      amarillo: "bg-yellow-400 text-yellow-950",
+                      verde: "bg-green-600 text-white",
+                      sin_color: "",
+                    }[situacion.semaforo]
 
                     return (
                       <motion.div
@@ -200,10 +217,8 @@ export default function DashboardPage() {
                             <p className="font-semibold">{cliente?.nombre}</p>
                             <p className="text-sm text-muted-foreground">{poliza.numeroPoliza}</p>
                           </div>
-                          <Badge
-                            variant={yaVencida ? "destructive" : diasDiferencia <= 7 ? "default" : "secondary"}
-                          >
-                            {yaVencida ? `Vencida ${Math.abs(diasDiferencia)}d` : `${diasDiferencia}d restantes`}
+                          <Badge variant="secondary" className={colorSemaforo}>
+                            {situacion.semaforo === "morado" ? "Por validar" : situacion.diasRestantes === undefined ? "Sin fecha" : yaVencida ? `Vencida ${Math.abs(diasDiferencia)}d` : `${diasDiferencia}d restantes`}
                           </Badge>
                         </div>
                         <div className="flex items-center justify-between">
@@ -211,7 +226,7 @@ export default function DashboardPage() {
                             {compania?.nombre}
                           </Badge>
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium">${poliza.prima.toLocaleString()}</span>
+                            <span className="text-sm font-medium">${situacion.pendiente.toLocaleString()}</span>
                             <ArrowRight className="w-4 h-4 text-muted-foreground" />
                           </div>
                         </div>
@@ -221,7 +236,7 @@ export default function DashboardPage() {
                 ) : (
                   <div className="text-center py-8 text-muted-foreground">
                     <Calendar className="w-10 h-10 mx-auto mb-3 opacity-40" />
-                    <p className="text-sm">No hay pólizas pendientes por renovar</p>
+                    <p className="text-sm">No hay pólizas con pagos pendientes</p>
                   </div>
                 )}
               </div>

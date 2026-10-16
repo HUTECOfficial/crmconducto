@@ -8,6 +8,8 @@ import { motion, AnimatePresence } from "framer-motion"
 import { Calendar, Clock, FileText, Bell, Users, CheckCircle2 } from "lucide-react"
 import { useSupabase } from "@/contexts/supabase-context"
 import { useRouter } from "next/navigation"
+import { situacionRenovacion } from "@/lib/renovaciones"
+import { todayDateOnly } from "@/lib/date-only"
 
 export function ProximosEventos() {
   const { eventos, polizas, clientes, companias } = useSupabase()
@@ -35,18 +37,19 @@ export function ProximosEventos() {
         }
       })
 
-    // Renovaciones de pólizas (próximos 30 días)
+    // Renovaciones de pólizas (próximos 30 días, sin renovadas, en proceso ni canceladas)
+    const fechaHoy = todayDateOnly()
     polizas.forEach(poliza => {
-      const vigenciaFin = new Date(poliza.vigenciaFin)
-      const dias = Math.ceil((vigenciaFin.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
-      if (dias > 0 && dias <= 30) {
+      const renovacion = situacionRenovacion(poliza, fechaHoy)
+      const dias = renovacion.dias
+      if (renovacion.generaAviso && dias >= 0 && dias <= 30) {
         const cliente = clientes.find(c => c.id === poliza.clienteId)
         const compania = companias.find(c => c.id === poliza.companiaId)
         items.push({
           id: `poliza-${poliza.id}`,
           titulo: `Renovación: ${poliza.numeroPoliza}`,
           descripcion: `${cliente?.nombre || "Cliente"} - ${compania?.nombre || "Compañía"} - $${poliza.prima.toLocaleString()}`,
-          fecha: poliza.vigenciaFin,
+          fecha: renovacion.fecha,
           tipo: "renovacion",
           prioridad: dias <= 7 ? "alta" : dias <= 15 ? "media" : "baja",
         })

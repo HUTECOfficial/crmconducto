@@ -36,7 +36,7 @@ type RenovacionExcel = {
   nacimiento: string
 }
 
-const RAMO_MAP: Record<string, 'autos' | 'vida' | 'gastos-medicos' | 'empresa' | 'flotilla'> = {
+const RAMO_MAP: Record<string, 'autos' | 'vida' | 'gastos-medicos' | 'accidentes-personales' | 'danos' | 'empresa' | 'flotilla'> = {
   'AUTO': 'autos',
   'AUTOMOVILES': 'autos',
   'CAMIONES Y PICK UPS': 'autos',
@@ -49,10 +49,10 @@ const RAMO_MAP: Record<string, 'autos' | 'vida' | 'gastos-medicos' | 'empresa' |
   'VIDA': 'vida',
   'VIDA INDIVIDUAL': 'vida',
   'GRUPO Y COLECTIVO': 'vida',
-  'DAÑOS': 'empresa',
-  'TRANSPORTES': 'empresa',
-  'RESP. CIVIL': 'empresa',
-  'AP ESCOLAR': 'empresa',
+  'DAÑOS': 'danos',
+  'TRANSPORTES': 'danos',
+  'RESP. CIVIL': 'danos',
+  'AP ESCOLAR': 'accidentes-personales',
 }
 
 const CIA_MAP: Record<string, string> = {

@@ -11,7 +11,9 @@ import { Calendar, Bell, AlertCircle, CheckCircle2, Clock } from "lucide-react"
 import { motion } from "framer-motion"
 import { useSupabase } from "@/contexts/supabase-context"
 import { toast } from "sonner"
-import { differenceInCalendarDays, todayDateOnly } from "@/lib/date-only"
+import { todayDateOnly } from "@/lib/date-only"
+import { situacionRenovacion } from "@/lib/renovaciones"
+import { situacionCobranzaPoliza } from "@/lib/cobranza"
 
 type TipoNotificacion = "verde" | "amarillo" | "magenta"
 
@@ -26,7 +28,7 @@ interface Notificacion {
 }
 
 export default function CalendarioNotificacionesPage() {
-  const { polizas, clientes, companias } = useSupabase()
+  const { polizas, clientes, companias, pagos } = useSupabase()
   const [filtroTipo, setFiltroTipo] = useState<TipoNotificacion | "todas">("todas")
   const [notificacionesLeidas, setNotificacionesLeidas] = useState<Set<string>>(new Set())
 
@@ -38,57 +40,64 @@ export default function CalendarioNotificacionesPage() {
     polizas.forEach(poliza => {
       const cliente = clientes.find(c => c.id === poliza.clienteId)
       const compania = companias.find(c => c.id === poliza.companiaId)
-      const diasParaVencer = differenceInCalendarDays(poliza.vigenciaFin, hoy)
-      if (poliza.estatus === "renovada" || poliza.renovacionEstado === "renovada") return
+      // Una sola regla de renovación: sólo avisa si no está renovada, en proceso ni cancelada.
+      const renovacion = situacionRenovacion(poliza, hoy)
+      const diasParaVencer = renovacion.dias
+      const avisaRenovacion = renovacion.generaAviso
 
-      // VERDE - Pólizas próximas a renovar (30-60 días)
-      if (diasParaVencer > 30 && diasParaVencer <= 60) {
+      // VERDE - Pólizas próximas a renovar (31-60 días)
+      if (avisaRenovacion && diasParaVencer > 30) {
         notificaciones.push({
           id: `verde-${poliza.id}`,
           tipo: "verde",
           titulo: `Renovación próxima: ${poliza.numeroPoliza}`,
           descripcion: `${cliente?.nombre} - ${compania?.nombre} - Vence en ${diasParaVencer} días`,
-          fecha: poliza.vigenciaFin,
+          fecha: renovacion.fecha,
           polizaId: poliza.id,
           prioridad: "baja"
         })
       }
 
-      // AMARILLO - Pólizas por vencer (15-30 días)
-      if (diasParaVencer > 15 && diasParaVencer <= 30) {
+      // AMARILLO - Pólizas por vencer (16-30 días)
+      if (avisaRenovacion && diasParaVencer > 15 && diasParaVencer <= 30) {
         notificaciones.push({
           id: `amarillo-${poliza.id}`,
           tipo: "amarillo",
           titulo: `Atención: ${poliza.numeroPoliza}`,
           descripcion: `${cliente?.nombre} - ${compania?.nombre} - Vence en ${diasParaVencer} días`,
-          fecha: poliza.vigenciaFin,
+          fecha: renovacion.fecha,
           polizaId: poliza.id,
           prioridad: "media"
         })
       }
 
-      // MAGENTA - Pólizas urgentes (0-15 días) o vencidas
-      if (diasParaVencer <= 15) {
+      // MAGENTA - Pólizas urgentes (0-15 días) o vencidas sin renovar (hasta 30 días)
+      if (avisaRenovacion && diasParaVencer <= 15) {
         notificaciones.push({
           id: `magenta-${poliza.id}`,
           tipo: "magenta",
           titulo: `URGENTE: ${poliza.numeroPoliza}`,
-          descripcion: `${cliente?.nombre} - ${compania?.nombre} - ${diasParaVencer > 0 ? `Vence en ${diasParaVencer} días` : 'VENCIDA'}`,
-          fecha: poliza.vigenciaFin,
+          descripcion: `${cliente?.nombre} - ${compania?.nombre} - ${diasParaVencer > 0 ? `Vence en ${diasParaVencer} días` : diasParaVencer === 0 ? 'Vence hoy' : `VENCIDA SIN RENOVAR (${Math.abs(diasParaVencer)} días)`}`,
+          fecha: renovacion.fecha,
           polizaId: poliza.id,
           prioridad: "alta"
         })
       }
 
-      // Notificaciones de pago pendiente
-      const primaPendiente = poliza.primaEmitida - poliza.primaCobrada
-      if (primaPendiente > 0 && poliza.estatus === "activa") {
+      // Notificaciones de pago pendiente: desde los recibos; los pagos por validar no cuentan.
+      const cobranza = situacionCobranzaPoliza(pagos.filter(pago => pago.polizaId === poliza.id), {
+        primaTotal: Number(poliza.primaEmitida || poliza.prima || 0),
+        primaCobrada: Number(poliza.primaCobrada || 0),
+        fechaVencimiento: poliza.ultimoDiaPago || poliza.vigenciaFin,
+      }, hoy)
+      const primaPendiente = cobranza.pendiente
+      if (primaPendiente > 0 && (poliza.estatus === "activa" || poliza.estatus === "gracia")) {
         notificaciones.push({
           id: `pago-${poliza.id}`,
           tipo: "amarillo",
           titulo: `Pago pendiente: ${poliza.numeroPoliza}`,
           descripcion: `${cliente?.nombre} - Pendiente: $${primaPendiente.toLocaleString()}`,
-          fecha: poliza.ultimoDiaPago || poliza.vigenciaFin,
+          fecha: cobranza.fechaVencimiento || poliza.vigenciaFin,
           polizaId: poliza.id,
           prioridad: "media"
         })

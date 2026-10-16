@@ -1,0 +1,138 @@
+{
+  "typography": [
+    {
+      "role": "display",
+      "fontFamily": "__Playfair_Display_0a80b4",
+      "fontSize": "48px",
+      "fontWeight": "700",
+      "lineHeight": "48px",
+      "letterSpacing": "normal",
+      "color": "transparent",
+      "sampleText": "CONDUCTO CRM"
+    },
+    {
+      "role": "heading",
+      "fontFamily": "__Playfair_Display_0a80b4",
+      "fontSize": "24px",
+      "fontWeight": "700",
+      "lineHeight": "32px",
+      "letterSpacing": "normal",
+      "color": "oklch(0.15 0.01 264)",
+      "sampleText": "Iniciar Sesión"
+    },
+    {
+      "role": "body",
+      "fontFamily": "__Inter_f367f3",
+      "fontSize": "18px",
+      "fontWeight": "400",
+      "lineHeight": "28px",
+      "letterSpacing": "normal",
+      "color": "oklch(0.45 0.01 264)",
+      "sampleText": "Gestión Inteligente"
+    },
+    {
+      "role": "label",
+      "fontFamily": "__Inter_f367f3",
+      "fontSize": "14px",
+      "fontWeight": "500",
+      "lineHeight": "20px",
+      "letterSpacing": "normal",
+      "color": "oklch(0.15 0.01 264)",
+      "sampleText": "Correo electrónico"
+    }
+  ],
+  "spacing": {
+    "observed": [
+      8,
+      12,
+      16,
+      32
+    ],
+    "baseUnit": 8
+  },
+  "radius": [
+    "14px",
+    "16px"
+  ],
+  "shadows": [
+    {
+      "value": "rgba(0, 20, 255, 0.12) 0px 8px 32px 0px, rgba(255, 255, 255, 0.1) 0px 1px 0px 0px inset",
+      "count": 4
+    },
+    {
+      "value": "rgba(0, 0, 0, 0.1) -20px 0px 40px 0px, rgba(0, 0, 0, 0.05) -10px 0px 20px 0px, rgba(255, 255, 255, 0.2) 1px 0px 0px 0px inset",
+      "count": 2
+    },
+    {
+      "value": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.05) 0px 1px 2px 0px",
+      "count": 1
+    }
+  ],
+  "buttons": [
+    {
+      "label": "Ingresar",
+      "background": "oklch(0.45 0.32 264)",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "oklch(0.99 0.005 264)",
+      "padding": "0px 16px",
+      "borderRadius": "14px",
+      "border": "0px solid oklch(0.88 0.015 264)",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.05) 0px 1px 2px 0px",
+      "fontSize": "14px",
+      "fontWeight": "500",
+      "height": "40px"
+    },
+    {
+      "label": "Mauricio Portilloadministrador",
+      "background": "#FFFFFF",
+      "backgroundImage": "",
+      "backdropFilter": "blur(24px) saturate(1.8)",
+      "color": "oklch(0.15 0.01 264)",
+      "padding": "16px",
+      "borderRadius": "16px",
+      "border": "1px solid rgba(0, 20, 255, 0.15)",
+      "boxShadow": "rgba(0, 20, 255, 0.12) 0px 8px 32px 0px, rgba(255, 255, 255, 0.1) 0px 1px 0px 0px inset",
+      "fontSize": "16px",
+      "fontWeight": "400",
+      "height": "78px"
+    }
+  ],
+  "cards": [],
+  "nav": null,
+  "chips": [],
+  "statCells": [],
+  "tabs": [],
+  "backgrounds": [
+    {
+      "value": "linear-gradient(to right bottom, rgb(255, 255, 255) 0%, oklab(0.984 -0.00113071 -0.00277876 / 0.5) 50%, oklab(0.97 -0.00371685 -0.0134976 / 0.2) 100%)",
+      "area": 2073600
+    },
+    {
+      "value": "linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.08) 50%, rgba(255, 255, 255, 0.12) 100%)",
+      "area": 466240
+    },
+    {
+      "value": "linear-gradient(to right, oklch(0.45 0.32 264) 0%, oklch(0.15 0.01 264) 50%, oklch(0.6 0.28 264) 100%)",
+      "area": 49152
+    }
+  ],
+  "glass": [
+    {
+      "backdropFilter": "blur(20px) saturate(1.8) brightness(1.05)",
+      "background": "linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.08) 50%, rgba(255, 255, 255, 0.12) 100%)",
+      "border": "",
+      "borderRadius": "24px",
+      "boxShadow": "rgba(0, 0, 0, 0.1) -20px 0px 40px 0px, rgba(0, 0, 0, 0.05) -10px 0px 20px 0px, rgba(255, 255, 255, 0.2) 1px 0px 0px 0px inset",
+      "area": 466240
+    },
+    {
+      "backdropFilter": "blur(24px) saturate(1.8)",
+      "background": "rgba(255, 255, 255, 0.85)",
+      "border": "1px solid rgba(0, 20, 255, 0.15)",
+      "borderRadius": "16px",
+      "boxShadow": "rgba(0, 20, 255, 0.12) 0px 8px 32px 0px, rgba(255, 255, 255, 0.1) 0px 1px 0px 0px inset",
+      "area": 133848
+    }
+  ]
+}

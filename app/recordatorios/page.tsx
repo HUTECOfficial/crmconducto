@@ -19,6 +19,8 @@ import { Switch } from "@/components/ui/switch"
 import { toast } from "sonner"
 import { ProtectedRoute } from "@/components/protected-route"
 import { differenceInCalendarDays, formatDateOnly, todayDateOnly } from "@/lib/date-only"
+import { reciboPorCobrar } from "@/lib/payment-schedule"
+import { situacionRenovacion } from "@/lib/renovaciones"
 
 interface RecordatorioAuto {
   id: string
@@ -49,7 +51,9 @@ export default function RecordatoriosPage() {
     polizas.forEach(poliza => {
       const cliente = clientes.find(c => c.id === poliza.clienteId)
       const compania = companias.find(c => c.id === poliza.companiaId)
-      const reciboPendiente = pagos.filter(pago => pago.polizaId === poliza.id && pago.estatus !== "pagado" && pago.estatus !== "cancelado").sort((left, right) => left.fechaLimite.localeCompare(right.fechaLimite))[0]
+      // Los recibos con pago por validar no generan recordatorio: el cliente ya pagó.
+      const polizaCancelada = poliza.estatus.startsWith("cancelada")
+      const reciboPendiente = polizaCancelada ? undefined : pagos.filter(pago => pago.polizaId === poliza.id && reciboPorCobrar(pago)).sort((left, right) => left.fechaLimite.localeCompare(right.fechaLimite))[0]
       if (!cliente) return
 
       // Recordatorio por fecha límite de pago
@@ -74,17 +78,16 @@ export default function RecordatoriosPage() {
         }
       }
 
-      // Recordatorio por renovación próxima (60 días)
-      const diasVig = differenceInCalendarDays(poliza.vigenciaFin, hoy)
-      if (diasVig >= 0 && diasVig <= 60 && (poliza.estatus === "activa" || poliza.estatus === "por-renovar")) {
-        const urgencia: "alta" | "media" | "baja" = diasVig <= 7 ? "alta" : diasVig <= 30 ? "media" : "baja"
+      // Recordatorio por renovación (regla única de 60 días, ver lib/renovaciones)
+      const renovacion = situacionRenovacion(poliza, hoy)
+      if (renovacion.generaAviso) {
         items.push({
           id: `ren-${poliza.id}`,
-          titulo: `Renovación próxima: ${poliza.numeroPoliza}`,
-          descripcion: `${compania?.nombre || "—"} — Vence ${formatDateOnly(poliza.vigenciaFin)}`,
-          fechaRecordatorio: poliza.vigenciaFin,
-          diasRestantes: diasVig,
-          urgencia,
+          titulo: `${renovacion.estado === "vencida_sin_renovar" ? "Vencida sin renovar" : "Renovación próxima"}: ${poliza.numeroPoliza}`,
+          descripcion: `${compania?.nombre || "—"} — Vence ${formatDateOnly(renovacion.fecha)}`,
+          fechaRecordatorio: renovacion.fecha,
+          diasRestantes: renovacion.dias,
+          urgencia: renovacion.prioridad,
           clienteNombre: poliza.nombreAsegurado || cliente.nombre,
           clienteTelefono: cliente.telefono,
           numeroPoliza: poliza.numeroPoliza,

@@ -29,7 +29,8 @@ import { estadoCobranzaRecibo } from "@/lib/payment-schedule"
 export default function IndicadoresCobranzaPage() {
   const { polizas, pagos } = useSupabase()
   // Generate basic payment data from polizas for KPI calculation
-  const pagosFromPolizas = pagos.filter(pago => pago.estatus !== "cancelado").map(pago => {
+  // Los pagos por validar no son mora ni cobro confirmado: se excluyen de los indicadores.
+  const pagosFromPolizas = pagos.filter(pago => pago.estatus !== "cancelado" && pago.estatus !== "por_validar").map(pago => {
     const estado = estadoCobranzaRecibo(pago)
     return {
       id: pago.id,
