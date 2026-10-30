@@ -18,7 +18,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useSupabase, type Cliente, type PagoPoliza, type Poliza } from "@/contexts/supabase-context"
-import { formatDateOnly, todayDateOnly } from "@/lib/date-only"
+import { addMonthsDateOnly, formatDateOnly, todayDateOnly } from "@/lib/date-only"
 import { reciboPorCobrar } from "@/lib/payment-schedule"
 import { ESTATUS_EN_COBRANZA, ETIQUETA_ESTATUS_COBRANZA, compararPorVencimiento, polizaEnCobranza, situacionCobranzaPoliza, type EstatusEnCobranza, type NivelSemaforo, type SituacionCobranzaPoliza } from "@/lib/cobranza"
 import { ORDEN_SEMAFORO, SEMAFORO, SemaforoPill } from "@/components/semaforo-cobranza"
@@ -75,6 +75,23 @@ function mensajeRechazo(numero: 1 | 2, cliente: Cliente | undefined, poliza: Pol
 Para que tu póliza no pierda vigencia, por favor verifica tu método de pago o comunícate con nosotros para realizar el pago antes del ${formatDateOnly(recibo.fechaLimite)}.
 
 ¡Gracias!`
+}
+
+const MESES_POR_FORMA_PAGO: Record<string, number> = { mensual: 1, trimestral: 3, semestral: 6, anual: 12 }
+
+/** Periodo que cubre el recibo en curso: empieza en su fecha de emisión y dura según la forma de pago. */
+function periodoRecibo(poliza: Poliza, recibo?: PagoPoliza) {
+  if (!recibo?.fechaEmision) return { inicio: poliza.vigenciaInicio, fin: undefined }
+  const meses = MESES_POR_FORMA_PAGO[poliza.formaPago] ?? 12
+  return { inicio: recibo.fechaEmision, fin: addMonthsDateOnly(recibo.fechaEmision, meses) }
+}
+
+/** Recordatorios del recibo en curso; los de un recibo anterior ya no se muestran. */
+function recordatoriosDelRecibo(poliza: Poliza, recibo?: PagoPoliza) {
+  const fechas = poliza.fechasRecordatorio
+  if (!fechas) return {}
+  if (fechas.reciboId && recibo && fechas.reciboId !== recibo.id) return {}
+  return fechas
 }
 
 /** Muestra la renovación sólo cuando está próxima, vencida sin renovar o en proceso. */
@@ -349,13 +366,20 @@ function PolizasPendientesContent() {
     }
   }
 
-  const marcarRecordatorio = async (polizaId: string, numRecordatorio: 1 | 2 | 3) => {
+  const marcarRecordatorio = async (polizaId: string, numRecordatorio: 1 | 2 | 3, recibo?: PagoPoliza) => {
     const poliza = polizas.find(p => p.id === polizaId)
-    const fechasActuales = poliza?.fechasRecordatorio || {}
+    if (!poliza) return
+    const actuales = poliza.fechasRecordatorio || {}
+    // Los recordatorios se llevan por recibo: al pasar al siguiente recibo empiezan de cero.
+    const delRecibo = recordatoriosDelRecibo(poliza, recibo)
     await actualizarPoliza(polizaId, {
       fechasRecordatorio: {
-        ...fechasActuales,
-        [`fecha${numRecordatorio}`]: hoy
+        rechazo: actuales.rechazo,
+        fecha1: delRecibo.fecha1,
+        fecha2: delRecibo.fecha2,
+        fecha3: delRecibo.fecha3,
+        reciboId: recibo?.id ?? actuales.reciboId,
+        [`fecha${numRecordatorio}`]: hoy,
       }
     })
     toast.success(`Recordatorio ${numRecordatorio} registrado`)
@@ -634,6 +658,8 @@ function PolizasPendientesContent() {
                     const compania = companias.find(c => c.id === poliza.companiaId)
                     const recibo = situacion.reciboActual
                     const primaRecibo = recibo?.monto ?? obtenerPrimaRecibo(poliza)
+                    const periodo = periodoRecibo(poliza, recibo)
+                    const recordatorios = recordatoriosDelRecibo(poliza, recibo)
                     const celda = "p-4 border-r border-border/40 align-top"
 
                     return (
@@ -670,7 +696,8 @@ function PolizasPendientesContent() {
                           <p className="font-medium">{poliza.nombreAsegurado || cliente?.nombre}</p>
                         </td>
                         <td className={`${celda} font-medium`}>
-                          {formatDateOnly(poliza.vigenciaInicio)}
+                          {formatDateOnly(periodo.inicio)}
+                          {periodo.fin && <p className="text-xs font-normal text-muted-foreground">al {formatDateOnly(periodo.fin)} · <span className="capitalize">{poliza.formaPago}</span></p>}
                         </td>
                         <td className={`${celda} font-medium`}>
                           {situacion.fechaVencimiento ? formatDateOnly(situacion.fechaVencimiento) : "—"}
@@ -693,7 +720,7 @@ function PolizasPendientesContent() {
                           )}
                         </td>
                         {([1, 2, 3] as const).map(num => {
-                          const fecha = poliza.fechasRecordatorio?.[`fecha${num}` as const]
+                          const fecha = recordatorios[`fecha${num}` as const]
                           return (
                             <td key={num} className={`${celda} text-center`}>
                               {fecha ? (
@@ -701,7 +728,7 @@ function PolizasPendientesContent() {
                                   {formatDateOnly(fecha)}
                                 </span>
                               ) : (
-                                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => marcarRecordatorio(poliza.id, num)}>
+                                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => marcarRecordatorio(poliza.id, num, recibo)}>
                                   Marcar
                                 </Button>
                               )}
@@ -768,6 +795,8 @@ function PolizasPendientesContent() {
               const compania = companias.find(c => c.id === poliza.companiaId)
               const recibo = situacion.reciboActual
               const primaRecibo = recibo?.monto ?? obtenerPrimaRecibo(poliza)
+              const periodo = periodoRecibo(poliza, recibo)
+              const recordatorios = recordatoriosDelRecibo(poliza, recibo)
 
               return (
                 <motion.div
@@ -807,7 +836,8 @@ function PolizasPendientesContent() {
                     <div className="grid grid-cols-2 gap-3 text-xs mb-3">
                       <div>
                         <p className="text-muted-foreground">Inicio de vigencia</p>
-                        <p className="font-medium">{formatDateOnly(poliza.vigenciaInicio)}</p>
+                        <p className="font-medium">{formatDateOnly(periodo.inicio)}</p>
+                        {periodo.fin && <p className="text-muted-foreground">al {formatDateOnly(periodo.fin)} · <span className="capitalize">{poliza.formaPago}</span></p>}
                       </div>
                       <div>
                         <p className="text-muted-foreground">Último día pago</p>
@@ -839,11 +869,11 @@ function PolizasPendientesContent() {
                     {/* Recordatorios */}
                     <div className="flex gap-2 mb-3">
                       {([1, 2, 3] as const).map((num) => {
-                        const fecha = poliza.fechasRecordatorio?.[`fecha${num}` as const]
+                        const fecha = recordatorios[`fecha${num}` as const]
                         return (
                           <button
                             key={num}
-                            onClick={() => !fecha && marcarRecordatorio(poliza.id, num)}
+                            onClick={() => !fecha && marcarRecordatorio(poliza.id, num, recibo)}
                             className={`flex-1 py-2 px-2 rounded-lg text-xs font-medium transition-colors ${
                               fecha
                                 ? 'bg-green-100 text-green-700 dark:bg-green-900/30'

@@ -86,6 +86,8 @@ export interface Poliza {
     fecha1?: string
     fecha2?: string
     fecha3?: string
+    /** Recibo al que pertenecen los recordatorios; al avanzar de recibo se reinician. */
+    reciboId?: string
     /** Rechazos del cargo del recibo actual; se reinician cuando cambia el recibo. */
     rechazo?: { reciboId: string; fecha1?: string; fecha2?: string }
   }
@@ -974,8 +976,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     // Sólo los pagos validados cuentan como prima cobrada.
     const cobrado = Math.round(pagadosActuales.reduce((sum: number, item: any) => sum + Number(item.monto), 0) * 100) / 100
     const porNumero = (left: any, right: any) => left.numero_recibo - right.numero_recibo
-    const siguiente = activos.filter((item: any) => reciboPorCobrar(item)).sort(porNumero)[0]
-      ?? activos.filter((item: any) => item.estatus === 'por_validar').sort(porNumero)[0]
+    // El recibo en curso es el primero sin validar: no se avanza mientras espera validación.
+    const siguiente = activos.filter((item: any) => reciboPorCobrar(item) || item.estatus === 'por_validar').sort(porNumero)[0]
     const ultimoPagado = [...pagadosActuales].sort((left: any, right: any) => right.numero_recibo - left.numero_recibo)[0]
     const updateData: Record<string, unknown> = {
       prima_cobrada: cobrado,

@@ -37,7 +37,10 @@ export type EstadoCobranzaPoliza = 'pagada' | 'por_validar' | 'pendiente' | 'ven
 export interface SituacionCobranzaPoliza<R extends ReciboExistente = ReciboExistente> {
   estado: EstadoCobranzaPoliza
   semaforo: NivelSemaforo
-  /** Recibo que sigue: el primero por cobrar o, si no hay, el primero por validar. */
+  /**
+   * Recibo en curso: el primero (por número) que aún no está validado, ya sea por cobrar o
+   * con un pago por validar. Mientras el recibo 1 espera validación no se avanza al 2.
+   */
   reciboActual?: R
   fechaVencimiento?: string
   diasRestantes?: number
@@ -92,9 +95,7 @@ export function situacionCobranzaPoliza<R extends ReciboExistente>(
   }
 
   const resumen = resumirCobranza(activos, poliza.primaTotal, hoy)
-  const porFecha = (left: R, right: R) => left.fechaLimite.localeCompare(right.fechaLimite)
-  const reciboActual = activos.filter(reciboPorCobrar).sort(porFecha)[0]
-    ?? activos.filter(recibo => recibo.estatus === 'por_validar').sort(porFecha)[0]
+  const reciboActual = reciboEnCurso(activos)
   const diasRestantes = reciboActual ? differenceInCalendarDays(reciboActual.fechaLimite, hoy) : undefined
   const estado: EstadoCobranzaPoliza = resumen.estatus === 'sin_recibos' ? 'pendiente' : resumen.estatus
 
@@ -110,6 +111,13 @@ export function situacionCobranzaPoliza<R extends ReciboExistente>(
     pendiente: resumen.pendiente,
     tieneRecibos: true,
   }
+}
+
+/** Primer recibo, por número, que todavía no está validado (por cobrar o por validar). */
+export function reciboEnCurso<R extends ReciboExistente>(recibos: R[]): R | undefined {
+  return recibos
+    .filter(recibo => reciboPorCobrar(recibo) || recibo.estatus === 'por_validar')
+    .sort((left, right) => left.numeroRecibo - right.numeroRecibo || left.fechaLimite.localeCompare(right.fechaLimite))[0]
 }
 
 /** Orden de atención: lo más próximo a vencer (o más vencido) primero; lo pagado al final. */

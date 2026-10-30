@@ -42,6 +42,23 @@ export const usuarios: Usuario[] = [
     avatar: "/placeholder.svg?height=40&width=40",
     activo: true,
   },
+  // Encargados de cobranza, con el mismo perfil que Monse.
+  {
+    id: "5",
+    nombre: "Maggie Huape",
+    email: "maggie@crm.com",
+    rol: "gerencia",
+    avatar: "/placeholder.svg?height=40&width=40",
+    activo: true,
+  },
+  {
+    id: "6",
+    nombre: "Gael García",
+    email: "gael@crm.com",
+    rol: "gerencia",
+    avatar: "/placeholder.svg?height=40&width=40",
+    activo: true,
+  },
 ]
 
 // Permisos por rol

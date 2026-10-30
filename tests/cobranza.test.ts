@@ -51,7 +51,8 @@ test('un pago por validar pinta morado y no cuenta como cobrado', () => {
   assert.equal(situacion.cobrado, 0)
   assert.equal(situacion.porValidar, 1_000)
   assert.equal(situacion.pendiente, 1_000)
-  assert.equal(situacion.reciboActual?.id, 'r2')
+  // No se avanza al recibo 2 hasta validar el 1.
+  assert.equal(situacion.reciboActual?.id, 'r1')
 })
 
 test('el recibo actual es el próximo por vencer y define los días', () => {
@@ -63,6 +64,20 @@ test('el recibo actual es el próximo por vencer y define los días', () => {
   assert.equal(situacion.reciboActual?.id, 'r2')
   assert.equal(situacion.diasRestantes, 8)
   assert.equal(situacion.semaforo, 'naranja')
+})
+
+test('mientras el recibo 1 espera validación, el recibo en curso sigue siendo el 1', () => {
+  const recibos = [
+    recibo({ id: 'r1', estatus: 'por_validar', fechaLimite: '2026-10-10' }),
+    recibo({ id: 'r2', numeroRecibo: 2, fechaLimite: '2026-11-10' }),
+  ]
+  const porValidar = situacionCobranzaPoliza(recibos, { primaTotal: 2_000, primaCobrada: 0 }, '2026-10-16')
+  assert.equal(porValidar.reciboActual?.id, 'r1')
+  assert.equal(porValidar.semaforo, 'morado')
+  // Al validarlo, la póliza avanza al recibo 2 con su propia fecha límite.
+  const validado = situacionCobranzaPoliza([{ ...recibos[0], estatus: 'pagado' }, recibos[1]], { primaTotal: 2_000, primaCobrada: 1_000 }, '2026-10-16')
+  assert.equal(validado.reciboActual?.id, 'r2')
+  assert.equal(validado.fechaVencimiento, '2026-11-10')
 })
 
 test('pólizas sin recibos usan prima total menos cobrada', () => {
