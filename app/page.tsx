@@ -14,7 +14,7 @@ import { useAuth } from "@/contexts/auth-context"
 import { useRouter } from "next/navigation"
 import { useSupabase } from "@/contexts/supabase-context"
 import { todayDateOnly } from "@/lib/date-only"
-import { compararPorVencimiento, situacionCobranzaPoliza } from "@/lib/cobranza"
+import { compararPorVencimiento, situacionCobranzaPoliza, polizaEnCobranza } from "@/lib/cobranza"
 import { situacionRenovacion } from "@/lib/renovaciones"
 
 export default function DashboardPage() {
@@ -26,7 +26,7 @@ export default function DashboardPage() {
 
   // Cobranza calculada desde los recibos: sólo cuenta lo que realmente falta por pagar.
   const cobranzaPolizas = polizas
-    .filter(p => p.estatus === "activa" || p.estatus === "gracia" || p.estatus === "por-renovar" || p.estatus === "vencida")
+    .filter(p => polizaEnCobranza(p.estatus))
     .map(poliza => ({
       poliza,
       situacion: situacionCobranzaPoliza(pagos.filter(pago => pago.polizaId === poliza.id), {

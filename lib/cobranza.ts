@@ -10,7 +10,27 @@ import { reciboPorCobrar, resumirCobranza, type ReciboExistente } from './paymen
  * - verde: 16 a 30 días
  * - sin_color: más de 30 días o sin saldo
  */
-export type NivelSemaforo = 'morado' | 'rojo' | 'naranja' | 'amarillo' | 'verde' | 'sin_color'
+/**
+ * Estatus de póliza que siguen vigentes y por lo tanto aparecen en Pólizas pendientes de pago.
+ * Quedan fuera las canceladas, las renovadas y las marcadas como vencidas.
+ */
+export const ESTATUS_EN_COBRANZA = ['activa', 'vigente', 'gracia', 'por-renovar', 'rehabilitada', 'en-movimientos', 'espera-formato'] as const
+export type EstatusEnCobranza = (typeof ESTATUS_EN_COBRANZA)[number]
+
+export const ETIQUETA_ESTATUS_COBRANZA: Record<EstatusEnCobranza, string> = {
+  activa: 'Activas',
+  vigente: 'Vigentes',
+  gracia: 'En gracia',
+  'por-renovar': 'Por renovar',
+  rehabilitada: 'Rehabilitadas',
+  'en-movimientos': 'En movimientos',
+  'espera-formato': 'En espera de formato',
+}
+
+export const polizaEnCobranza = (estatus: string): estatus is EstatusEnCobranza =>
+  (ESTATUS_EN_COBRANZA as readonly string[]).includes(estatus)
+
+export type NivelSemaforo ='morado' | 'rojo' | 'naranja' | 'amarillo' | 'verde' | 'sin_color'
 
 export type EstadoCobranzaPoliza = 'pagada' | 'por_validar' | 'pendiente' | 'vencida'
 

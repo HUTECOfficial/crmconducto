@@ -187,10 +187,17 @@ export function generarRecibos(input: GenerarRecibosInput): ReciboProgramado[] {
     : distributeAmount(input.primaTotal, totalObjetivo, input.primerRecibo)
   const pendientesCantidad = Math.max(1, totalObjetivo - pagados.length)
   const montos = montosPlaneados.slice(pagados.length, pagados.length + pendientesCantidad)
-  // Las modificaciones nunca alteran recibos cobrados; su diferencia se ajusta
-  // en el último recibo pendiente para que el saldo siempre cuadre.
-  const diferenciaSaldo = Math.round((saldo - montos.reduce((sum, monto) => sum + monto, 0)) * 100) / 100
-  if (montos.length > 0) montos[montos.length - 1] = Math.round((montos[montos.length - 1] + diferenciaSaldo) * 100) / 100
+  // Los recibos cobrados sólo son evidencia de lo ya pagado y nunca se alteran.
+  // Si la prima cambió, la diferencia se reparte entre todos los recibos pendientes
+  // (el último absorbe los centavos) para que el saldo cuadre.
+  const diferenciaCents = toCents(saldo) - montos.reduce((sum, monto) => sum + toCents(monto), 0)
+  if (montos.length > 0 && diferenciaCents !== 0) {
+    const ajusteBase = Math.trunc(diferenciaCents / montos.length)
+    const ajustes = montos.map(() => ajusteBase)
+    ajustes[ajustes.length - 1] += diferenciaCents - ajusteBase * montos.length
+    montos.forEach((monto, index) => { montos[index] = fromCents(toCents(monto) + ajustes[index]) })
+    if (montos.some(monto => monto < 0)) throw new Error('El saldo no alcanza para los recibos pendientes; revisa la prima y el primer recibo')
+  }
 
   const diasGracia = (numeroRecibo: number) => {
     const dias = numeroRecibo === 1 ? input.diasGraciaPrimerRecibo : input.diasGraciaSubsecuentes

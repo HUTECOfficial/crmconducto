@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { ProtectedRoute } from "@/components/protected-route"
 import { WhatsAppReminderButton } from "@/components/whatsapp-reminder-button"
 import { motion } from "framer-motion"
-import { AlertCircle, DollarSign, TrendingDown, MessageSquare, Edit2, Check, X, Upload, Clock, FileText } from "lucide-react"
+import { AlertCircle, DollarSign, TrendingDown, MessageSquare, Edit2, Check, X, Upload, Clock, FileText, Ban } from "lucide-react"
 import { useState, useEffect, useMemo, useRef, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
@@ -17,20 +17,18 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useSupabase, type PagoPoliza, type Poliza } from "@/contexts/supabase-context"
+import { useSupabase, type Cliente, type PagoPoliza, type Poliza } from "@/contexts/supabase-context"
 import { formatDateOnly, todayDateOnly } from "@/lib/date-only"
 import { reciboPorCobrar } from "@/lib/payment-schedule"
-import { compararPorVencimiento, situacionCobranzaPoliza, type NivelSemaforo, type SituacionCobranzaPoliza } from "@/lib/cobranza"
+import { ESTATUS_EN_COBRANZA, ETIQUETA_ESTATUS_COBRANZA, compararPorVencimiento, polizaEnCobranza, situacionCobranzaPoliza, type EstatusEnCobranza, type NivelSemaforo, type SituacionCobranzaPoliza } from "@/lib/cobranza"
 import { ORDEN_SEMAFORO, SEMAFORO, SemaforoPill } from "@/components/semaforo-cobranza"
 import { obtenerValorUdi } from "@/lib/udi"
 import { etiquetaRamo } from "@/lib/ramos"
 import { ETIQUETA_RENOVACION, situacionRenovacion } from "@/lib/renovaciones"
 
 type FiltroCobranza = "pendientes" | "por_validar" | "vencidas" | "pagadas" | "todas"
-type FiltroEstatus = "todas" | "activa" | "gracia" | "vencida" | "por-renovar"
-type TipoAccion = "pagada" | "validar" | "cancelar" | "anular-pago"
-
-const ESTATUS_COBRANZA: Poliza["estatus"][] = ["activa", "gracia", "por-renovar", "vencida"]
+type FiltroEstatus = "todas" | EstatusEnCobranza
+type TipoAccion = "pagada" | "validar" | "cancelar" | "anular-pago" | "vencida"
 
 function formatearMonto(monto: number) {
   return monto.toLocaleString("es-MX", { maximumFractionDigits: 2 })
@@ -54,6 +52,29 @@ function obtenerPrimaRecibo(poliza: Poliza) {
         : primaEmitida
 
   return Math.min(importe, pendiente)
+}
+
+/** Número de WhatsApp del cliente en formato internacional (52 + 10 dígitos). */
+function whatsappCliente(cliente?: Cliente) {
+  if (!cliente) return null
+  const telefonos = cliente.telefonos || []
+  const numero = telefonos.find(item => item.canal === "whatsapp" && item.principal)?.numero
+    || telefonos.find(item => item.canal === "whatsapp")?.numero
+    || telefonos.find(item => item.principal)?.numero
+    || cliente.telefono
+  const digitos = (numero || "").replace(/\D/g, "")
+  if (digitos.length === 10) return `52${digitos}`
+  if (digitos.length >= 12 && digitos.startsWith("52")) return digitos
+  return null
+}
+
+function mensajeRechazo(numero: 1 | 2, cliente: Cliente | undefined, poliza: Poliza, recibo: PagoPoliza, compania?: string) {
+  const intento = numero === 1 ? "fue rechazado" : "fue rechazado por segunda ocasión"
+  return `Hola ${cliente?.nombre || poliza.nombreAsegurado || ""}, te informamos que el cargo del recibo ${recibo.numeroRecibo}/${recibo.totalRecibos} de tu póliza ${poliza.numeroPoliza}${compania ? ` (${compania})` : ""} por ${formatearMonto(recibo.monto)} ${recibo.moneda} ${intento}.
+
+Para que tu póliza no pierda vigencia, por favor verifica tu método de pago o comunícate con nosotros para realizar el pago antes del ${formatDateOnly(recibo.fechaLimite)}.
+
+¡Gracias!`
 }
 
 /** Muestra la renovación sólo cuando está próxima, vencida sin renovar o en proceso. */
@@ -96,6 +117,8 @@ function PolizasPendientesContent() {
   const [fechaPagoAccion, setFechaPagoAccion] = useState(todayDateOnly())
   const [guardando, setGuardando] = useState(false)
   const [valorUdiHoy, setValorUdiHoy] = useState<number | null>(null)
+  // Registrar pago pide revisar y confirmar los datos antes de guardarlos.
+  const [confirmandoPago, setConfirmandoPago] = useState(false)
 
   // El valor UDI aplicado es el de la fecha de pago.
   const fechaUdiSolicitada = useRef("")
@@ -138,7 +161,7 @@ function PolizasPendientesContent() {
 
   // La cobranza se calcula desde los recibos de cada póliza, no desde prima emitida - cobrada.
   const filasBase = useMemo(() => polizas
-    .filter(poliza => ESTATUS_COBRANZA.includes(poliza.estatus))
+    .filter(poliza => polizaEnCobranza(poliza.estatus))
     .map(poliza => {
       const recibos = pagos.filter(pago => pago.polizaId === poliza.id)
       const situacion = situacionCobranzaPoliza(recibos, {
@@ -226,7 +249,7 @@ function PolizasPendientesContent() {
 
   const abrirModalAccion = (poliza: Poliza, tipo: TipoAccion) => {
     const recibo = reciboParaAccion(poliza, tipo)
-    if (tipo !== "cancelar" && !recibo) {
+    if (tipo !== "cancelar" && tipo !== "vencida" && !recibo) {
       toast.error(
         tipo === "pagada" ? "Esta póliza no tiene recibos pendientes generados."
           : tipo === "validar" ? "La póliza no tiene pagos por validar"
@@ -245,6 +268,7 @@ function PolizasPendientesContent() {
     setFechaPagoAccion(todayDateOnly())
     if (tipo === "pagada" && recibo?.moneda === "UDIS") void cargarValorUdi(todayDateOnly())
     setComprobante(null)
+    setConfirmandoPago(false)
     setModalAccion(true)
   }
 
@@ -258,6 +282,7 @@ function PolizasPendientesContent() {
     setTipoPagoAccion("")
     setValorUdiAccion("")
     setComprobante(null)
+    setConfirmandoPago(false)
   }
 
   const ejecutarAccion = async (rechazar = false) => {
@@ -270,12 +295,18 @@ function PolizasPendientesContent() {
       toast.error("Indique la fecha de pago")
       return
     }
-    if ((tipoAccion === "cancelar" || tipoAccion === "anular-pago" || rechazar) && !motivoAccion.trim()) {
-      toast.error(tipoAccion === "cancelar" ? "El motivo de cancelación es obligatorio" : rechazar ? "Indique el motivo del rechazo" : "El motivo de anulación es obligatorio")
+    if ((tipoAccion === "cancelar" || tipoAccion === "anular-pago" || tipoAccion === "vencida" || rechazar) && !motivoAccion.trim()) {
+      toast.error(tipoAccion === "cancelar" ? "El motivo de cancelación es obligatorio"
+        : tipoAccion === "vencida" ? "Escribe la justificación de por qué se marca como vencida"
+          : rechazar ? "Indique el motivo del rechazo" : "El motivo de anulación es obligatorio")
       return
     }
     if (tipoAccion === "pagada" && reciboAccion?.moneda === "UDIS" && (!valorUdiAccion || Number(valorUdiAccion) <= 0 || fechaValorUdiAccion !== fechaPagoAccion)) {
       toast.error("Falta el valor UDI de la fecha de pago; espera a que cargue o reintenta")
+      return
+    }
+    if (tipoAccion === "pagada" && !confirmandoPago) {
+      setConfirmandoPago(true)
       return
     }
 
@@ -296,6 +327,8 @@ function PolizasPendientesContent() {
         else await validarPago(reciboAccion.id)
       } else if (tipoAccion === "anular-pago" && reciboAccion) {
         await anularPago(reciboAccion.id, motivoAccion.trim())
+      } else if (tipoAccion === "vencida") {
+        await marcarComoVencido(polizaAccion.id, motivoAccion)
       } else if (tipoAccion === "cancelar") {
         const fecha = new Date().toLocaleDateString('es-MX')
         const comentarioNuevo = polizaAccion.comentarios
@@ -310,7 +343,7 @@ function PolizasPendientesContent() {
       cerrarModal()
     } catch (error: any) {
       // actualizarPoliza ya notifica sus propios errores.
-      if (tipoAccion !== "cancelar") toast.error(error.message || "No fue posible completar la acción")
+      if (tipoAccion !== "cancelar" && tipoAccion !== "vencida") toast.error(error.message || "No fue posible completar la acción")
     } finally {
       setGuardando(false)
     }
@@ -328,20 +361,72 @@ function PolizasPendientesContent() {
     toast.success(`Recordatorio ${numRecordatorio} registrado`)
   }
 
-  const botonesCobranza = (poliza: Poliza, situacion: SituacionCobranzaPoliza<PagoPoliza>, compacto = false) => {
-    const clase = compacto ? "flex-1 h-8 text-xs" : "h-8 text-xs whitespace-nowrap"
-    const porCobrar = situacion.reciboActual && reciboPorCobrar(situacion.reciboActual)
+  // Rechazo del cargo (tarjeta o domiciliación) del recibo actual: se registra la fecha y se
+  // abre WhatsApp con el aviso para el cliente.
+  const marcarRechazo = async (poliza: Poliza, recibo: PagoPoliza, numero: 1 | 2) => {
+    const cliente = clientes.find(item => item.id === poliza.clienteId)
+    const telefono = whatsappCliente(cliente)
+    const compania = companias.find(item => item.id === poliza.companiaId)?.nombre
+    // La ventana se abre antes de guardar para que el navegador no la bloquee.
+    const ventana = telefono ? window.open(`https://wa.me/${telefono}?text=${encodeURIComponent(mensajeRechazo(numero, cliente, poliza, recibo, compania))}`, "_blank") : null
+    const actuales = poliza.fechasRecordatorio || {}
+    const rechazoActual = actuales.rechazo?.reciboId === recibo.id ? actuales.rechazo : { reciboId: recibo.id }
+    const hoy = todayDateOnly()
+    const fecha = new Date().toLocaleDateString("es-MX")
+    const linea = `[${fecha}] RECHAZO ${numero} del cargo del recibo ${recibo.numeroRecibo}/${recibo.totalRecibos}${telefono ? " · aviso enviado al cliente por WhatsApp" : ""}`
+    try {
+      await actualizarPoliza(poliza.id, {
+        fechasRecordatorio: { ...actuales, rechazo: { ...rechazoActual, [`fecha${numero}`]: hoy } },
+        comentarios: poliza.comentarios ? `${poliza.comentarios}\n${linea}` : linea,
+      })
+      if (telefono) toast.success(`Rechazo ${numero} registrado. Envía el mensaje en WhatsApp para notificar al cliente.`)
+      else toast.warning(`Rechazo ${numero} registrado, pero el cliente no tiene un teléfono válido para avisarle por WhatsApp.`)
+    } catch {
+      ventana?.close()
+    }
+  }
+
+  const botonesRechazo = (poliza: Poliza, recibo: PagoPoliza, compacto: boolean) => {
+    const rechazo = poliza.fechasRecordatorio?.rechazo?.reciboId === recibo.id ? poliza.fechasRecordatorio.rechazo : undefined
     return (
-      <>
+      <div className="flex w-full gap-2">
+        {([1, 2] as const).map(numero => {
+          const fecha = rechazo?.[`fecha${numero}` as const]
+          return fecha ? (
+            <span key={numero} className={`${compacto ? "flex-1" : ""} inline-flex h-8 items-center justify-center whitespace-nowrap rounded-md border border-red-300 bg-red-50 px-2 text-[11px] font-semibold text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300`}>
+              Rechazo {numero} · {formatDateOnly(fecha)}
+            </span>
+          ) : (
+            <Button key={numero} size="sm" variant="outline" disabled={numero === 2 && !rechazo?.fecha1}
+              title={numero === 2 && !rechazo?.fecha1 ? "Primero registra el rechazo 1" : "Registra el rechazo del cargo y avisa al cliente por WhatsApp"}
+              className="flex-1 h-8 text-xs whitespace-nowrap border-red-300 text-red-700 hover:bg-red-50 dark:text-red-300"
+              onClick={() => void marcarRechazo(poliza, recibo, numero)}>
+              <Ban className="w-3 h-3 mr-1" />Rechazo {numero}
+            </Button>
+          )
+        })}
+      </div>
+    )
+  }
+
+  const botonesCobranza = (poliza: Poliza, situacion: SituacionCobranzaPoliza<PagoPoliza>, compacto = false) => {
+    const clase = "w-full h-8 text-xs whitespace-nowrap"
+    const recibo = situacion.reciboActual
+    const porCobrar = recibo && reciboPorCobrar(recibo)
+    return (
+      <div className={`flex flex-col gap-2 ${compacto ? "w-full" : "min-w-[190px]"}`}>
         {situacion.porValidar > 0 && (
           <Button size="sm" className={`${clase} bg-purple-600 hover:bg-purple-700 text-white`} onClick={() => abrirModalAccion(poliza, "validar")}>
             <Clock className="w-3 h-3 mr-1" />Validar pago
           </Button>
         )}
-        {porCobrar ? (
-          <Button size="sm" className={`${clase} bg-green-600 hover:bg-green-700`} onClick={() => abrirModalAccion(poliza, "pagada")}>
-            ✓ Registrar pago
-          </Button>
+        {porCobrar && recibo ? (
+          <>
+            <Button size="sm" className={`${clase} bg-green-600 hover:bg-green-700`} onClick={() => abrirModalAccion(poliza, "pagada")}>
+              ✓ Registrar pago
+            </Button>
+            {botonesRechazo(poliza, recibo, compacto)}
+          </>
         ) : situacion.estado === "pagada" && situacion.tieneRecibos ? (
           <Button size="sm" variant="outline" className={`${clase} border-green-600 text-green-600`} onClick={() => abrirModalAccion(poliza, "anular-pago")}>
             Anular último pago
@@ -349,7 +434,15 @@ function PolizasPendientesContent() {
         ) : !situacion.tieneRecibos && situacion.pendiente > 0 ? (
           <span className="text-xs font-medium text-red-600">Sin recibos generados</span>
         ) : null}
-      </>
+        <div className="flex w-full gap-2">
+          <Button size="sm" variant="outline" className="flex-1 h-8 text-xs whitespace-nowrap text-red-600 border-red-400 hover:bg-red-50" onClick={() => abrirModalAccion(poliza, "vencida")}>
+            Marcar vencida
+          </Button>
+          <Button size="sm" variant="destructive" className="flex-1 h-8 text-xs whitespace-nowrap" onClick={() => abrirModalAccion(poliza, "cancelar")}>
+            Cancelar
+          </Button>
+        </div>
+      </div>
     )
   }
 
@@ -494,10 +587,7 @@ function PolizasPendientesContent() {
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="todas">Todas</SelectItem>
-                      <SelectItem value="activa">Activas</SelectItem>
-                      <SelectItem value="gracia">En gracia</SelectItem>
-                      <SelectItem value="por-renovar">Por renovar</SelectItem>
-                      <SelectItem value="vencida">Vencidas</SelectItem>
+                      {ESTATUS_EN_COBRANZA.map(estatus => <SelectItem key={estatus} value={estatus}>{ETIQUETA_ESTATUS_COBRANZA[estatus]}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -661,25 +751,7 @@ function PolizasPendientesContent() {
                           )}
                         </td>
                         <td className="p-4 text-center align-top">
-                          <div className="flex items-center justify-center gap-2 flex-wrap">
-                            {botonesCobranza(poliza, situacion)}
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-8 text-xs whitespace-nowrap text-red-600 border-red-400 hover:bg-red-50"
-                              onClick={() => marcarComoVencido(poliza.id)}
-                            >
-                              Marcar Vencida
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              className="h-8 text-xs whitespace-nowrap"
-                              onClick={() => abrirModalAccion(poliza, "cancelar")}
-                            >
-                              Cancelar
-                            </Button>
-                          </div>
+                          {botonesCobranza(poliza, situacion)}
                         </td>
                       </motion.tr>
                     )
@@ -826,25 +898,7 @@ function PolizasPendientesContent() {
                       </div>
 
                       {/* Botones de acción */}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {botonesCobranza(poliza, situacion, true)}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="flex-1 h-8 text-xs text-red-600 border-red-400"
-                          onClick={() => marcarComoVencido(poliza.id)}
-                        >
-                          Vencida
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          className="flex-1 h-8 text-xs"
-                          onClick={() => abrirModalAccion(poliza, "cancelar")}
-                        >
-                          Cancelar
-                        </Button>
-                      </div>
+                      {botonesCobranza(poliza, situacion, true)}
                     </div>
                   </GlassCard>
                 </motion.div>
@@ -901,11 +955,15 @@ function PolizasPendientesContent() {
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>
-              {tipoAccion === "pagada" ? "Registrar pago" : tipoAccion === "validar" ? "Validar pago" : tipoAccion === "anular-pago" ? "Anular último pago" : "Cancelar póliza"}
+              {tipoAccion === "pagada" ? (confirmandoPago ? "Valida los datos del pago" : "Registrar pago") : tipoAccion === "validar" ? "Validar pago" : tipoAccion === "anular-pago" ? "Anular último pago" : tipoAccion === "vencida" ? "Marcar póliza como vencida" : "Cancelar póliza"}
             </DialogTitle>
             <DialogDescription>
               {tipoAccion === "pagada"
-                ? "El pago quedará pendiente de validar hasta que se confirme"
+                ? confirmandoPago
+                  ? "Revisa que los datos sean correctos antes de registrar el pago. Después quedará pendiente de validar."
+                  : "El pago quedará pendiente de validar hasta que se confirme"
+                : tipoAccion === "vencida"
+                  ? "La póliza saldrá de Pólizas pendientes de pago. Escribe por qué se marca como vencida."
                 : tipoAccion === "validar"
                   ? "Revise los datos del pago. Al validarlo se refleja como cobrado en el recibo y en la cobranza"
                   : tipoAccion === "anular-pago"
@@ -948,7 +1006,23 @@ function PolizasPendientesContent() {
               </div>
             )}
 
-            {tipoAccion === "pagada" && (
+            {tipoAccion === "pagada" && confirmandoPago && reciboAccion && (
+              <div className="space-y-2 rounded-lg border border-green-300 bg-green-50/60 p-3 text-sm dark:border-green-900 dark:bg-green-950/20">
+                <div className="grid grid-cols-2 gap-3">
+                  <div><p className="text-xs text-muted-foreground">Importe del recibo</p><p className="font-semibold">{formatearMonto(reciboAccion.monto)} {reciboAccion.moneda}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Fecha de pago</p><p className="font-medium">{formatDateOnly(fechaPagoAccion)}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Tipo de pago</p><p className="font-medium capitalize">{tipoPagoAccion}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Referencia</p><p className="font-medium">{referenciaAccion.trim() || "—"}</p></div>
+                  {reciboAccion.moneda === "UDIS" && (
+                    <div className="col-span-2"><p className="text-xs text-muted-foreground">Conversión</p><p className="font-medium">{formatearMonto(reciboAccion.monto)} UDIS × {Number(valorUdiAccion).toFixed(6)} = ${(reciboAccion.monto * Number(valorUdiAccion)).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN</p></div>
+                  )}
+                  {motivoAccion.trim() && <div className="col-span-2"><p className="text-xs text-muted-foreground">Notas</p><p>{motivoAccion.trim()}</p></div>}
+                  <div className="col-span-2"><p className="text-xs text-muted-foreground">Comprobante</p><p className="font-medium">{comprobante ? comprobante.name : "Sin comprobante"}</p></div>
+                </div>
+              </div>
+            )}
+
+            {tipoAccion === "pagada" && !confirmandoPago && (
               <>
                 <div className="space-y-2">
                   <Label>Tipo de Pago *</Label>
@@ -992,17 +1066,18 @@ function PolizasPendientesContent() {
               </>
             )}
 
-            {tipoAccion === "pagada" && reciboAccion?.moneda === "UDIS" && (
+            {tipoAccion === "pagada" && !confirmandoPago && reciboAccion?.moneda === "UDIS" && (
               <div className="space-y-2 rounded-lg bg-muted/40 p-3">
                 <Label>Valor UDI al {formatDateOnly(fechaPagoAccion)} (Banco de México)</Label>
                 {cargandoUdi ? <p className="text-sm text-muted-foreground">Consultando valor...</p> : valorUdiAccion ? <p className="text-sm">{formatearMonto(reciboAccion.monto)} UDIS × {Number(valorUdiAccion).toFixed(6)} = <span className="font-semibold">${(reciboAccion.monto * Number(valorUdiAccion)).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN</span></p> : <div className="flex items-center gap-2"><p className="text-sm text-destructive">{errorUdi || "Valor no disponible"}</p><Button size="sm" variant="outline" onClick={() => void cargarValorUdi(fechaPagoAccion)}>Reintentar</Button></div>}
               </div>
             )}
 
-            {tipoAccion !== null && (
+            {tipoAccion !== null && !(tipoAccion === "pagada" && confirmandoPago) && (
               <div className="space-y-2">
                 <Label>
-                  {tipoAccion === "cancelar" ? "Motivo de cancelación *"
+                  {tipoAccion === "vencida" ? "Justificación *"
+                    : tipoAccion === "cancelar" ? "Motivo de cancelación *"
                     : tipoAccion === "anular-pago" ? "Motivo de anulación *"
                       : tipoAccion === "validar" ? "Motivo (obligatorio sólo para rechazar)"
                         : "Notas adicionales"}
@@ -1011,7 +1086,9 @@ function PolizasPendientesContent() {
                   placeholder={tipoAccion === "pagada"
                     ? "Ej: Pagó en ventanilla del banco..."
                     : tipoAccion === "validar" ? "Ej: El depósito no aparece en el estado de cuenta..."
-                      : tipoAccion === "anular-pago" ? "Ej: Pago marcado por error..." : "Ej: Cliente ya no requiere el servicio..."}
+                      : tipoAccion === "anular-pago" ? "Ej: Pago marcado por error..."
+                        : tipoAccion === "vencida" ? "Ej: El cliente no pagó dentro del periodo de gracia y no respondió a los recordatorios..."
+                          : "Ej: Cliente ya no requiere el servicio..."}
                   value={motivoAccion}
                   onChange={(e) => setMotivoAccion(e.target.value)}
                   className="min-h-[80px]"
@@ -1019,7 +1096,7 @@ function PolizasPendientesContent() {
               </div>
             )}
 
-            {tipoAccion === "pagada" && (
+            {tipoAccion === "pagada" && !confirmandoPago && (
               <div className="space-y-2">
                 <Label>Comprobante de Pago (opcional)</Label>
                 <div className="flex items-center gap-2">
@@ -1037,9 +1114,15 @@ function PolizasPendientesContent() {
           </div>
 
           <div className="flex flex-wrap justify-end gap-3">
-            <Button variant="outline" onClick={cerrarModal}>
-              Cerrar
-            </Button>
+            {tipoAccion === "pagada" && confirmandoPago ? (
+              <Button variant="outline" disabled={guardando} onClick={() => setConfirmandoPago(false)}>
+                Corregir datos
+              </Button>
+            ) : (
+              <Button variant="outline" onClick={cerrarModal}>
+                Cerrar
+              </Button>
+            )}
             {tipoAccion === "validar" && (
               <Button variant="destructive" disabled={guardando} onClick={() => void ejecutarAccion(true)}>
                 Rechazar pago
@@ -1049,9 +1132,9 @@ function PolizasPendientesContent() {
               disabled={guardando}
               onClick={() => void ejecutarAccion()}
               className={tipoAccion === "pagada" ? "bg-green-600 hover:bg-green-700" : tipoAccion === "validar" ? "bg-purple-600 hover:bg-purple-700 text-white" : ""}
-              variant={tipoAccion === "cancelar" || tipoAccion === "anular-pago" ? "destructive" : "default"}
+              variant={tipoAccion === "cancelar" || tipoAccion === "anular-pago" || tipoAccion === "vencida" ? "destructive" : "default"}
             >
-              {guardando ? "Guardando..." : tipoAccion === "pagada" ? "Registrar pago" : tipoAccion === "validar" ? "Validar pago" : tipoAccion === "anular-pago" ? "Anular pago" : "Cancelar póliza"}
+              {guardando ? "Guardando..." : tipoAccion === "pagada" ? (confirmandoPago ? "Confirmar y registrar" : "Registrar pago") : tipoAccion === "validar" ? "Validar pago" : tipoAccion === "anular-pago" ? "Anular pago" : tipoAccion === "vencida" ? "Marcar como vencida" : "Cancelar póliza"}
             </Button>
           </div>
         </DialogContent>

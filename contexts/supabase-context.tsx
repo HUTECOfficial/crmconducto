@@ -62,7 +62,7 @@ export interface Poliza {
   vigenciaProductoFin?: string
   prima: number
   formaPago: 'mensual' | 'trimestral' | 'semestral' | 'anual'
-  estatus: 'activa' | 'por-renovar' | 'renovada' | 'vencida' | 'cancelada' | 'gracia' | 'rehabilitada' | 'vigente' | 'en-movimientos' | 'cancelada-cliente' | 'cancelada-falta-pago' | 'desvinculada-cobranza' | 'espera-formato'
+  estatus: 'activa' | 'por-renovar' | 'renovada' | 'vencida' | 'cancelada' | 'gracia' | 'rehabilitada' | 'vigente' | 'en-movimientos' | 'cancelada-cliente' | 'cancelada-falta-pago' | 'espera-formato'
   renovacionEstado?: 'sin_iniciar' | 'pendiente' | 'en_proceso' | 'renovada' | 'cancelada'
   renovadaDesdeId?: string
   renovadaAId?: string
@@ -86,6 +86,8 @@ export interface Poliza {
     fecha1?: string
     fecha2?: string
     fecha3?: string
+    /** Rechazos del cargo del recibo actual; se reinician cuando cambia el recibo. */
+    rechazo?: { reciboId: string; fecha1?: string; fecha2?: string }
   }
   comentarios?: string
   notas?: string
@@ -409,7 +411,7 @@ interface SupabaseContextType {
   darVistoBueno: (id: string) => Promise<void>
   
   // Vencidos
-  marcarComoVencido: (polizaId: string) => Promise<void>
+  marcarComoVencido: (polizaId: string, motivo: string) => Promise<void>
   
   // Eventos del calendario
   eventos: Evento[]
@@ -2129,21 +2131,31 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   }
 
   // ==================== VENCIDOS ====================
-  const marcarComoVencido = async (polizaId: string) => {
+  // Una póliza vencida sale de Pólizas pendientes de pago; la justificación queda en
+  // comentarios y en el historial.
+  const marcarComoVencido = async (polizaId: string, motivo: string) => {
+    const justificacion = motivo.trim()
+    if (!justificacion) throw new Error('La justificación es obligatoria')
+    const anterior = polizas.find(item => item.id === polizaId)
     try {
       const hoy = todayDateOnly()
+      const fecha = new Date().toLocaleDateString('es-MX')
+      const linea = `[${fecha}] VENCIDA: ${justificacion}`
       const { error } = await supabase
         .from('polizas')
-        .update({ 
+        .update({
           estatus: 'vencida',
-          fecha_vencimiento_real: hoy
+          fecha_vencimiento_real: hoy,
+          comentarios: anterior?.comentarios ? `${anterior.comentarios}\n${linea}` : linea,
         })
         .eq('id', polizaId)
       if (error) throw error
-      toast.success('Póliza marcada como vencida y guardada en BD')
-      await fetchPolizas()
+      await registrarHistorial(polizaId, 'estatus_cambiado', 'estatus', anterior?.estatus, 'vencida', { motivo: justificacion })
+      toast.success('Póliza marcada como vencida')
+      await Promise.all([fetchPolizas(), fetchHistorialPolizas()])
     } catch (err: any) {
       toast.error('Error al marcar póliza como vencida: ' + err.message)
+      throw err
     }
   }
 

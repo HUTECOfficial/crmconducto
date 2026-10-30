@@ -60,6 +60,32 @@ test('al cambiar periodicidad conserva los recibos pagados y recalcula sólo el 
   assert.equal(futuros[0].numeroRecibo, 2)
 })
 
+test('al editar la prima, los pagados quedan como evidencia y el saldo se reparte entre los pendientes', () => {
+  const pagados: ReciboExistente[] = [1, 2, 3].map(numero => ({
+    id: `pagado-${numero}`,
+    monto: 1_000,
+    numeroRecibo: numero,
+    totalRecibos: 12,
+    fechaEmision: `2026-0${numero}-01`,
+    fechaLimite: `2026-0${numero}-28`,
+    estatus: 'pagado' as const,
+  }))
+  const copia = structuredClone(pagados)
+  const pendientes = generarRecibos({
+    primaTotal: 13_200,
+    vigenciaInicio: '2026-01-01',
+    vigenciaFin: '2027-01-01',
+    periodicidad: 'mensual',
+    recibosPagados: pagados,
+  })
+  assert.deepEqual(pagados, copia)
+  assert.equal(pendientes.length, 9)
+  assert.deepEqual(pendientes.map(recibo => recibo.numeroRecibo), [4, 5, 6, 7, 8, 9, 10, 11, 12])
+  // Saldo 10,200 entre 9 recibos: ninguno carga sólo con la diferencia.
+  assert.ok(pendientes.every(recibo => Math.abs(recibo.monto - 10_200 / 9) < 0.05))
+  assert.equal(Math.round(pendientes.reduce((sum, recibo) => sum + recibo.monto, 0) * 100) / 100, 10_200)
+})
+
 test('rechaza un primer recibo mayor que la prima total', () => {
   assert.throws(() => generarRecibos({
     primaTotal: 1_000,

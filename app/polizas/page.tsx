@@ -41,7 +41,6 @@ const ESTATUS_COLORS: Record<string, string> = {
   "en-movimientos": "bg-blue-500/10 text-blue-500 border-blue-500/20",
   "cancelada-cliente": "bg-gray-500/10 text-gray-400 border-gray-500/20",
   "cancelada-falta-pago": "bg-red-500/10 text-red-400 border-red-500/20",
-  "desvinculada-cobranza": "bg-indigo-500/10 text-indigo-500 border-indigo-500/20",
   "espera-formato": "bg-cyan-500/10 text-cyan-600 border-cyan-500/20",
   "en-proceso-renovacion": "bg-blue-500/10 text-blue-600 border-blue-500/20",
 }
@@ -733,7 +732,6 @@ function PolizasContent() {
                     <SelectItem value="cancelada">Cancelada</SelectItem>
                     <SelectItem value="cancelada-cliente">Cancelada (Cliente)</SelectItem>
                     <SelectItem value="cancelada-falta-pago">Cancelada (Falta Pago)</SelectItem>
-                    <SelectItem value="desvinculada-cobranza">Desvinculada de Cobranza</SelectItem>
                     <SelectItem value="espera-formato">En Espera de Formato</SelectItem>
                   </SelectContent>
                 </Select>
@@ -988,7 +986,6 @@ function PolizasContent() {
                       <SelectItem value="cancelada">Cancelada</SelectItem>
                       <SelectItem value="cancelada-cliente">Cancelada a Petición del Cliente</SelectItem>
                       <SelectItem value="cancelada-falta-pago">Cancelada por Falta de Pago</SelectItem>
-                      <SelectItem value="desvinculada-cobranza">Desvinculada de Cobranza</SelectItem>
                       <SelectItem value="espera-formato">En Espera de Formato</SelectItem>
                       <SelectItem value="rehabilitada">Rehabilitada</SelectItem>
                     </SelectContent>
