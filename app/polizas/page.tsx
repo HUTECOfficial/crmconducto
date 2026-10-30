@@ -62,8 +62,9 @@ function PolizasContent() {
   const {
     polizas, clientes, companias, usuariosSistema, pagos, historialPolizas,
     agregarPoliza, actualizarPoliza, agregarCliente,
-    iniciarRenovacion, completarRenovacion, cancelarRenovacion,
+    iniciarRenovacion, completarRenovacion, cancelarRenovacion, regenerarRecibosPoliza,
   } = useSupabase()
+  const [recalculando, setRecalculando] = useState(false)
 
   const [busqueda, setBusqueda] = useState("")
   const [filtroCompania, setFiltroCompania] = useState("todas")
@@ -199,6 +200,9 @@ function PolizasContent() {
         periodicidad: editForm.formaPago as SPoliza["formaPago"],
         primerRecibo: editForm.primerRecibo ? Number(editForm.primerRecibo) : undefined,
         recibosPagados: pagados,
+        periodicidadPagados: polizaEditar.formaPago,
+        diasGraciaPrimerRecibo: editForm.diasGraciaPrimerRecibo ? Number(editForm.diasGraciaPrimerRecibo) : undefined,
+        diasGraciaSubsecuentes: editForm.diasGraciaSubsecuentes ? Number(editForm.diasGraciaSubsecuentes) : undefined,
       })
       const siguiente = recibos[0]
       const ultimoPagado = [...pagados].sort((left, right) => right.numeroRecibo - left.numeroRecibo)[0]
@@ -440,6 +444,21 @@ function PolizasContent() {
     })
     setPolizaSeleccionada(null)
     setModalEditarPoliza(true)
+  }
+
+  // Recalcula sólo los recibos pendientes con la configuración guardada; los pagados no cambian.
+  const recalcularRecibos = async () => {
+    if (!polizaEditar) return
+    if (!window.confirm("Se recalcularán los recibos pendientes con la forma de pago y vigencia guardadas. Los recibos pagados o por validar no cambian. ¿Continuar?")) return
+    setRecalculando(true)
+    try {
+      await regenerarRecibosPoliza(polizaEditar.id)
+      toast.success("Recibos pendientes recalculados")
+    } catch (error: any) {
+      toast.error(error.message || "No fue posible recalcular los recibos")
+    } finally {
+      setRecalculando(false)
+    }
   }
 
   const guardarEdicion = async () => {
@@ -1025,7 +1044,7 @@ function PolizasContent() {
                   </div>
                 </div>
                 <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-                  Si la prima aumenta o disminuye, los recibos ya cobrados se conservan y el saldo se redistribuye entre los pendientes. No se permite reducir el total por debajo de lo ya cobrado.
+                  Si la prima o la forma de pago cambian, los recibos ya cobrados se conservan y sólo se recalculan los pendientes a partir de donde termina lo pagado. No se permite reducir el total por debajo de lo ya cobrado.
                 </p>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -1159,7 +1178,14 @@ function PolizasContent() {
                 </div>
                 {polizaEditar && (
                   <div className="space-y-2 border-t border-border/50 pt-4">
-                    <p className="text-sm font-semibold">Cobranza, pagos, renovación y comisiones</p>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-semibold">Cobranza, pagos, renovación y comisiones</p>
+                      <Button type="button" size="sm" variant="outline" className="h-8 text-xs" disabled={recalculando} onClick={() => void recalcularRecibos()}>
+                        {recalculando ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <RefreshCw className="mr-1 h-3 w-3" />}
+                        Recalcular recibos pendientes
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Los recibos pagados se conservan como evidencia; al cambiar la forma de pago, la nueva sólo aplica a los periodos que faltan de la vigencia.</p>
                     <PolizaCobranzaPanel poliza={polizaEditar} conAcciones />
                   </div>
                 )}

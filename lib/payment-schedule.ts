@@ -53,6 +53,8 @@ export interface GenerarRecibosInput {
   primerRecibo?: number
   /** Recibos cobrados o por validar; se conservan intactos. */
   recibosPagados?: ReciboExistente[]
+  /** Periodicidad con la que se generaron los recibos pagados (respaldo para saber hasta dónde cubren). */
+  periodicidadPagados?: PeriodicidadPago
   diasGraciaPrimerRecibo?: number
   diasGraciaSubsecuentes?: number
 }
@@ -153,9 +155,51 @@ export function fechasEmisionPorPeriodicidad(
   return fechas
 }
 
+/** Meses completos entre dos fechas (cuántas veces cabe un mes desde `inicio` sin pasar de `fin`). */
+function mesesEntre(inicio: string, fin: string): number {
+  let meses = 0
+  while (meses < 1_200 && compareDateOnly(addMonthsDateOnly(inicio, meses + 1), fin) <= 0) meses++
+  return meses
+}
+
+/** Reparte un total en centavos proporcionalmente a los pesos; el último absorbe el redondeo. */
+function distributeByWeights(total: number, weights: number[]): number[] {
+  if (weights.length === 0) return []
+  const totalCents = toCents(Math.max(0, total))
+  const sumWeights = weights.reduce((sum, weight) => sum + weight, 0)
+  const amounts = weights.map(weight => Math.floor((totalCents * weight) / sumWeights))
+  amounts[amounts.length - 1] += totalCents - amounts.reduce((sum, amount) => sum + amount, 0)
+  return amounts.map(fromCents)
+}
+
+/**
+ * Fecha hasta la que cubren los recibos ya pagados (o por validar). Se deduce del propio
+ * calendario de esos recibos: la separación entre los dos últimos del mismo calendario, o el
+ * plazo dividido entre su total de recibos; si no se puede, la periodicidad con que se generaron.
+ */
+function finCoberturaPagados(pagados: ReciboExistente[], input: GenerarRecibosInput): string | undefined {
+  const ultimo = pagados[pagados.length - 1]
+  if (!ultimo) return undefined
+  const penultimo = pagados[pagados.length - 2]
+  let meses = penultimo && penultimo.totalRecibos === ultimo.totalRecibos ? mesesEntre(penultimo.fechaEmision, ultimo.fechaEmision) : 0
+  if (!meses) {
+    const plazo = mesesEntre(input.vigenciaInicio, input.vigenciaFin)
+    if (ultimo.totalRecibos > 0 && plazo > 0 && plazo % ultimo.totalRecibos === 0) meses = plazo / ultimo.totalRecibos
+  }
+  if (!meses) meses = MESES_POR_PERIODICIDAD[input.periodicidadPagados ?? input.periodicidad]
+  return addMonthsDateOnly(ultimo.fechaEmision, meses)
+}
+
 export function generarRecibos(input: GenerarRecibosInput): ReciboProgramado[] {
   if (!Number.isFinite(input.primaTotal) || input.primaTotal < 0) {
     throw new Error('La prima total debe ser un importe válido')
+  }
+  const usaPrimaAnual = input.primaAnual !== undefined
+  if (usaPrimaAnual && (!Number.isFinite(input.primaAnual) || Number(input.primaAnual) < 0)) {
+    throw new Error('La prima anual debe ser un importe válido')
+  }
+  if (compareDateOnly(input.vigenciaInicio, input.vigenciaFin) >= 0) {
+    throw new Error('La vigencia final debe ser posterior a la vigencia inicial')
   }
 
   const pagados = [...(input.recibosPagados || [])]
@@ -165,29 +209,47 @@ export function generarRecibos(input: GenerarRecibosInput): ReciboProgramado[] {
   const saldo = Math.max(0, Math.round((input.primaTotal - cobrado) * 100) / 100)
   if (saldo === 0) return []
 
-  const fechasBase = fechasEmisionPorPeriodicidad(input.vigenciaInicio, input.vigenciaFin, input.periodicidad)
-  const totalObjetivo = Math.max(fechasBase.length, pagados.length + 1)
+  // Los recibos pagados se respetan tal cual: los nuevos empiezan donde termina lo ya cubierto
+  // y la nueva periodicidad sólo aplica al tiempo restante de la vigencia.
   const meses = MESES_POR_PERIODICIDAD[input.periodicidad]
-  const usaPrimaAnual = input.primaAnual !== undefined
-  if (usaPrimaAnual && (!Number.isFinite(input.primaAnual) || Number(input.primaAnual) < 0)) {
-    throw new Error('La prima anual debe ser un importe válido')
+  const finCobertura = finCoberturaPagados(pagados, input)
+  const inicioPendiente = finCobertura ?? input.vigenciaInicio
+  const fechas: string[] = []
+  while (fechas.length < 1_200 && compareDateOnly(addMonthsDateOnly(inicioPendiente, meses * fechas.length), input.vigenciaFin) < 0) {
+    fechas.push(addMonthsDateOnly(inicioPendiente, meses * fechas.length))
+  }
+  // Si la prima aumentó con todo el plazo ya cubierto, el ajuste va en un recibo adicional.
+  if (fechas.length === 0) fechas.push(pagados[pagados.length - 1]?.fechaEmision ?? input.vigenciaInicio)
+
+  const mesesCubiertos = fechas.map(fecha => {
+    const fin = addMonthsDateOnly(fecha, meses)
+    return Math.max(1, mesesEntre(fecha, compareDateOnly(fin, input.vigenciaFin) > 0 ? input.vigenciaFin : fin))
+  })
+  const anualidadDe = (fecha: string) => Math.floor(mesesEntre(input.vigenciaInicio, fecha) / 12) + 1
+
+  let montos: number[]
+  if (usaPrimaAnual) {
+    // Vida se cobra por anualidades: cada año restante es su prima anual repartida entre sus
+    // recibos (el primero puede ser distinto si se capturó "primer recibo").
+    montos = new Array(fechas.length).fill(0)
+    const grupos = new Map<number, number[]>()
+    fechas.forEach((fecha, index) => grupos.set(anualidadDe(fecha), [...(grupos.get(anualidadDe(fecha)) || []), index]))
+    for (const indices of grupos.values()) {
+      const mesesGrupo = Math.min(12, indices.reduce((sum, index) => sum + mesesCubiertos[index], 0))
+      const montoGrupo = Number(input.primaAnual) * mesesGrupo / 12
+      const usaPrimerRecibo = input.primerRecibo !== undefined && input.primerRecibo > 0 && indices.length > 1 && mesesGrupo === 12 && input.primerRecibo < montoGrupo
+      const reparto = usaPrimerRecibo
+        ? distributeAmount(montoGrupo, indices.length, input.primerRecibo)
+        : distributeByWeights(montoGrupo, indices.map(index => mesesCubiertos[index]))
+      indices.forEach((index, position) => { montos[index] = reparto[position] })
+    }
+  } else if (pagados.length === 0) {
+    montos = distributeAmount(input.primaTotal, fechas.length, input.primerRecibo)
+  } else {
+    // Con recibos ya pagados, el saldo se reparte según los meses que cubre cada recibo restante.
+    montos = distributeByWeights(saldo, mesesCubiertos)
   }
 
-  // Vida se cobra por anualidades: cada anualidad descuenta su primer recibo
-  // y distribuye el remanente entre sus recibos subsecuentes.
-  const montosPlaneados = usaPrimaAnual
-    ? fechasBase.map((_, index) => {
-        const anualidad = Math.floor((index * meses) / 12) + 1
-        const indicesAnualidad = fechasBase
-          .map((__, candidate) => candidate)
-          .filter(candidate => Math.floor((candidate * meses) / 12) + 1 === anualidad)
-        const posicionAnual = indicesAnualidad.indexOf(index)
-        return distributeAmount(Number(input.primaAnual), indicesAnualidad.length, input.primerRecibo)[posicionAnual]
-      })
-    : distributeAmount(input.primaTotal, totalObjetivo, input.primerRecibo)
-  const pendientesCantidad = Math.max(1, totalObjetivo - pagados.length)
-  const montos = montosPlaneados.slice(pagados.length, pagados.length + pendientesCantidad)
-  // Los recibos cobrados sólo son evidencia de lo ya pagado y nunca se alteran.
   // Si la prima cambió, la diferencia se reparte entre todos los recibos pendientes
   // (el último absorbe los centavos) para que el saldo cuadre.
   const diferenciaCents = toCents(saldo) - montos.reduce((sum, monto) => sum + toCents(monto), 0)
@@ -195,7 +257,7 @@ export function generarRecibos(input: GenerarRecibosInput): ReciboProgramado[] {
     const ajusteBase = Math.trunc(diferenciaCents / montos.length)
     const ajustes = montos.map(() => ajusteBase)
     ajustes[ajustes.length - 1] += diferenciaCents - ajusteBase * montos.length
-    montos.forEach((monto, index) => { montos[index] = fromCents(toCents(monto) + ajustes[index]) })
+    montos = montos.map((monto, index) => fromCents(toCents(monto) + ajustes[index]))
     if (montos.some(monto => monto < 0)) throw new Error('El saldo no alcanza para los recibos pendientes; revisa la prima y el primer recibo')
   }
 
@@ -206,14 +268,12 @@ export function generarRecibos(input: GenerarRecibosInput): ReciboProgramado[] {
 
   return montos.map((monto, index) => {
     const numeroRecibo = pagados.length + index + 1
-    const fechaEmision = fechasBase[numeroRecibo - 1]
-      || addMonthsDateOnly(input.vigenciaInicio, meses * (numeroRecibo - 1))
-
+    const fechaEmision = fechas[index]
     return {
       monto,
       numeroRecibo,
-      totalRecibos: pagados.length + pendientesCantidad,
-      anualidad: Math.floor(((numeroRecibo - 1) * meses) / 12) + 1,
+      totalRecibos: pagados.length + fechas.length,
+      anualidad: anualidadDe(fechaEmision),
       fechaEmision,
       fechaLimite: addDaysDateOnly(fechaEmision, diasGracia(numeroRecibo)),
       estatus: 'pendiente',

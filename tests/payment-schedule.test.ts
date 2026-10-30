@@ -55,9 +55,47 @@ test('al cambiar periodicidad conserva los recibos pagados y recalcula sólo el 
     recibosPagados: [pagado],
   })
   assert.deepEqual(pagado, copia)
-  assert.equal(futuros.length, 1)
-  assert.equal(futuros[0].monto, 9_000)
-  assert.equal(futuros[0].numeroRecibo, 2)
+  // El trimestre pagado cubre hasta abril; los 9 meses restantes se cobran semestralmente.
+  assert.deepEqual(futuros.map(recibo => recibo.fechaEmision), ['2026-04-01', '2026-10-01'])
+  assert.deepEqual(futuros.map(recibo => recibo.numeroRecibo), [2, 3])
+  assert.deepEqual(futuros.map(recibo => recibo.monto), [6_000, 3_000])
+})
+
+test('en Vida, al cambiar de anual a mensual sólo los años restantes pasan a mensual', () => {
+  const pagados: ReciboExistente[] = [2023, 2024, 2025].map((anio, index) => ({
+    id: `anual-${index + 1}`,
+    monto: 3_211.66,
+    numeroRecibo: index + 1,
+    totalRecibos: 10,
+    fechaEmision: `${anio}-03-29`,
+    fechaLimite: `${anio}-04-28`,
+    estatus: 'pagado' as const,
+  }))
+  const copia = structuredClone(pagados)
+  const recibos = generarRecibos({
+    primaTotal: 32_116.6,
+    primaAnual: 3_211.66,
+    vigenciaInicio: '2023-03-29',
+    vigenciaFin: '2033-03-29',
+    periodicidad: 'mensual',
+    primerRecibo: 267.64,
+    recibosPagados: pagados,
+  })
+  assert.deepEqual(pagados, copia)
+  // 7 años restantes × 12 meses, a partir de que termina el último año pagado.
+  assert.equal(recibos.length, 84)
+  assert.equal(recibos[0].numeroRecibo, 4)
+  assert.equal(recibos[0].totalRecibos, 87)
+  assert.equal(recibos[0].fechaEmision, '2026-03-29')
+  assert.equal(recibos[0].anualidad, 4)
+  assert.equal(recibos[83].fechaEmision, '2033-02-28')
+  assert.equal(recibos[0].monto, 267.64)
+  // Cada año restante suma exactamente su prima anual.
+  for (let anualidad = 4; anualidad <= 10; anualidad++) {
+    const delAnio = recibos.filter(recibo => recibo.anualidad === anualidad)
+    assert.equal(delAnio.length, 12)
+    assert.equal(Math.round(delAnio.reduce((sum, recibo) => sum + recibo.monto, 0) * 100) / 100, 3_211.66)
+  }
 })
 
 test('al editar la prima, los pagados quedan como evidencia y el saldo se reparte entre los pendientes', () => {

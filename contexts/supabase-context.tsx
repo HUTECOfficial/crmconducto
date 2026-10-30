@@ -904,6 +904,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       periodicidad: configuracion.formaPago,
       primerRecibo: configuracion.primerRecibo,
       recibosPagados: comprometidos,
+      periodicidadPagados: actual.formaPago,
       diasGraciaPrimerRecibo: configuracion.diasGraciaPrimerRecibo,
       diasGraciaSubsecuentes: configuracion.diasGraciaSubsecuentes,
     })
