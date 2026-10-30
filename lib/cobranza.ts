@@ -14,7 +14,7 @@ import { reciboPorCobrar, resumirCobranza, type ReciboExistente } from './paymen
  * Estatus de póliza que siguen vigentes y por lo tanto aparecen en Pólizas pendientes de pago.
  * Quedan fuera las canceladas, las renovadas y las marcadas como vencidas.
  */
-export const ESTATUS_EN_COBRANZA = ['activa', 'vigente', 'gracia', 'por-renovar', 'rehabilitada', 'en-movimientos', 'espera-formato'] as const
+export const ESTATUS_EN_COBRANZA = ['activa', 'vigente', 'gracia', 'por-renovar', 'rehabilitada', 'en-movimientos', 'espera-formato', 'rechazo-bancario'] as const
 export type EstatusEnCobranza = (typeof ESTATUS_EN_COBRANZA)[number]
 
 export const ETIQUETA_ESTATUS_COBRANZA: Record<EstatusEnCobranza, string> = {
@@ -25,6 +25,7 @@ export const ETIQUETA_ESTATUS_COBRANZA: Record<EstatusEnCobranza, string> = {
   rehabilitada: 'Rehabilitadas',
   'en-movimientos': 'En movimientos',
   'espera-formato': 'En espera de formato',
+  'rechazo-bancario': 'Rechazo bancario',
 }
 
 export const polizaEnCobranza = (estatus: string): estatus is EstatusEnCobranza =>

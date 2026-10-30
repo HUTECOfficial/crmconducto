@@ -62,7 +62,7 @@ export interface Poliza {
   vigenciaProductoFin?: string
   prima: number
   formaPago: 'mensual' | 'trimestral' | 'semestral' | 'anual'
-  estatus: 'activa' | 'por-renovar' | 'renovada' | 'vencida' | 'cancelada' | 'gracia' | 'rehabilitada' | 'vigente' | 'en-movimientos' | 'cancelada-cliente' | 'cancelada-falta-pago' | 'espera-formato'
+  estatus: 'activa' | 'por-renovar' | 'renovada' | 'vencida' | 'cancelada' | 'gracia' | 'rehabilitada' | 'vigente' | 'en-movimientos' | 'cancelada-cliente' | 'cancelada-falta-pago' | 'espera-formato' | 'rechazo-bancario'
   renovacionEstado?: 'sin_iniciar' | 'pendiente' | 'en_proceso' | 'renovada' | 'cancelada'
   renovadaDesdeId?: string
   renovadaAId?: string
@@ -1179,6 +1179,14 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       await supabase.from('pagos').update({ estatus: 'por_validar', validado_en: null, validado_por: null }).eq('id', pagoId)
       throw error
+    }
+
+    // Con el pago validado, una póliza en rechazo bancario vuelve a quedar activa.
+    const poliza = polizas.find(item => item.id === pago.polizaId)
+    if (poliza?.estatus === 'rechazo-bancario') {
+      const { error: estatusError } = await supabase.from('polizas').update({ estatus: 'activa' }).eq('id', pago.polizaId).eq('estatus', 'rechazo-bancario')
+      if (estatusError) toast.warning('Pago validado, pero la póliza sigue en rechazo bancario: ' + estatusError.message)
+      else await registrarHistorial(pago.polizaId, 'estatus_cambiado', 'estatus', 'rechazo-bancario', 'activa', { motivo: 'pago_validado', pagoId })
     }
 
     await registrarHistorial(pago.polizaId, 'pago_validado', 'recibo', 'por_validar', 'pagado', {

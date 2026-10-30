@@ -94,6 +94,15 @@ function recordatoriosDelRecibo(poliza: Poliza, recibo?: PagoPoliza) {
   return fechas
 }
 
+function RechazoBancarioBadge({ poliza }: { poliza: Poliza }) {
+  if (poliza.estatus !== "rechazo-bancario") return null
+  return (
+    <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-rose-300 bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
+      <Ban className="h-3 w-3" aria-hidden />Rechazo bancario
+    </span>
+  )
+}
+
 /** Muestra la renovación sólo cuando está próxima, vencida sin renovar o en proceso. */
 function EstadoRenovacionBadge({ poliza }: { poliza: Poliza }) {
   const renovacion = situacionRenovacion(poliza)
@@ -400,6 +409,8 @@ function PolizasPendientesContent() {
     const linea = `[${fecha}] RECHAZO ${numero} del cargo del recibo ${recibo.numeroRecibo}/${recibo.totalRecibos}${telefono ? " · aviso enviado al cliente por WhatsApp" : ""}`
     try {
       await actualizarPoliza(poliza.id, {
+        // El rechazo del banco pone la póliza en estatus "Rechazo bancario" hasta que se valide un pago.
+        estatus: "rechazo-bancario",
         fechasRecordatorio: { ...actuales, rechazo: { ...rechazoActual, [`fecha${numero}`]: hoy } },
         comentarios: poliza.comentarios ? `${poliza.comentarios}\n${linea}` : linea,
       })
@@ -672,6 +683,7 @@ function PolizasPendientesContent() {
                       >
                         <td className={celda}>
                           <SemaforoPill situacion={situacion} />
+                          <RechazoBancarioBadge poliza={poliza} />
                           <EstadoRenovacionBadge poliza={poliza} />
                         </td>
                         <td className={`${celda} font-mono font-bold`}>
@@ -820,6 +832,7 @@ function PolizasPendientesContent() {
                       </div>
                       <div className="text-right">
                         <SemaforoPill situacion={situacion} />
+                        <RechazoBancarioBadge poliza={poliza} />
                           <EstadoRenovacionBadge poliza={poliza} />
                         <p className="mt-1 text-xs text-muted-foreground">Prima pendiente</p>
                         <p className="font-bold text-red-600">${formatearMonto(situacion.pendiente)}</p>
