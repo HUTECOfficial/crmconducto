@@ -7,11 +7,15 @@ import { sessionManager, type Session } from "@/lib/security/session-manager"
 import { auditLogger, AuditEventType } from "@/lib/security/audit-logger"
 import { rateLimiter } from "@/lib/security/rate-limiter"
 import { dataProtectionManager } from "@/lib/security/data-protection"
+import { supabase } from "@/lib/supabase"
+import { ingresarConFaceId } from "@/lib/passkeys-client"
 
 interface AuthContextType {
   usuario: Usuario | null
   session: Session | null
-  login: (email: string, password?: string) => Promise<{ success: boolean; error?: string }>
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
+  /** Pide Face ID / Touch ID; el servidor verifica la firma y dice qué usuario es. */
+  loginConFaceId: () => Promise<{ success: boolean; error?: string; cancelado?: boolean }>
   logout: () => Promise<void>
   tienePermiso: (permiso: keyof (typeof permisos)["administrador"]) => boolean
   isLoading: boolean
@@ -48,7 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     initSession()
   }, [])
 
-  const login = async (email: string, password?: string): Promise<{ success: boolean; error?: string }> => {
+  const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
       // Rate limiting para prevenir fuerza bruta
       const rateCheck = await rateLimiter.checkLimit(email, 'login')
@@ -68,10 +72,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Buscar usuario
-      const usuarioEncontrado = usuarios.find((u) => u.email === email && u.activo)
-      
-      if (!usuarioEncontrado) {
+      // Buscar usuario y verificar la contraseña en la base (el hash nunca llega al navegador)
+      const correo = email.trim().toLowerCase()
+      const usuarioEncontrado = usuarios.find((u) => u.email.toLowerCase() === correo && u.activo)
+      let contrasenaValida = false
+      if (usuarioEncontrado && password) {
+        const { data, error } = await supabase.rpc('verificar_contrasena', { p_email: correo, p_password: password })
+        if (error) {
+          console.error('Error al verificar contraseña:', error.message)
+          return { success: false, error: 'No fue posible verificar la contraseña. Intenta de nuevo.' }
+        }
+        contrasenaValida = data === true
+      }
+
+      if (!usuarioEncontrado || !contrasenaValida) {
         // Log intento fallido
         await auditLogger.log({
           eventType: AuditEventType.LOGIN_FAILED,
@@ -79,45 +93,63 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           action: 'login',
           userEmail: email,
           success: false,
-          details: { reason: 'user_not_found' },
+          details: { reason: usuarioEncontrado ? 'invalid_password' : 'user_not_found' },
         })
 
         return { success: false, error: 'Credenciales inválidas' }
       }
 
-      // Crear sesión segura
-      const newSession = await sessionManager.createSession(
-        usuarioEncontrado.id,
-        usuarioEncontrado.email,
-        usuarioEncontrado.rol
-      )
-
-      setUsuario(usuarioEncontrado)
-      setSession(newSession)
-      localStorage.setItem("crm-session-id", newSession.id)
-
-      // Registrar en protección de datos
-      dataProtectionManager.registerDataSubject(
-        usuarioEncontrado.id,
-        usuarioEncontrado.email,
-        usuarioEncontrado.nombre
-      )
-
-      // Log login exitoso
-      await auditLogger.log({
-        eventType: AuditEventType.LOGIN_SUCCESS,
-        userId: usuarioEncontrado.id,
-        userEmail: usuarioEncontrado.email,
-        userRole: usuarioEncontrado.rol,
-        resource: 'auth',
-        action: 'login',
-        success: true,
-      })
-
+      await iniciarSesion(usuarioEncontrado, 'password')
       return { success: true }
     } catch (error) {
       console.error('Error en login:', error)
       return { success: false, error: 'Error al iniciar sesión' }
+    }
+  }
+
+  const iniciarSesion = async (usuarioEncontrado: Usuario, metodo: 'password' | 'faceid') => {
+    // Crear sesión segura
+    const newSession = await sessionManager.createSession(
+      usuarioEncontrado.id,
+      usuarioEncontrado.email,
+      usuarioEncontrado.rol
+    )
+
+    setUsuario(usuarioEncontrado)
+    setSession(newSession)
+    localStorage.setItem("crm-session-id", newSession.id)
+
+    // Registrar en protección de datos
+    dataProtectionManager.registerDataSubject(
+      usuarioEncontrado.id,
+      usuarioEncontrado.email,
+      usuarioEncontrado.nombre
+    )
+
+    // Log login exitoso
+    await auditLogger.log({
+      eventType: AuditEventType.LOGIN_SUCCESS,
+      userId: usuarioEncontrado.id,
+      userEmail: usuarioEncontrado.email,
+      userRole: usuarioEncontrado.rol,
+      resource: 'auth',
+      action: 'login',
+      success: true,
+      details: { metodo },
+    })
+  }
+
+  const loginConFaceId = async (): Promise<{ success: boolean; error?: string; cancelado?: boolean }> => {
+    try {
+      const email = await ingresarConFaceId()
+      const usuarioEncontrado = usuarios.find((u) => u.email.toLowerCase() === email.toLowerCase() && u.activo)
+      if (!usuarioEncontrado) return { success: false, error: 'El usuario de este Face ID ya no está activo' }
+      await iniciarSesion(usuarioEncontrado, 'faceid')
+      return { success: true }
+    } catch (error: any) {
+      if (error?.name === 'NotAllowedError' || error?.name === 'AbortError') return { success: false, cancelado: true }
+      console.error('Error en login con Face ID:', error)
+      return { success: false, error: error?.message || 'No fue posible entrar con Face ID' }
     }
   }
 
@@ -154,7 +186,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ usuario, session, login, logout, tienePermiso, isLoading }}>
+    <AuthContext.Provider value={{ usuario, session, login, loginConFaceId, logout, tienePermiso, isLoading }}>
       {children}
     </AuthContext.Provider>
   )
