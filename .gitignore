@@ -28,3 +28,4 @@ next-env.d.ts
 # Importación de cobranza: trae datos de clientes, no subir a GitHub
 importacion-cobranza-2026/*.sql
 importacion-cobranza-2026/*.csv
+importacion-cobranza-2026/*.xlsx

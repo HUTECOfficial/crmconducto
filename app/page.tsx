@@ -50,8 +50,10 @@ export default function DashboardPage() {
   const totalPolizas = polizas.length
   const registroMovimientos = totalPolizas
 
-  // Próximos cobros: del más próximo a vencer (o más vencido) al más lejano
-  const cobranzaProxima = [...cobranzaPolizas]
+  // Próximos cobros: sólo los que aún no vencen, del más próximo a vencer al más lejano
+  // (las vencidas tienen su propia alerta; si entraran aquí la lista nunca se acabaría).
+  const cobranzaProxima = cobranzaPolizas
+    .filter(({ situacion }) => situacion.estado === "pendiente" && situacion.diasRestantes !== undefined && situacion.diasRestantes >= 0)
     .sort((a, b) => compararPorVencimiento(a.situacion, b.situacion))
     .slice(0, 5)
 
