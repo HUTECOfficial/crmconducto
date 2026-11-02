@@ -200,6 +200,24 @@ type CambiosRegeneracion = Partial<Pick<Poliza, 'prima' | 'primaTotal' | 'formaP
 
 const ESTATUS_POLIZA_CANCELADA: Poliza['estatus'][] = ['cancelada', 'cancelada-cliente', 'cancelada-falta-pago']
 
+/**
+ * Supabase (PostgREST) regresa como máximo 1000 filas por consulta. Para tablas que pasan de
+ * eso (pólizas, recibos, clientes) se piden por páginas hasta traerlas todas.
+ * La consulta debe llevar un orden estable (se agrega `id` como desempate).
+ */
+async function seleccionarTodo(
+  consulta: (desde: number, hasta: number) => PromiseLike<{ data: any[] | null; error: any }>,
+): Promise<any[]> {
+  const TAMANO_PAGINA = 1000
+  const filas: any[] = []
+  for (let desde = 0; ; desde += TAMANO_PAGINA) {
+    const { data, error } = await consulta(desde, desde + TAMANO_PAGINA - 1)
+    if (error) throw error
+    filas.push(...(data || []))
+    if (!data || data.length < TAMANO_PAGINA) return filas
+  }
+}
+
 function mapearPago(item: any): PagoPoliza {
   return {
     id: item.id,
@@ -468,12 +486,12 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   const fetchClientes = async () => {
     try {
       setLoadingClientes(true)
-      const { data, error } = await supabase
+      const data = await seleccionarTodo((desde, hasta) => supabase
         .from('clientes')
         .select('*')
         .order('created_at', { ascending: false })
-
-      if (error) throw error
+        .order('id')
+        .range(desde, hasta))
 
       const mapped: Cliente[] = (data || []).map((c: any) => ({
         id: c.id,
@@ -606,12 +624,12 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   const fetchPolizas = async () => {
     try {
       setLoadingPolizas(true)
-      const { data, error } = await supabase
+      const data = await seleccionarTodo((desde, hasta) => supabase
         .from('polizas')
         .select('*')
         .order('created_at', { ascending: false })
-
-      if (error) throw error
+        .order('id')
+        .range(desde, hasta))
 
       const mapped: Poliza[] = (data || []).map((p: any) => {
         // Algunas pólizas históricas sólo tenían prima. Usarla como respaldo evita
@@ -704,9 +722,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   const fetchPagos = async () => {
     try {
       setLoadingPagos(true)
-      const { data, error } = await supabase.from('pagos').select('*').order('fecha_limite')
-      if (error) throw error
-      setPagos((data || []).map(mapearPago))
+      const data = await seleccionarTodo((desde, hasta) => supabase.from('pagos').select('*').order('fecha_limite').order('id').range(desde, hasta))
+      setPagos(data.map(mapearPago))
     } catch (err: any) {
       console.error('Error fetching pagos:', err.message)
     } finally {
@@ -715,9 +732,11 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   }
 
   const fetchComisiones = async () => {
-    const { data, error } = await supabase.from('comisiones').select('*').order('generada_en', { ascending: false })
-    if (error) {
-      if (error.code === '42P01') return
+    let data: any[]
+    try {
+      data = await seleccionarTodo((desde, hasta) => supabase.from('comisiones').select('*').order('generada_en', { ascending: false }).order('id').range(desde, hasta))
+    } catch (error: any) {
+      if (error?.code === '42P01') return
       throw error
     }
     setComisiones((data || []).map((item: any) => ({
@@ -784,12 +803,16 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   }
 
   const fetchFlotillaUnidades = async () => {
-    const { data, error } = await supabase
-      .from('flotilla_unidades')
-      .select('*, flotillas!inner(poliza_id)')
-      .order('numero_inciso')
-    if (error) {
-      if (error.code === '42P01') return
+    let data: any[]
+    try {
+      data = await seleccionarTodo((desde, hasta) => supabase
+        .from('flotilla_unidades')
+        .select('*, flotillas!inner(poliza_id)')
+        .order('numero_inciso')
+        .order('id')
+        .range(desde, hasta))
+    } catch (error: any) {
+      if (error?.code === '42P01') return
       throw error
     }
     setFlotillaUnidades((data || []).map((item: any) => ({
