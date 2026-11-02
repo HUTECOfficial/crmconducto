@@ -192,7 +192,7 @@ export function ProspectoForm({ onClose }: ProspectoFormProps) {
               <SelectItem value="sin-asignar">Sin asignar</SelectItem>
               <SelectItem value="Mauricio Portillo">Mauricio Portillo</SelectItem>
               <SelectItem value="Javier Garcia">Javier Garcia</SelectItem>
-              <SelectItem value="Monse">Monse</SelectItem>
+              <SelectItem value="Montse">Montse</SelectItem>
               <SelectItem value="Maggie Huape">Maggie Huape</SelectItem>
               <SelectItem value="Gael García">Gael García</SelectItem>
               <SelectItem value="Daniela">Daniela</SelectItem>

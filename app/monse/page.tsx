@@ -22,37 +22,37 @@ import {
   Mail,
 } from "lucide-react"
 
-export default function MonsePage() {
+export default function MontsePage() {
   const { clientes, polizas, prospectos, eventos } = useSupabase()
 
-  // Filtrar datos de Monse
-  const clientesMonse = useMemo(() => clientes.filter(c => c.notas?.includes("Monse") || false), [clientes])
-  const polizasMonse = useMemo(() => polizas.filter(p => {
+  // Filtrar datos de Montse
+  const clientesMontse = useMemo(() => clientes.filter(c => c.notas?.includes("Montse") || false), [clientes])
+  const polizasMontse = useMemo(() => polizas.filter(p => {
     const cliente = clientes.find(c => c.id === p.clienteId)
-    return cliente && (cliente.notas?.includes("Monse") || false)
+    return cliente && (cliente.notas?.includes("Montse") || false)
   }), [polizas, clientes])
-  const prospectosMonse = useMemo(() => prospectos.filter(p => p.asignadoA === "Monse"), [prospectos])
-  const eventosMonse = useMemo(() => eventos.filter(e => {
+  const prospectosMontse = useMemo(() => prospectos.filter(p => p.asignadoA === "Montse"), [prospectos])
+  const eventosMontse = useMemo(() => eventos.filter(e => {
     const cliente = clientes.find(c => c.id === e.clienteId)
-    return cliente && (cliente.notas?.includes("Monse") || false)
+    return cliente && (cliente.notas?.includes("Montse") || false)
   }), [eventos, clientes])
 
   // Métricas
-  const polizasActivas = polizasMonse.filter(p => p.estatus === "activa").length
-  const polizasVencidas = polizasMonse.filter(p => p.estatus === "vencida").length
-  const polizasPorRenovar = polizasMonse.filter(p => p.estatus === "por-renovar").length
-  const prospectosConvertidos = prospectosMonse.filter(p => p.estatus === "convertido").length
-  const tasaConversion = prospectosMonse.length > 0 
-    ? ((prospectosConvertidos / prospectosMonse.length) * 100).toFixed(1)
+  const polizasActivas = polizasMontse.filter(p => p.estatus === "activa").length
+  const polizasVencidas = polizasMontse.filter(p => p.estatus === "vencida").length
+  const polizasPorRenovar = polizasMontse.filter(p => p.estatus === "por-renovar").length
+  const prospectosConvertidos = prospectosMontse.filter(p => p.estatus === "convertido").length
+  const tasaConversion = prospectosMontse.length > 0 
+    ? ((prospectosConvertidos / prospectosMontse.length) * 100).toFixed(1)
     : "0"
 
-  const primaTotal = polizasMonse.reduce((sum, p) => sum + p.primaEmitida, 0)
-  const primaCobrada = polizasMonse.reduce((sum, p) => sum + p.primaCobrada, 0)
+  const primaTotal = polizasMontse.reduce((sum, p) => sum + p.primaEmitida, 0)
+  const primaCobrada = polizasMontse.reduce((sum, p) => sum + p.primaCobrada, 0)
   const efectividadCobranza = primaTotal > 0 
     ? ((primaCobrada / primaTotal) * 100).toFixed(1)
     : "0"
 
-  const eventosProximos = eventosMonse
+  const eventosProximos = eventosMontse
     .filter(e => new Date(e.fecha) >= new Date())
     .sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime())
     .slice(0, 5)
@@ -63,7 +63,7 @@ export default function MonsePage() {
         <Sidebar />
         <main className="main-content-aligned">
           <PageHeader
-            title="Panel de Monse"
+            title="Panel de Montse"
             subtitle="Seguimiento personalizado de clientes, pólizas y prospectos"
           />
 
@@ -77,7 +77,7 @@ export default function MonsePage() {
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Clientes</p>
-                    <p className="text-2xl font-bold">{clientesMonse.length}</p>
+                    <p className="text-2xl font-bold">{clientesMontse.length}</p>
                   </div>
                 </div>
               </GlassCard>
@@ -105,7 +105,7 @@ export default function MonsePage() {
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Prospectos</p>
-                    <p className="text-2xl font-bold text-purple-600">{prospectosMonse.length}</p>
+                    <p className="text-2xl font-bold text-purple-600">{prospectosMontse.length}</p>
                   </div>
                 </div>
               </GlassCard>
@@ -140,7 +140,7 @@ export default function MonsePage() {
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {prospectosConvertidos} de {prospectosMonse.length} prospectos convertidos
+                  {prospectosConvertidos} de {prospectosMontse.length} prospectos convertidos
                 </p>
               </GlassCard>
             </motion.div>
@@ -219,10 +219,10 @@ export default function MonsePage() {
                   Clientes
                 </h3>
                 <div className="space-y-3 max-h-80 overflow-y-auto">
-                  {clientesMonse.length === 0 ? (
+                  {clientesMontse.length === 0 ? (
                     <p className="text-sm text-muted-foreground">Sin clientes asignados</p>
                   ) : (
-                    clientesMonse.slice(0, 8).map((cliente) => (
+                    clientesMontse.slice(0, 8).map((cliente) => (
                       <div key={cliente.id} className="p-3 rounded-lg bg-muted/30 border border-border/50">
                         <p className="font-medium text-sm">{cliente.nombre}</p>
                         <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">

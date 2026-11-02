@@ -28,8 +28,8 @@ export const usuarios: Usuario[] = [
   },
   {
     id: "3",
-    nombre: "Monse",
-    email: "monse@crm.com",
+    nombre: "Montse",
+    email: "montse@crm.com",
     rol: "gerencia",
     avatar: "/placeholder.svg?height=40&width=40",
     activo: true,
@@ -42,7 +42,7 @@ export const usuarios: Usuario[] = [
     avatar: "/placeholder.svg?height=40&width=40",
     activo: true,
   },
-  // Encargados de cobranza, con el mismo perfil que Monse.
+  // Encargados de cobranza, con el mismo perfil que Montse.
   {
     id: "5",
     nombre: "Maggie Huape",

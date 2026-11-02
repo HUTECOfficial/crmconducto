@@ -217,7 +217,7 @@ ON CONFLICT (nombre) DO NOTHING;
 INSERT INTO usuarios (nombre, email, rol, activo) VALUES
 ('Mauricio Portillo', 'admin@crm.com', 'administrador', true),
 ('Javier Garcia', 'javier@crm.com', 'gerencia', true),
-('Monse', 'monse@crm.com', 'gerencia', true),
+('Montse', 'montse@crm.com', 'gerencia', true),
 ('Dani', 'dani@crm.com', 'gerencia', true)
 ON CONFLICT (email) DO NOTHING;
 

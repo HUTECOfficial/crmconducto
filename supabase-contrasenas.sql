@@ -41,7 +41,7 @@ GRANT EXECUTE ON FUNCTION public.verificar_contrasena(TEXT, TEXT) TO anon, authe
 INSERT INTO public.usuarios_credenciales (email, password_hash) VALUES
   ('admin@crm.com', '$2a$10$D0TLETxhhW14CVXWin4xe.6Mg0WWdcOEMeM3BQFEKVwIU2VjT6Y4e'),
   ('javier@crm.com', '$2a$10$oxAa8WM/bkdxpalYzk0gSe5ure2HnE1OgJXgzv8VmzPP9bWmR9pV6'),
-  ('monse@crm.com', '$2a$10$.oIloZ6w6dxC8/uPa.1aNuqOpuieSPimRVR2nurrxpy2vxFq8P0wK'),
+  ('montse@crm.com', '$2a$10$.oIloZ6w6dxC8/uPa.1aNuqOpuieSPimRVR2nurrxpy2vxFq8P0wK'),
   ('dani@crm.com', '$2a$10$BldKWA..P3GMNIQpkgfFK.Jv4Hov4ukoCLOpE8cWt/8QL2SHFEVPO'),
   ('maggie@crm.com', '$2a$10$WQ19T0wqHiFJzehy23Oez.0/7RUpKd0E01oAqDqjkB/vUDUexO6FK'),
   ('gael@crm.com', '$2a$10$9qQ7vB9joz8.IH82HymOleaEph5iATHx5crhc07imJicHXzWdik6a')
