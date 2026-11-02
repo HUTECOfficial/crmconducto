@@ -34,6 +34,11 @@ function formatearMonto(monto: number) {
   return monto.toLocaleString("es-MX", { maximumFractionDigits: 2 })
 }
 
+/** Minúsculas y sin acentos, para que "gomez" encuentre "Gómez". */
+function normalizarBusqueda(texto: string) {
+  return texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim()
+}
+
 function obtenerPrimaRecibo(poliza: Poliza) {
   const primaEmitida = Number(poliza.primaEmitida || poliza.prima || 0)
   const primaCobrada = Number(poliza.primaCobrada || 0)
@@ -123,6 +128,7 @@ function PolizasPendientesContent() {
   const [filtroSemaforo, setFiltroSemaforo] = useState<NivelSemaforo | "todos">("todos")
   const [fechaDesde, setFechaDesde] = useState("")
   const [fechaHasta, setFechaHasta] = useState("")
+  const [busqueda, setBusqueda] = useState("")
   const [editandoId, setEditandoId] = useState<string | null>(null)
   const [comentarioTemp, setComentarioTemp] = useState("")
   const [verComentarioId, setVerComentarioId] = useState<string | null>(null)
@@ -198,8 +204,36 @@ function PolizasPendientesContent() {
       return { poliza, recibos, situacion }
     }), [polizas, pagos, hoy])
 
+  // Texto buscable de cada póliza: número, cliente (nombre, teléfono, correo, RFC), asegurado,
+  // aseguradora, ramo y grupo.
+  const coincideBusqueda = useMemo(() => {
+    const terminos = normalizarBusqueda(busqueda).split(/\s+/).filter(Boolean)
+    if (terminos.length === 0) return () => true
+    const clientesPorId = new Map(clientes.map(cliente => [cliente.id, cliente]))
+    const companiasPorId = new Map(companias.map(compania => [compania.id, compania.nombre]))
+    return (poliza: Poliza) => {
+      const cliente = clientesPorId.get(poliza.clienteId)
+      const telefonos = [cliente?.telefono, ...(cliente?.telefonos || []).map(telefono => telefono.numero)].filter(Boolean) as string[]
+      const texto = normalizarBusqueda([
+        poliza.numeroPoliza,
+        cliente?.nombre,
+        // También sin espacios ni guiones, para encontrar "5512345678" aunque se guardó "55 1234-5678".
+        ...telefonos,
+        ...telefonos.map(telefono => telefono.replace(/\D/g, "")),
+        cliente?.email,
+        cliente?.rfc,
+        poliza.nombreAsegurado,
+        companiasPorId.get(poliza.companiaId),
+        etiquetaRamo(poliza.ramo),
+        poliza.grupo,
+      ].filter(Boolean).join(" "))
+      return terminos.every(termino => texto.includes(termino))
+    }
+  }, [busqueda, clientes, companias])
+
   const filas = useMemo(() => filasBase
     .filter(({ poliza, situacion }) => {
+      if (!coincideBusqueda(poliza)) return false
       if (filtroEstatus !== "todas" && poliza.estatus !== filtroEstatus) return false
       // Cada filtro muestra sólo su estado: "Pendientes" no incluye vencidas ni por validar.
       if (filtroCobranza === "pendientes" && situacion.estado !== "pendiente") return false
@@ -211,7 +245,12 @@ function PolizasPendientesContent() {
       if (fechaHasta && (!situacion.fechaVencimiento || situacion.fechaVencimiento > fechaHasta)) return false
       return true
     })
-    .sort((left, right) => compararPorVencimiento(left.situacion, right.situacion)), [filasBase, filtroEstatus, filtroCobranza, filtroSemaforo, fechaDesde, fechaHasta])
+    .sort((left, right) => compararPorVencimiento(left.situacion, right.situacion)), [filasBase, coincideBusqueda, filtroEstatus, filtroCobranza, filtroSemaforo, fechaDesde, fechaHasta])
+
+  // Coincidencias que los filtros actuales esconden (p. ej. una vencida buscando en "Pendientes").
+  const coincidenciasOcultas = busqueda.trim()
+    ? filasBase.filter(({ poliza }) => coincideBusqueda(poliza)).length - filas.length
+    : 0
 
   const conteoSemaforo = useMemo(() => filasBase.reduce((acc, { situacion }) => {
     if (situacion.estado !== "pagada") acc[situacion.semaforo] = (acc[situacion.semaforo] || 0) + 1
@@ -238,10 +277,20 @@ function PolizasPendientesContent() {
   const totalPorValidar = totalesMxn.porValidar
   const totalCobrado = totalesMxn.cobrado
   const totalEmitido = totalPendiente + totalPorValidar + totalCobrado
-  const filtrosActivos = filtroCobranza !== "pendientes" || filtroEstatus !== "todas" || filtroSemaforo !== "todos" || !!fechaDesde || !!fechaHasta
+  const filtrosActivos = filtroCobranza !== "pendientes" || filtroEstatus !== "todas" || filtroSemaforo !== "todos" || !!fechaDesde || !!fechaHasta || !!busqueda.trim()
 
   const limpiarFiltros = () => {
     setFiltroCobranza("pendientes")
+    setFiltroEstatus("todas")
+    setFiltroSemaforo("todos")
+    setFechaDesde("")
+    setFechaHasta("")
+    setBusqueda("")
+  }
+
+  // Deja sólo la búsqueda para ver todas sus coincidencias.
+  const verTodasLasCoincidencias = () => {
+    setFiltroCobranza("todas")
     setFiltroEstatus("todas")
     setFiltroSemaforo("todos")
     setFechaDesde("")
@@ -490,7 +539,19 @@ function PolizasPendientesContent() {
           <PageHeader
             title="Facturación · Pólizas pendientes de pago"
             subtitle="Gestión y seguimiento de cobranza"
+            searchValue={busqueda}
+            onSearchChange={setBusqueda}
+            searchPlaceholder="Buscar póliza, cliente, teléfono, aseguradora... (⌘K)"
           />
+
+          {coincidenciasOcultas > 0 && (
+            <div className="-mt-4 mb-6 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              <span>
+                {coincidenciasOcultas === 1 ? "Hay 1 póliza más" : `Hay ${coincidenciasOcultas} pólizas más`} que coincide{coincidenciasOcultas === 1 ? "" : "n"} con "{busqueda.trim()}" en otros filtros.
+              </span>
+              <Button variant="link" size="sm" className="h-auto p-0" onClick={verTodasLasCoincidencias}>Ver todas</Button>
+            </div>
+          )}
 
           {/* KPIs Principales */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
