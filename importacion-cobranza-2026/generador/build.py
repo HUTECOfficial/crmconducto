@@ -91,6 +91,7 @@ def fusionar(rs):
                 por_inciso.setdefault(r['ikey'], r['importe'])
         g['importe'] = round(sum(por_inciso.values()), 2) if por_inciso else None
         g['hojas'] = sorted({r['hoja'] for r in rs_g})
+        g['usd'] = any(r.get('usd') and r['importe'] for r in rs_g)
         g['filas'] = [f"{r['hoja']}#{r['fila']}" for r in rs_g]
         com = []
         for r in sorted(rs_g, key=lambda r: -PRIORIDAD[r['_estado']]):
@@ -234,6 +235,8 @@ def construir_todo(path):
                         nota.append(f"En el Excel venía como recibo {g['recibo'][0]}/{g['recibo'][1]}.")
                     if g.get('inferido'):
                         nota.append('Número de recibo deducido por la fecha.')
+                if g.get('usd'):
+                    nota.append('Importe en dólares (USD) según el Excel.')
                 if monto is None:
                     if ref_importe:
                         monto = ref_importe
@@ -259,6 +262,7 @@ def construir_todo(path):
                     'motivo_cancelacion': motivo[:1000] if motivo else None,
                     'hojas': g['hojas'], 'recordatorios': g['recordatorios'], 'comentarios': g['comentarios'],
                     'registrado': g['estado'] in ('pagado', 'por_validar'),
+                    'moneda': 'USD' if g.get('usd') else 'MXN',
                 })
             pagos.extend(filas_pago)
 
@@ -324,6 +328,7 @@ def construir_todo(path):
                 'notas': notas,
                 'tipo_pago': tipo_pago(formas),
                 'agente': None,
+                'divisas': 'USD' if any(x['moneda'] == 'USD' for x in filas_pago) else 'MXN',
                 'pkey': pkey, 'ikey': ikey, 'actual': actual,
             }
             if not actual:
@@ -414,7 +419,7 @@ def escribir_sql(data, salida):
                                        q(p['forma_pago']), q(p['estatus']), q(p['cancelacion_motivo']), q(p['renovacion_estado']),
                                        q(p['fecha_emision']), q(p['inciso_endoso']), q(p['nombre_asegurado']), q(p['ultimo_dia_pago']),
                                        q(p['numero_recibo']), q(p['prima_total_recibo']), q(p['registro_sistema_cobranza']),
-                                       q(p['comentarios']), q(p['notas']), q(p['tipo_pago']), q(p['agente']), "'MXN'"]) + ")")
+                                       q(p['comentarios']), q(p['notas']), q(p['tipo_pago']), q(p['agente']), q(p['divisas'])]) + ")")
     for i in range(0, len(vals), 300):
         L.append(f"INSERT INTO polizas ({', '.join(cols)}) VALUES\n" + ",\n".join(vals[i:i + 400]) + "\nON CONFLICT (id) DO NOTHING;")
     L.append("")
@@ -442,7 +447,7 @@ def escribir_sql(data, salida):
         val = reg if p['estatus'] == 'pagado' else None
         canc = f"{HOY.isoformat()} 12:00:00-06" if p['estatus'] == 'cancelado' else None
         pv.append("(" + ", ".join([q(p['id']), q(p['poliza_id']), q(p['cliente_id']), q(p['monto']), q(p['fecha_pago']), 'NULL', q(p['estatus']),
-                                     q(p['notas']), str(p['numero_recibo']), str(p['total_recibos']), '1', "'MXN'", q(p['fecha_emision']),
+                                     q(p['notas']), str(p['numero_recibo']), str(p['total_recibos']), '1', q(p['moneda']), q(p['fecha_emision']),
                                      q(p['fecha_limite']), q(reg), q(val), q(canc), q(p['motivo_cancelacion'])]) + ")")
     por_parte = 2500
     for j in range(0, len(pv), 500):

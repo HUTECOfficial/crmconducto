@@ -7,8 +7,8 @@ CANCELADAS X FALTA DE PAGO, NO SE VAN A PAGAR, CASTORES) a clientes, pólizas y 
 1. Antes: la base vacía (`supabase-limpieza-inicio.sql` ya corrido).
 2. Supabase → SQL Editor: abre `supabase-importar-cobranza-2026-parte-1.sql`, copia todo, ejecuta.
    Repite con las partes 2 a 7, en orden. La parte 7 termina con una tabla de comprobación:
-   clientes 1596 · pólizas 4614 · recibos 6034 (545 pendientes o vencidos, 8 por validar,
-   4834 pagados, 647 cancelados).
+   clientes 1596 · pólizas 4614 · recibos 6049 (545 pendientes o vencidos, 8 por validar,
+   4849 pagados, 647 cancelados).
 3. Publica el cambio de `contexts/supabase-context.tsx` (sin él la app sólo ve 1000 pólizas y 1000 recibos).
 
 Cada parte va en una transacción y usa identificadores fijos: si una falla, no se guarda nada
@@ -35,3 +35,11 @@ de esa parte y se puede volver a correr sin duplicar.
 seguimiento de 5 DIAS sin póliza que coincida). Hay que darlos de alta a mano.
 
 `generador/`: el programa que produjo los SQL (`python3 build.py COBRANZA_2026.xlsx salida`).
+
+## Actualización v2 (2026-11-02): importes recuperados
+El generador ahora también lee importes que antes se perdían: los de CANCELADAS X FALTA DE PAGO y
+NO SE VAN A PAGAR (en COMENTARIOS o DAGON), los que traen "MXN"/"USD" en el texto (los de USD quedan
+en dólares), los de CASTORES al final del comentario y los que Google Sheets convirtió en "fecha"
+(3838.12 → año 3838 mes 12). Ya se aplicó a la base con `supabase-actualizar-importes-v2.sql`
+(sólo tocó recibos/pólizas que nadie había editado). Las partes 1-7 ya son la versión v2;
+las anteriores están en `_respaldo_sql_v1/`.

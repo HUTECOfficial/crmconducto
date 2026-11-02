@@ -82,12 +82,19 @@ def es_recibo_fecha(v):
     return isinstance(v, dt.datetime) and recibo(v) is not None
 
 
+def es_usd(v):
+    return isinstance(v, str) and re.search(r'\b(USD|DLS|DOLARES|DÓLARES)\b', v.upper()) is not None
+
+
 def importe(v):
     if v is None:
         return None
+    if isinstance(v, dt.datetime) and v.year > 2100 and v.day == 1:
+        # Google Sheets tomó '3838.12' como año.mes: el importe es año + mes/100
+        return round(v.year + v.month / 100, 2)
     if isinstance(v, (int, float)) and not isinstance(v, bool):
         return round(float(v), 2) if v > 0 else None
-    s = txt(v).replace('$', '').replace(' ', '')
+    s = re.sub(r'(?i)\s*(MXN|M\.N\.|USD|DLS|D[OÓ]LARES)\.?\s*$', '', txt(v)).replace('$', '').replace(' ', '')
     if not s:
         return None
     # '$18,870,08' -> coma como separador decimal al final
@@ -97,6 +104,11 @@ def importe(v):
         val = round(float(s), 2)
         return val if val > 0 else None
     return None
+
+
+def importe_al_final(com):
+    m = re.search(r'\|\s*\$?\s*([\d,]+\.\d{2})\s*$', txt(com))
+    return importe(m.group(1)) if m else None
 
 
 def fecha_pago_comentario(com, ref):
@@ -164,6 +176,7 @@ def leer(path):
         d['limite'] = fecha(r[6])
         d['recibo'] = recibo(r[7])
         d['importe'] = importe(r[8])
+        d['usd'] = es_usd(r[8])
         d['dagon'] = txt(r[9]).upper() or None
         d['recordatorios'] = [x for x in (fecha(v) for v in r[10:14]) if x]
         d['tipo'] = txt(r[14]).upper()
@@ -186,6 +199,7 @@ def leer(path):
             d['limite'] = f5
         imp = importe(r[8])
         d['importe'] = imp
+        d['usd'] = es_usd(r[8])
         d['dagon'] = txt(r[9]).upper() or None
         d['recordatorios'] = [x for x in (fecha(v) for v in r[10:13]) if x]
         d['comentarios'] = unir_comentarios(*[v for v in r[13:18] if isinstance(v, str)])
@@ -200,6 +214,7 @@ def leer(path):
             d['limite'] = fecha(r[6])
             d['recibo'] = recibo(r[7])
             d['importe'] = importe(r[8])
+            d['usd'] = es_usd(r[8])
             d['dagon'] = txt(r[9]).upper() or None
             d['recordatorios'] = [x for x in (fecha(v) for v in r[10:13]) if x]
             d['comentarios'] = unir_comentarios(*[v for v in r[13:15] if isinstance(v, str)])
@@ -211,9 +226,12 @@ def leer(path):
         d = base('CANCELADAS X FALTA DE PAGO', i, r, r[0], r[1], r[2], r[3], r[4])
         d['limite'] = fecha(r[5])
         d['recibo'] = recibo(r[6])
-        d['dagon'] = txt(r[8]).upper() or None
+        # el importe viene a veces en COMENTARIOS (col 7) o en DAGON (col 8)
+        d['importe'] = importe(r[7]) or importe(r[8])
+        d['usd'] = es_usd(r[7]) or es_usd(r[8])
+        d['dagon'] = (txt(r[8]).upper() or None) if not importe(r[8]) else None
         d['recordatorios'] = [x for x in (fecha(v) for v in r[9:12]) if x]
-        d['comentarios'] = unir_comentarios(*[v for v in [r[7]] + list(r[12:17]) if isinstance(v, str)])
+        d['comentarios'] = unir_comentarios(*[v for v in [r[7]] + list(r[12:17]) if isinstance(v, str) and not importe(v)])
         d['estado'] = 'cancelado_falta_pago'
         out.append(d)
 
@@ -222,7 +240,8 @@ def leer(path):
         d = base('NO SE VAN A PAGAR', i, r, r[0], r[1], r[2], r[3], r[4])
         d['limite'] = fecha(r[5])
         d['recibo'] = recibo(r[6])
-        d['importe'] = importe(r[7])
+        d['importe'] = importe(r[7]) or importe(r[8])
+        d['usd'] = es_usd(r[7]) or es_usd(r[8])
         d['dagon'] = (txt(r[8]) or txt(r[7]) if not importe(r[7]) else txt(r[8])).upper() or None
         d['recordatorios'] = [x for x in (fecha(v) for v in r[9:12]) if x]
         d['comentarios'] = unir_comentarios(*[v for v in r[12:17] if isinstance(v, str)])
@@ -242,9 +261,11 @@ def leer(path):
         d['importe'] = importe(r[7])
         com = [v for v in r[12:14] if v is not None]
         # En esta hoja la columna de comentarios muchas veces trae el importe
-        if d['importe'] is None and com and importe(com[0]):
+        if d['importe'] is None and com and not (isinstance(com[0], dt.datetime) and com[0].year <= 2100) and importe(com[0]):
             d['importe'] = importe(com[0])
             com = com[1:]
+        if d['importe'] is None and com and importe_al_final(com[0]):
+            d['importe'] = importe_al_final(com[0])
         d['dagon'] = txt(r[8]).upper() or None
         d['recordatorios'] = [x for x in (fecha(v) for v in r[9:12]) if x]
         d['comentarios'] = unir_comentarios(*[v for v in com if isinstance(v, str)])
