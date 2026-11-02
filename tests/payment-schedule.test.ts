@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { calcularMontoMxnUdis, calcularPrimaTotalPlazo, calcularVigenciasPoliza, estadoCobranzaRecibo, generarRecibos, resumirCobranza, type PeriodicidadPago, type ReciboExistente } from '../lib/payment-schedule'
+import { calcularMontoMxnUdis, calcularPrimaTotalPlazo, calcularVigenciasPoliza, completarImportesComprometidos, estadoCobranzaRecibo, generarRecibos, resumirCobranza, type PeriodicidadPago, type ReciboExistente } from '../lib/payment-schedule'
 
 const expectedCounts: Record<PeriodicidadPago, number> = {
   anual: 1,
@@ -204,4 +204,42 @@ test('al anular un pago el recibo vuelve a formar parte del saldo pendiente', ()
   assert.equal(resumen.estatus, 'pendiente')
   assert.equal(resumen.cobrado, 0)
   assert.equal(resumen.pendiente, 12_000)
+})
+
+test('un recibo pagado importado en $0 toma el primer recibo y el saldo va al siguiente', () => {
+  const pagadoSinImporte: ReciboExistente = {
+    id: 'importado-1',
+    monto: 0,
+    numeroRecibo: 1,
+    totalRecibos: 2,
+    fechaEmision: '2026-04-21',
+    fechaLimite: '2026-05-06',
+    fechaPago: '2026-05-12',
+    estatus: 'pagado',
+  }
+  const entrada = {
+    primaTotal: 33_252.42,
+    vigenciaInicio: '2026-04-21',
+    vigenciaFin: '2027-04-21',
+    periodicidad: 'semestral' as const,
+    primerRecibo: 17_000,
+    recibosPagados: [pagadoSinImporte],
+    periodicidadPagados: 'semestral' as const,
+  }
+  assert.equal(completarImportesComprometidos(entrada)[0].monto, 17_000)
+  const recibos = generarRecibos(entrada)
+  assert.equal(recibos.length, 1)
+  assert.equal(recibos[0].numeroRecibo, 2)
+  assert.equal(recibos[0].monto, 16_252.42)
+})
+
+test('sin primer recibo, el pagado en $0 toma su parte proporcional', () => {
+  const recibos = generarRecibos({
+    primaTotal: 20_000,
+    vigenciaInicio: '2026-01-01',
+    vigenciaFin: '2027-01-01',
+    periodicidad: 'semestral',
+    recibosPagados: [{ id: 'p1', monto: 0, numeroRecibo: 1, totalRecibos: 2, fechaEmision: '2026-01-01', fechaLimite: '2026-01-31', estatus: 'pagado' }],
+  })
+  assert.deepEqual(recibos.map(recibo => recibo.monto), [10_000])
 })

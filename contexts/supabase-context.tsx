@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/auth-context'
 import { auditLogger, AuditEventType } from '@/lib/security/audit-logger'
-import { calcularMontoMxnUdis, calcularPrimaTotalPlazo, calcularVigenciasPoliza, generarRecibos, reciboComprometido, reciboPorCobrar, type EstadoRecibo } from '@/lib/payment-schedule'
+import { calcularMontoMxnUdis, calcularPrimaTotalPlazo, calcularVigenciasPoliza, completarImportesComprometidos, generarRecibos, reciboComprometido, reciboPorCobrar, type EstadoRecibo } from '@/lib/payment-schedule'
 import { compareDateOnly, todayDateOnly } from '@/lib/date-only'
 import type { Ramo } from '@/lib/ramos'
 import { baseComisionRecibo, calcularComision, estadoComisionAlAnularPago, type EstadoComision } from '@/lib/comisiones'
@@ -878,10 +878,27 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     const { data: recibosDb, error: recibosError } = await supabase.from('pagos').select('*').eq('poliza_id', polizaId)
     if (recibosError) throw recibosError
     const recibosActuales = (recibosDb || []).map(mapearPago)
-    // Los recibos por validar se conservan igual que los pagados: ya hay un pago registrado.
-    const comprometidos = recibosActuales.filter(reciboComprometido)
     const pendientes = recibosActuales.filter(reciboPorCobrar)
     const totalConfigurado = Number(configuracion.primaTotal || configuracion.prima || 0)
+    const entradaRecibos = {
+      primaTotal: totalConfigurado,
+      primaAnual: configuracion.ramo === 'vida' ? configuracion.prima : undefined,
+      vigenciaInicio: configuracion.vigenciaInicio,
+      vigenciaFin: configuracion.ramo === 'vida' ? configuracion.vigenciaPagoFin || configuracion.vigenciaFin : configuracion.vigenciaFin,
+      periodicidad: configuracion.formaPago,
+      primerRecibo: configuracion.primerRecibo,
+      recibosPagados: recibosActuales,
+      periodicidadPagados: actual.formaPago,
+      diasGraciaPrimerRecibo: configuracion.diasGraciaPrimerRecibo,
+      diasGraciaSubsecuentes: configuracion.diasGraciaSubsecuentes,
+    }
+    // Los recibos por validar se conservan igual que los pagados: ya hay un pago registrado.
+    // Los que se importaron en $0 reciben el importe que les toca para que el saldo cuadre.
+    const comprometidos = completarImportesComprometidos(entradaRecibos)
+    const importesCompletados = comprometidos.flatMap(recibo => {
+      const original = recibosActuales.find(item => item.id === recibo.id)
+      return original && original.monto !== recibo.monto ? [{ original, monto: recibo.monto }] : []
+    })
     const totalComprometido = comprometidos.reduce((sum, item) => sum + item.monto, 0)
     const totalPagado = comprometidos.filter(item => item.estatus === 'pagado').reduce((sum, item) => sum + item.monto, 0)
     if (totalConfigurado < totalComprometido) throw new Error('La prima total del plazo no puede ser menor que el importe ya cobrado o por validar')
@@ -919,18 +936,26 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    const recibos = generarRecibos({
-      primaTotal: totalConfigurado,
-      primaAnual: configuracion.ramo === 'vida' ? configuracion.prima : undefined,
-      vigenciaInicio: configuracion.vigenciaInicio,
-      vigenciaFin: configuracion.ramo === 'vida' ? configuracion.vigenciaPagoFin || configuracion.vigenciaFin : configuracion.vigenciaFin,
-      periodicidad: configuracion.formaPago,
-      primerRecibo: configuracion.primerRecibo,
-      recibosPagados: comprometidos,
-      periodicidadPagados: actual.formaPago,
-      diasGraciaPrimerRecibo: configuracion.diasGraciaPrimerRecibo,
-      diasGraciaSubsecuentes: configuracion.diasGraciaSubsecuentes,
+    const recibos = generarRecibos({ ...entradaRecibos, recibosPagados: comprometidos })
+
+    const montosRecibo = (pago: PagoPoliza, monto: number) => ({
+      monto,
+      monto_udis: pago.moneda === 'UDIS' ? monto : pago.montoUdis ?? null,
+      monto_mxn: pago.moneda === 'MXN' ? monto
+        : pago.moneda === 'UDIS' && pago.valorUdi ? calcularMontoMxnUdis(monto, pago.valorUdi) : pago.montoMxn ?? null,
     })
+    const revertirImportes = () => Promise.all(importesCompletados.map(({ original }) =>
+      supabase.from('pagos').update({ monto: original.monto, monto_udis: original.montoUdis ?? null, monto_mxn: original.montoMxn ?? null }).eq('id', original.id)))
+    if (importesCompletados.length > 0) {
+      const resultados = await Promise.all(importesCompletados.map(({ original, monto }) =>
+        supabase.from('pagos').update(montosRecibo(original, monto)).eq('id', original.id).eq('monto', original.monto)))
+      const error = resultados.find(resultado => resultado.error)?.error
+      if (error) {
+        await revertirImportes()
+        await restaurarPendientes()
+        throw error
+      }
+    }
 
     if (recibos.length > 0) {
       const { data: nuevosPagos, error } = await supabase.from('pagos').insert(recibos.map(recibo => ({
@@ -948,6 +973,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         metodo_pago: null,
       }))).select('id')
       if (error) {
+        await revertirImportes()
         await restaurarPendientes()
         throw error
       }
@@ -967,6 +993,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
             motivo_cancelacion: 'error_regeneracion',
           }).in('id', nuevosPagos.map(item => item.id))
         }
+        await revertirImportes()
         await restaurarPendientes()
         throw polizaError
       }
@@ -979,9 +1006,18 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         ultimo_dia_pago: null,
       }).eq('id', polizaId)
       if (error) {
+        await revertirImportes()
         await restaurarPendientes()
         throw error
       }
+    }
+
+    for (const { original, monto } of importesCompletados) {
+      await registrarHistorial(polizaId, 'importe_recibo_completado', 'recibo', original.monto, monto, {
+        pagoId: original.id,
+        numeroRecibo: original.numeroRecibo,
+        estatus: original.estatus,
+      })
     }
 
     await fetchPagos()

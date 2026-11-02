@@ -190,6 +190,26 @@ function finCoberturaPagados(pagados: ReciboExistente[], input: GenerarRecibosIn
   return addMonthsDateOnly(ultimo.fechaEmision, meses)
 }
 
+/**
+ * Recibos cobrados o por validar que llegaron sin importe ($0, p. ej. importados): reciben el importe
+ * que les toca en el calendario completo con que se emitieron (el 1 usa "primer recibo" si se capturó).
+ * Así el saldo pendiente no carga toda la prima. Devuelve todos los comprometidos, ordenados.
+ */
+export function completarImportesComprometidos(input: GenerarRecibosInput): ReciboExistente[] {
+  const comprometidos = [...(input.recibosPagados || [])]
+    .filter(reciboComprometido)
+    .sort((left, right) => left.numeroRecibo - right.numeroRecibo)
+  if (!comprometidos.some(recibo => recibo.monto <= 0)) return comprometidos
+
+  const plan = generarRecibos({ ...input, periodicidad: input.periodicidadPagados ?? input.periodicidad, recibosPagados: [] })
+  return comprometidos.map(recibo => {
+    if (recibo.monto > 0) return recibo
+    const lugar = plan.find(item => item.numeroRecibo === recibo.numeroRecibo && item.totalRecibos === recibo.totalRecibos)
+    const monto = lugar?.monto ?? (recibo.numeroRecibo === 1 && input.primerRecibo && input.primerRecibo > 0 ? input.primerRecibo : 0)
+    return monto > 0 ? { ...recibo, monto } : recibo
+  })
+}
+
 export function generarRecibos(input: GenerarRecibosInput): ReciboProgramado[] {
   if (!Number.isFinite(input.primaTotal) || input.primaTotal < 0) {
     throw new Error('La prima total debe ser un importe válido')
@@ -202,9 +222,7 @@ export function generarRecibos(input: GenerarRecibosInput): ReciboProgramado[] {
     throw new Error('La vigencia final debe ser posterior a la vigencia inicial')
   }
 
-  const pagados = [...(input.recibosPagados || [])]
-    .filter(reciboComprometido)
-    .sort((left, right) => left.numeroRecibo - right.numeroRecibo)
+  const pagados = completarImportesComprometidos(input)
   const cobrado = pagados.reduce((sum, recibo) => sum + recibo.monto, 0)
   const saldo = Math.max(0, Math.round((input.primaTotal - cobrado) * 100) / 100)
   if (saldo === 0) return []

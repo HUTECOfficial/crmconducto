@@ -675,7 +675,7 @@ function PolizasContent() {
       <div className="min-h-screen bg-background">
         <Sidebar />
         <main className="main-content-aligned">
-          <PageHeader title="Pólizas" subtitle="Gestiona todas las pólizas de tu cartera" />
+          <PageHeader title="Pólizas" subtitle="Gestiona todas las pólizas de tu cartera" showSearch={false} />
 
           {/* Barra superior */}
           <div className="flex flex-col sm:flex-row gap-3 mb-6 items-start sm:items-center justify-between">
