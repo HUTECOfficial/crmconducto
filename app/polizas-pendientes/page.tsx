@@ -201,7 +201,8 @@ function PolizasPendientesContent() {
   const filas = useMemo(() => filasBase
     .filter(({ poliza, situacion }) => {
       if (filtroEstatus !== "todas" && poliza.estatus !== filtroEstatus) return false
-      if (filtroCobranza === "pendientes" && situacion.estado === "pagada") return false
+      // Cada filtro muestra sólo su estado: "Pendientes" no incluye vencidas ni por validar.
+      if (filtroCobranza === "pendientes" && situacion.estado !== "pendiente") return false
       if (filtroCobranza === "por_validar" && situacion.porValidar === 0) return false
       if (filtroCobranza === "vencidas" && situacion.estado !== "vencida") return false
       if (filtroCobranza === "pagadas" && situacion.estado !== "pagada") return false
