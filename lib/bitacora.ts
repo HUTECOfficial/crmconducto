@@ -68,6 +68,7 @@ export const PANTALLAS: Record<string, string> = {
   '/ajustes': 'Ajustes',
   '/usuarios': 'Usuarios',
   '/bitacora': 'Bitácora',
+  '/tutoriales': 'Tutoriales',
   '/documentacion': 'Documentación',
   '/objetivos': 'Objetivos',
   '/multicotizador': 'Multicotizador',

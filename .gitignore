@@ -30,3 +30,6 @@ importacion-cobranza-2026/*.sql
 importacion-cobranza-2026/*.csv
 importacion-cobranza-2026/*.xlsx
 importacion-cobranza-2026/_respaldo_*/
+
+# Tutoriales en video: viven en Cloudflare R2 (bucket conducto-crm-tutoriales), no en el repositorio
+/video/tutoriales/
