@@ -79,6 +79,7 @@ export const permisos = {
     usuarios: true,
     autorizaciones: true,
     verTodo: true,
+    bitacora: true,
   },
   gerencia: {
     dashboard: true,
@@ -96,6 +97,7 @@ export const permisos = {
     usuarios: true,
     autorizaciones: false,
     verTodo: true,
+    bitacora: false,
   },
   asesor: {
     dashboard: true,
@@ -113,6 +115,7 @@ export const permisos = {
     usuarios: false,
     autorizaciones: false,
     verTodo: false,
+    bitacora: false,
   },
   administrativo: {
     dashboard: true,
@@ -130,5 +133,6 @@ export const permisos = {
     usuarios: false,
     autorizaciones: false,
     verTodo: true,
+    bitacora: false,
   },
 }

@@ -7,7 +7,8 @@ import { sessionManager, type Session } from "@/lib/security/session-manager"
 import { auditLogger, AuditEventType } from "@/lib/security/audit-logger"
 import { rateLimiter } from "@/lib/security/rate-limiter"
 import { dataProtectionManager } from "@/lib/security/data-protection"
-import { supabase } from "@/lib/supabase"
+import { supabase, setUsuarioBitacora } from "@/lib/supabase"
+import { registrarEnBitacora } from "@/lib/bitacora-registro"
 import { ingresarConFaceId } from "@/lib/passkeys-client"
 
 interface AuthContextType {
@@ -37,6 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (validation.valid && validation.session) {
           const usuarioEncontrado = usuarios.find((u) => u.id === validation.session!.userId)
           if (usuarioEncontrado && usuarioEncontrado.activo) {
+            setUsuarioBitacora(usuarioEncontrado.email)
             setUsuario(usuarioEncontrado)
             setSession(validation.session)
           } else {
@@ -115,9 +117,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       usuarioEncontrado.rol
     )
 
+    setUsuarioBitacora(usuarioEncontrado.email)
     setUsuario(usuarioEncontrado)
     setSession(newSession)
     localStorage.setItem("crm-session-id", newSession.id)
+    void registrarEnBitacora({
+      accion: 'sesion',
+      entidad: 'auth',
+      descripcion: metodo === 'faceid' ? 'Inició sesión con Face ID' : 'Inició sesión',
+    })
 
     // Registrar en protección de datos
     dataProtectionManager.registerDataSubject(
@@ -166,6 +174,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         success: true,
       })
 
+      await registrarEnBitacora({ accion: 'sesion', entidad: 'auth', descripcion: 'Cerró sesión' })
+
       // Terminar sesión
       await sessionManager.terminateSession(session.id, 'User logout')
     }
@@ -174,6 +184,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const cleanupSession = async () => {
+    setUsuarioBitacora(null)
     setUsuario(null)
     setSession(null)
     localStorage.removeItem("crm-session-id")

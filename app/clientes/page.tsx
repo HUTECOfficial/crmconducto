@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { PageHeader } from "@/components/page-header"
 import { GlassCard } from "@/components/glass-card"
@@ -21,6 +21,7 @@ import { motion } from "framer-motion"
 import { toast } from "sonner"
 import { todayDateOnly } from "@/lib/date-only"
 import { etiquetaRamo } from "@/lib/ramos"
+import { registrarEnBitacora } from "@/lib/bitacora-registro"
 import {
   Plus, Search, X, User, Mail, Phone, Building2, FileText,
   Edit2, Trash2, Users, CheckCircle, XCircle, FolderOpen
@@ -49,6 +50,31 @@ export default function ClientesPage() {
   const [confirmarBorrar, setConfirmarBorrar] = useState<string | null>(null)
 
   const set = (key: string, val: string) => setForm(prev => ({ ...prev, [key]: val }))
+
+  // Enlace directo desde la bitácora: /clientes?cliente=<id> abre su detalle una sola vez.
+  const enlaceAbierto = useRef<string | null>(null)
+  useEffect(() => {
+    const clienteDesdeEnlace = new URLSearchParams(window.location.search).get("cliente")
+    if (!clienteDesdeEnlace || enlaceAbierto.current === clienteDesdeEnlace) return
+    const cliente = clientes.find(c => c.id === clienteDesdeEnlace)
+    if (!cliente) return
+    enlaceAbierto.current = clienteDesdeEnlace
+    setClienteSeleccionado(cliente)
+    setModalDetalle(true)
+  }, [clientes])
+
+  useEffect(() => {
+    if (!modalDetalle || !clienteSeleccionado) return
+    void registrarEnBitacora({
+      accion: "consulta",
+      entidad: "clientes",
+      entidadId: clienteSeleccionado.id,
+      etiqueta: clienteSeleccionado.nombre,
+      clienteId: clienteSeleccionado.id,
+      clienteNombre: clienteSeleccionado.nombre,
+      descripcion: "Abrió el detalle del cliente",
+    })
+  }, [modalDetalle, clienteSeleccionado?.id])
 
   const clientesFiltrados = clientes.filter(c => {
     if (filtroEstatus !== "todos" && c.estatus !== filtroEstatus) return false

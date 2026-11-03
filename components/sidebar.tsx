@@ -33,6 +33,7 @@ import {
   Zap,
   TrendingDown,
   Percent,
+  History,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/contexts/auth-context"
@@ -73,6 +74,7 @@ const navigation = [
   { name: "Reportes", href: "/reportes", icon: BarChart3, permiso: "reportes" as const },
   { name: "Ajustes", href: "/ajustes", icon: Settings, permiso: "ajustes" as const },
   { name: "Usuarios", href: "/usuarios", icon: UserCog, permiso: "usuarios" as const },
+  { name: "Bitácora", href: "/bitacora", icon: History, permiso: "bitacora" as const },
 ]
 
 export function Sidebar() {

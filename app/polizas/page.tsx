@@ -28,6 +28,7 @@ import { toast } from "sonner"
 import { RAMOS, etiquetaRamo } from "@/lib/ramos"
 import { situacionRenovacion } from "@/lib/renovaciones"
 import { PolizaCobranzaPanel } from "@/components/poliza-cobranza-panel"
+import { registrarEnBitacora } from "@/lib/bitacora-registro"
 
 const ESTATUS_COLORS: Record<string, string> = {
   activa: "bg-green-500/10 text-green-500 border-green-500/20",
@@ -138,6 +139,32 @@ function PolizasContent() {
     const filtro = searchParams.get("filtro")
     if (filtro === "renovaciones") setFiltroEstatus("pendientes-renovar")
   }, [searchParams])
+
+  // Enlace directo desde la bitácora: /polizas?poliza=<id> abre su detalle una sola vez.
+  const polizaDesdeEnlace = searchParams.get("poliza")
+  const enlaceAbierto = useRef<string | null>(null)
+  useEffect(() => {
+    if (!polizaDesdeEnlace || enlaceAbierto.current === polizaDesdeEnlace) return
+    const poliza = polizas.find(p => p.id === polizaDesdeEnlace)
+    if (!poliza) return
+    enlaceAbierto.current = polizaDesdeEnlace
+    setPolizaSeleccionada(poliza)
+  }, [polizaDesdeEnlace, polizas])
+
+  useEffect(() => {
+    if (!polizaSeleccionada) return
+    void registrarEnBitacora({
+      accion: "consulta",
+      entidad: "polizas",
+      entidadId: polizaSeleccionada.id,
+      etiqueta: `Póliza ${polizaSeleccionada.numeroPoliza}`,
+      polizaId: polizaSeleccionada.id,
+      polizaNumero: polizaSeleccionada.numeroPoliza,
+      clienteId: polizaSeleccionada.clienteId,
+      clienteNombre: clientes.find(c => c.id === polizaSeleccionada.clienteId)?.nombre,
+      descripcion: "Abrió el detalle de la póliza",
+    })
+  }, [polizaSeleccionada?.id])
 
   useEffect(() => {
     if (!nuevaPoliza.vigenciaInicio) return
