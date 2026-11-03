@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, Suspense, useRef } from "react"
+import { useState, useEffect, Suspense, useRef, useMemo, useDeferredValue } from "react"
 import { useSearchParams } from "next/navigation"
 import { Sidebar } from "@/components/sidebar"
 import { PageHeader } from "@/components/page-header"
@@ -29,6 +29,9 @@ import { RAMOS, etiquetaRamo } from "@/lib/ramos"
 import { situacionRenovacion } from "@/lib/renovaciones"
 import { PolizaCobranzaPanel } from "@/components/poliza-cobranza-panel"
 import { registrarEnBitacora } from "@/lib/bitacora-registro"
+import { coincideTerminos, terminosBusqueda } from "@/lib/busqueda"
+import { useListaPorTandas } from "@/hooks/use-lista-por-tandas"
+import { CargarMas } from "@/components/cargar-mas"
 
 const ESTATUS_COLORS: Record<string, string> = {
   activa: "bg-green-500/10 text-green-500 border-green-500/20",
@@ -62,7 +65,8 @@ function getEstatusLabel(estatus: string) {
 function PolizasContent() {
   const searchParams = useSearchParams()
   const {
-    polizas, clientes, companias, usuariosSistema, pagos, historialPolizas,
+    polizas, clientes, companias, usuariosSistema, historialPolizas,
+    clientesPorId, companiasPorId, pagosPorPoliza, textoBusquedaPoliza,
     agregarPoliza, actualizarPoliza, agregarCliente,
     iniciarRenovacion, completarRenovacion, cancelarRenovacion, regenerarRecibosPoliza,
   } = useSupabase()
@@ -93,10 +97,10 @@ function PolizasContent() {
   const [mostrarSugerencias, setMostrarSugerencias] = useState(false)
   const clienteRef = useRef<HTMLDivElement>(null)
 
-  const sugerenciasClientes = clientes
+  const sugerenciasClientes = useMemo(() => clientes
     .filter(c => c.nombre.toLowerCase().includes(busquedaCliente.toLowerCase()) && c.estatus === "activo")
     .sort((a, b) => a.nombre.localeCompare(b.nombre))
-    .slice(0, 8)
+    .slice(0, 8), [clientes, busquedaCliente])
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -161,7 +165,7 @@ function PolizasContent() {
       polizaId: polizaSeleccionada.id,
       polizaNumero: polizaSeleccionada.numeroPoliza,
       clienteId: polizaSeleccionada.clienteId,
-      clienteNombre: clientes.find(c => c.id === polizaSeleccionada.clienteId)?.nombre,
+      clienteNombre: clientesPorId.get(polizaSeleccionada.clienteId)?.nombre,
       descripcion: "Abrió el detalle de la póliza",
     })
   }, [polizaSeleccionada?.id])
@@ -219,7 +223,7 @@ function PolizasContent() {
   useEffect(() => {
     if (!polizaEditar || !editForm.formaPago || !editForm.vigenciaInicio || !editForm.vigenciaFin || !editForm.primaTotal) return
     try {
-      const pagados = pagos.filter(pago => pago.polizaId === polizaEditar.id && reciboComprometido(pago))
+      const pagados = (pagosPorPoliza.get(polizaEditar.id) || []).filter(reciboComprometido)
       const recibos = generarRecibos({
         primaTotal: Number(editForm.primaTotal),
         primaAnual: polizaEditar.ramo === "vida" ? Number(editForm.prima) : undefined,
@@ -242,7 +246,7 @@ function PolizasContent() {
     } catch {
       setEditForm(form => ({ ...form, numeroRecibo: "", recibosSubsecuentes: "" }))
     }
-  }, [editForm.formaPago, editForm.primaTotal, editForm.primerRecibo, editForm.vigenciaFin, editForm.vigenciaInicio, editForm.vigenciaPagoFin, pagos, polizaEditar])
+  }, [editForm.formaPago, editForm.primaTotal, editForm.primerRecibo, editForm.vigenciaFin, editForm.vigenciaInicio, editForm.vigenciaPagoFin, pagosPorPoliza, polizaEditar])
 
   // Calcular prima total, recibos subsecuentes y número de recibos automáticamente
   useEffect(() => {
@@ -669,33 +673,28 @@ function PolizasContent() {
     }
   }
 
-  // Filtrar y buscar
-  const polizasFiltradas = polizas.filter(p => {
-    if (filtroCompania !== "todas" && p.companiaId !== filtroCompania) return false
-    if (filtroRamo !== "todos" && p.ramo !== filtroRamo) return false
-    if (filtroGrupo !== "todos" && (p.grupo || "") !== (filtroGrupo === "__sin_grupo__" ? "" : filtroGrupo)) return false
-    if (filtroEstatus === "pendientes-renovar") {
-      if (!situacionRenovacion(p).generaAviso) return false
-    } else if (filtroEstatus !== "todos" && p.estatus !== filtroEstatus) return false
-    if (busqueda) {
-      const q = busqueda.toLowerCase()
-      const cliente = clientes.find(c => c.id === p.clienteId)
-      const compania = companias.find(c => c.id === p.companiaId)
-      return (
-        p.numeroPoliza.toLowerCase().includes(q) ||
-        (cliente?.nombre || "").toLowerCase().includes(q) ||
-        (compania?.nombre || "").toLowerCase().includes(q) ||
-        (p.nombreAsegurado || "").toLowerCase().includes(q) ||
-        (p.grupo || "").toLowerCase().includes(q) ||
-        etiquetaRamo(p.ramo).toLowerCase().includes(q)
-      )
-    }
-    return true
-  }).sort((a, b) => a.vigenciaFin.localeCompare(b.vigenciaFin))
+  // Filtrar y buscar. La búsqueda se aplica diferida: escribir no espera a que se redibuje la lista.
+  const busquedaDiferida = useDeferredValue(busqueda)
+  const polizasFiltradas = useMemo(() => {
+    const terminos = terminosBusqueda(busquedaDiferida)
+    return polizas.filter(p => {
+      if (filtroCompania !== "todas" && p.companiaId !== filtroCompania) return false
+      if (filtroRamo !== "todos" && p.ramo !== filtroRamo) return false
+      if (filtroGrupo !== "todos" && (p.grupo || "") !== (filtroGrupo === "__sin_grupo__" ? "" : filtroGrupo)) return false
+      if (filtroEstatus === "pendientes-renovar") {
+        if (!situacionRenovacion(p).generaAviso) return false
+      } else if (filtroEstatus !== "todos" && p.estatus !== filtroEstatus) return false
+      return coincideTerminos(textoBusquedaPoliza.get(p.id) || "", terminos)
+    }).sort((a, b) => a.vigenciaFin.localeCompare(b.vigenciaFin))
+  }, [polizas, textoBusquedaPoliza, busquedaDiferida, filtroCompania, filtroRamo, filtroGrupo, filtroEstatus])
+  const { visibles: polizasVisibles, restantes, mostrarMas } = useListaPorTandas(
+    polizasFiltradas,
+    `${busquedaDiferida}|${filtroCompania}|${filtroRamo}|${filtroGrupo}|${filtroEstatus}`,
+  )
 
-  const gruposDisponibles = Array.from(new Set(
+  const gruposDisponibles = useMemo(() => Array.from(new Set(
     polizas.filter(p => filtroRamo === "todos" || p.ramo === filtroRamo).map(p => p.grupo).filter((grupo): grupo is string => !!grupo),
-  )).sort((a, b) => a.localeCompare(b, "es"))
+  )).sort((a, b) => a.localeCompare(b, "es")), [polizas, filtroRamo])
 
   return (
     <ProtectedRoute>
@@ -812,16 +811,13 @@ function PolizasContent() {
                         {busqueda ? `Sin resultados para "${busqueda}"` : "No hay pólizas registradas"}
                       </td>
                     </tr>
-                  ) : polizasFiltradas.map((poliza, index) => {
-                    const cliente = clientes.find(c => c.id === poliza.clienteId)
-                    const compania = companias.find(c => c.id === poliza.companiaId)
+                  ) : polizasVisibles.map(poliza => {
+                    const cliente = clientesPorId.get(poliza.clienteId)
+                    const compania = companiasPorId.get(poliza.companiaId)
                     return (
-                      <motion.tr
+                      <tr
                         key={poliza.id}
                         className="border-b border-border/30 hover:bg-muted/40 cursor-pointer transition-colors"
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.02 }}
                         onClick={() => setPolizaSeleccionada(poliza)}
                       >
                         <td className="p-3">
@@ -874,21 +870,22 @@ function PolizasContent() {
                             </Button>
                           </div>
                         </td>
-                      </motion.tr>
+                      </tr>
                     )
                   })}
                 </tbody>
               </table>
             </div>
+            <CargarMas restantes={restantes} onMas={mostrarMas} />
           </GlassCard>
 
           {/* Cards móvil */}
           <div className="lg:hidden space-y-3">
-            {polizasFiltradas.map((poliza, index) => {
-              const cliente = clientes.find(c => c.id === poliza.clienteId)
-              const compania = companias.find(c => c.id === poliza.companiaId)
+            {polizasVisibles.map(poliza => {
+              const cliente = clientesPorId.get(poliza.clienteId)
+              const compania = companiasPorId.get(poliza.companiaId)
               return (
-                <motion.div key={poliza.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.03 }}>
+                <div key={poliza.id}>
                   <div className="cursor-pointer" onClick={() => setPolizaSeleccionada(poliza)}><GlassCard className="p-4 hover:bg-muted/30 transition-colors">
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex-1 min-w-0">
@@ -911,9 +908,10 @@ function PolizasContent() {
                       <p className="text-xs text-muted-foreground">{formatDateOnly(poliza.vigenciaFin)}</p>
                     </div>
                   </GlassCard></div>
-                </motion.div>
+                </div>
               )
             })}
+            <CargarMas restantes={restantes} onMas={mostrarMas} />
           </div>
 
           {/* Modal detalle */}
@@ -924,8 +922,8 @@ function PolizasContent() {
                 <DialogDescription>Información completa de la póliza</DialogDescription>
               </DialogHeader>
               {polizaSeleccionada && (() => {
-                const cliente = clientes.find(c => c.id === polizaSeleccionada.clienteId)
-                const compania = companias.find(c => c.id === polizaSeleccionada.companiaId)
+                const cliente = clientesPorId.get(polizaSeleccionada.clienteId)
+                const compania = companiasPorId.get(polizaSeleccionada.companiaId)
                 const vendedor = usuariosSistema.find(item => item.id === polizaSeleccionada.vendedorId)
                 const historial = historialPolizas.filter(item => item.polizaId === polizaSeleccionada.id).slice(0, 20)
                 return (

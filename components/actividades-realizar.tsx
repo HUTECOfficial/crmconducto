@@ -21,7 +21,7 @@ interface Actividad {
 }
 
 export function ActividadesRealizar() {
-  const { polizas, clientes, companias } = useSupabase()
+  const { polizas, clientesPorId, companiasPorId } = useSupabase()
   const [completadas, setCompletadas] = useState<Set<string>>(new Set())
   const [eliminadas, setEliminadas] = useState<Set<string>>(new Set())
 
@@ -30,8 +30,8 @@ export function ActividadesRealizar() {
     const hoy = new Date()
 
     polizas.forEach(poliza => {
-      const cliente = clientes.find(c => c.id === poliza.clienteId)
-      const compania = companias.find(c => c.id === poliza.companiaId)
+      const cliente = clientesPorId.get(poliza.clienteId)
+      const compania = companiasPorId.get(poliza.companiaId)
       const vigenciaFin = new Date(poliza.vigenciaFin)
       const diasParaVencer = Math.ceil((vigenciaFin.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
 
@@ -127,7 +127,7 @@ export function ActividadesRealizar() {
       }
       return new Date(a.fecha).getTime() - new Date(b.fecha).getTime()
     })
-  }, [polizas, clientes, companias])
+  }, [polizas, clientesPorId, companiasPorId])
 
   const actividadesConEstado = actividades
     .filter(act => !eliminadas.has(act.id))
@@ -231,7 +231,7 @@ export function ActividadesRealizar() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, x: -100 }}
-              transition={{ delay: index * 0.05 }}
+              transition={{ delay: Math.min(index * 0.05, 0.3) }}
               className={`p-4 rounded-xl border-l-4 ${getColorPrioridad(actividad.prioridad)} ${
                 actividad.completada ? "opacity-60" : ""
               }`}

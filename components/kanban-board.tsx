@@ -217,7 +217,7 @@ export function KanbanBoard() {
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, scale: 0.9 }}
-                      transition={{ delay: index * 0.04 }}
+                      transition={{ delay: Math.min(index * 0.04, 0.3) }}
                       className="relative overflow-hidden cursor-move"
                       style={{
                         background: `linear-gradient(135deg, ${getEtapaColor(etapa.id)}08, ${getEtapaColor(etapa.id)}20)`,

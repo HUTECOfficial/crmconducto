@@ -69,7 +69,7 @@ interface EventoCalendario {
 }
 
 export default function CalendarioPage() {
-  const { polizas, clientes, companias, eventos, agregarEvento, actualizarEvento, eliminarEvento, loadingEventos } = useSupabase()
+  const { polizas, clientes, eventos, agregarEvento, actualizarEvento, eliminarEvento, loadingEventos, clientesPorId, companiasPorId } = useSupabase()
   
   const [vistaActual, setVistaActual] = useState<"mes" | "lista">("mes")
   const [mesActual, setMesActual] = useState(new Date())
@@ -109,8 +109,8 @@ export default function CalendarioPage() {
       const renovacion = situacionRenovacion(poliza, hoy)
 
       if (renovacion.generaAviso) {
-        const cliente = clientes.find(c => c.id === poliza.clienteId)
-        const compania = companias.find(c => c.id === poliza.companiaId)
+        const cliente = clientesPorId.get(poliza.clienteId)
+        const compania = companiasPorId.get(poliza.companiaId)
         
         todosEventos.push({
           id: `poliza-${poliza.id}`,
@@ -129,7 +129,7 @@ export default function CalendarioPage() {
       // 3. Recordatorios de pólizas
       if (poliza.fechasRecordatorio) {
         const { fecha1, fecha2, fecha3 } = poliza.fechasRecordatorio
-        const cliente = clientes.find(c => c.id === poliza.clienteId)
+        const cliente = clientesPorId.get(poliza.clienteId)
         
         if (fecha1) {
           todosEventos.push({
@@ -174,7 +174,7 @@ export default function CalendarioPage() {
     })
 
     return todosEventos
-  }, [eventos, polizas, clientes, companias])
+  }, [eventos, polizas, clientesPorId, companiasPorId])
 
   // Filtrar eventos
   const eventosFiltrados = useMemo(() => {
@@ -446,7 +446,7 @@ export default function CalendarioPage() {
                       )}
                       initial={{ opacity: 0, scale: 0.9 }}
                       animate={{ opacity: 1, scale: 1 }}
-                      transition={{ delay: index * 0.01 }}
+                      transition={{ delay: Math.min(index * 0.01, 0.3) }}
                       onClick={() => {
                         setDiaSeleccionado(fechaStr)
                         setNuevoEvento(prev => ({ ...prev, fecha: fechaStr }))
@@ -496,7 +496,7 @@ export default function CalendarioPage() {
                     .sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime())
                     .map((evento, index) => {
                       const colors = PRIORIDAD_COLORS[evento.prioridad]
-                      const cliente = clientes.find(c => c.id === evento.clienteId)
+                      const cliente = clientesPorId.get(evento.clienteId ?? "")
                       
                       return (
                         <motion.div
@@ -504,7 +504,7 @@ export default function CalendarioPage() {
                           initial={{ opacity: 0, y: 20 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, x: -100 }}
-                          transition={{ delay: index * 0.02 }}
+                          transition={{ delay: Math.min(index * 0.02, 0.3) }}
                           className={cn(
                             "p-4 rounded-xl flex items-start gap-4",
                             colors.bg,
@@ -604,7 +604,7 @@ export default function CalendarioPage() {
                 ) : (
                   (eventosPorFecha[diaSeleccionado || ""] || []).map((evento) => {
                     const colors = PRIORIDAD_COLORS[evento.prioridad]
-                    const cliente = clientes.find(c => c.id === evento.clienteId)
+                    const cliente = clientesPorId.get(evento.clienteId ?? "")
                     return (
                       <div
                         key={evento.id}

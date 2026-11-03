@@ -48,7 +48,7 @@ interface PolizaCobranzaPanelProps {
  * Se usa en Detalle y en Editar póliza para que ambos muestren la misma información.
  */
 export function PolizaCobranzaPanel({ poliza, conAcciones = false }: PolizaCobranzaPanelProps) {
-  const { pagos, polizas, historialPolizas, renovaciones, comisiones, usuariosSistema, validarPago, anularPago } = useSupabase()
+  const { historialPolizas, renovaciones, comisiones, usuariosSistema, validarPago, anularPago, pagosPorPoliza, polizasPorId } = useSupabase()
   const [valorUdiHoy, setValorUdiHoy] = useState<number | null>(null)
   const [rechazandoId, setRechazandoId] = useState<string | null>(null)
   const [motivoRechazo, setMotivoRechazo] = useState("")
@@ -56,8 +56,8 @@ export function PolizaCobranzaPanel({ poliza, conAcciones = false }: PolizaCobra
 
   const hoy = todayDateOnly()
   const recibos = useMemo(
-    () => pagos.filter(item => item.polizaId === poliza.id && item.estatus !== "cancelado").sort((left, right) => left.numeroRecibo - right.numeroRecibo),
-    [pagos, poliza.id],
+    () => (pagosPorPoliza.get(poliza.id) || []).filter(item => item.estatus !== "cancelado").sort((left, right) => left.numeroRecibo - right.numeroRecibo),
+    [pagosPorPoliza, poliza.id],
   )
   const situacion = situacionCobranzaPoliza(recibos, {
     primaTotal: Number(poliza.primaTotal || poliza.primaEmitida || poliza.prima || 0),
@@ -68,8 +68,8 @@ export function PolizaCobranzaPanel({ poliza, conAcciones = false }: PolizaCobra
   const esUdis = moneda === "UDIS"
   const renovacion = situacionRenovacion(poliza, hoy)
   const renovacionActiva = renovaciones.find(item => item.polizaOrigenId === poliza.id)
-  const polizaAnterior = polizas.find(item => item.id === poliza.renovadaDesdeId)
-  const polizaNueva = polizas.find(item => item.id === poliza.renovadaAId)
+  const polizaAnterior = polizasPorId.get(poliza.renovadaDesdeId ?? "")
+  const polizaNueva = polizasPorId.get(poliza.renovadaAId ?? "")
   const movimientos = historialPolizas.filter(item => item.polizaId === poliza.id && item.tipoCambio.startsWith("pago_")).slice(0, 15)
   const comisionesPoliza = comisiones.filter(item => item.polizaId === poliza.id)
   const resumenComisiones = resumirComisiones(comisionesPoliza)

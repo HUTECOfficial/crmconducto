@@ -6,6 +6,8 @@ import { PageHeader } from "@/components/page-header"
 import { GlassCard } from "@/components/glass-card"
 import { NeoButton } from "@/components/neo-button"
 import { useSupabase, type PagoPoliza } from "@/contexts/supabase-context"
+import { useListaPorTandas } from "@/hooks/use-lista-por-tandas"
+import { CargarMas } from "@/components/cargar-mas"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -31,7 +33,7 @@ interface PagoView extends PagoPoliza {
 }
 
 export default function PagosPage() {
-  const { polizas, clientes, companias, pagos, registrarPago, validarPago, anularPago } = useSupabase()
+  const { pagos, registrarPago, validarPago, anularPago, clientesPorId, companiasPorId, polizasPorId } = useSupabase()
   const [vistaActual, setVistaActual] = useState<"mes" | "semana" | "lista">("mes")
   const [mesActual, setMesActual] = useState(new Date())
   const [pagoSeleccionado, setPagoSeleccionado] = useState<PagoView | null>(null)
@@ -82,9 +84,9 @@ export default function PagosPage() {
   const pagosView = useMemo(() => pagos
     .filter(pago => pago.estatus !== "cancelado")
     .map(pago => {
-      const poliza = polizas.find(item => item.id === pago.polizaId)
-      const cliente = clientes.find(item => item.id === pago.clienteId)
-      const compania = companias.find(item => item.id === poliza?.companiaId)
+      const poliza = polizasPorId.get(pago.polizaId)
+      const cliente = clientesPorId.get(pago.clienteId)
+      const compania = companiasPorId.get(poliza?.companiaId ?? "")
       return {
         ...pago,
         clienteNombre: cliente?.nombre || "Cliente",
@@ -94,7 +96,7 @@ export default function PagosPage() {
         periodicidad: poliza?.formaPago || "—",
         estatusCobranza: estadoCobranzaRecibo(pago),
       }
-    }), [pagos, polizas, clientes, companias])
+    }), [pagos, polizasPorId, clientesPorId, companiasPorId])
 
   // Agrupar pagos por fecha
   const pagosPorFecha = useMemo(() => pagosView.reduce((acc, pago) => {
@@ -103,6 +105,7 @@ export default function PagosPage() {
     acc[fecha].push(pago)
     return acc
   }, {} as Record<string, PagoView[]>), [pagosView])
+  const { visibles: pagosVisibles, restantes, mostrarMas } = useListaPorTandas(pagosView, pagosView.length)
 
   const getDiasDelMes = () => {
     const year = mesActual.getFullYear()
@@ -260,7 +263,7 @@ export default function PagosPage() {
                 const esHoy = fechaStr === todayDateOnly()
 
                 return (
-                  <motion.div key={index} className={cn("min-h-[100px] p-2 rounded-xl border transition-colors", dia.esDelMes ? "bg-card border-border/50" : "bg-muted/20 border-transparent", esHoy && "ring-2 ring-primary")} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: index * 0.01 }}>
+                  <motion.div key={index} className={cn("min-h-[100px] p-2 rounded-xl border transition-colors", dia.esDelMes ? "bg-card border-border/50" : "bg-muted/20 border-transparent", esHoy && "ring-2 ring-primary")} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: Math.min(index * 0.01, 0.3) }}>
                     <div className="text-sm font-semibold mb-1">{dia.fecha.getDate()}</div>
                     <div className="space-y-1">
                       {pagosDia.slice(0, 2).map((pago) => {
@@ -287,8 +290,8 @@ export default function PagosPage() {
               <table className="w-full">
                 <thead><tr className="border-b border-border/50"><th className="text-left p-4 font-semibold">Cliente</th><th className="text-left p-4 font-semibold">Póliza / Recibo</th><th className="text-left p-4 font-semibold">Periodicidad</th><th className="text-left p-4 font-semibold">Monto</th><th className="text-left p-4 font-semibold">Emisión / Límite</th><th className="text-left p-4 font-semibold">Estatus</th><th className="p-4" /></tr></thead>
                 <tbody>
-                  {pagosView.map((pago, index) => (
-                    <motion.tr key={pago.id} className="border-b border-border/30 hover:bg-muted/50 transition-colors" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.02 }}>
+                  {pagosVisibles.map(pago => (
+                    <tr key={pago.id} className="border-b border-border/30 hover:bg-muted/50 transition-colors">
                       <td className="p-4"><p className="font-medium">{pago.clienteNombre}</p><p className="text-xs text-muted-foreground">{pago.companiaNombre}</p></td>
                       <td className="p-4"><p className="font-mono text-sm">{pago.numeroPoliza}</p><p className="text-xs">Recibo {pago.numeroRecibo}/{pago.totalRecibos} · Anualidad {pago.anualidad}</p></td>
                       <td className="p-4 capitalize">{pago.periodicidad}</td>
@@ -296,11 +299,12 @@ export default function PagosPage() {
                       <td className="p-4 text-sm"><p>{formatDateOnly(pago.fechaEmision)}</p><p className="text-xs text-muted-foreground">Límite: {formatDateOnly(pago.fechaLimite)}</p></td>
                       <td className="p-4"><Badge variant={pago.estatusCobranza === "pagado" ? "default" : pago.estatusCobranza === "vencido" ? "destructive" : "secondary"} className={pago.estatusCobranza === "por_validar" ? "bg-purple-600 text-white" : undefined}>{pago.estatusCobranza.replace("_", " ")}</Badge>{pago.comprobanteUrl && <a href={pago.comprobanteUrl} target="_blank" rel="noreferrer" className="mt-1 flex items-center gap-1 text-xs text-blue-600 hover:underline"><FileText className="h-3 w-3" />Comprobante</a>}</td>
                       <td className="p-4"><div className="flex flex-wrap gap-2">{pago.estatusCobranza === "por_validar" ? <><Button size="sm" className="bg-purple-600 hover:bg-purple-700 text-white" disabled={guardando} onClick={() => void confirmarValidacion(pago)}><Check className="mr-1 h-4 w-4" />Validar</Button><Button size="sm" variant="outline" className="text-red-600" onClick={() => { setPagoAnular(pago); setMotivoAnulacion("") }}>Rechazar</Button></> : pago.estatusCobranza === "pagado" ? <Button size="sm" variant="outline" className="text-red-600" onClick={() => { setPagoAnular(pago); setMotivoAnulacion("") }}><Undo2 className="mr-1 h-4 w-4" />Anular pago</Button> : <Button size="sm" onClick={() => abrirRegistro(pago)}>Cobrar</Button>}</div></td>
-                    </motion.tr>
+                    </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            <CargarMas restantes={restantes} onMas={mostrarMas} />
           </GlassCard>
         )}
       </main>

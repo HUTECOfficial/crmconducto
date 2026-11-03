@@ -14,11 +14,11 @@ interface WhatsAppReminderButtonProps {
 }
 
 export function WhatsAppReminderButton({ poliza, className, montoPendiente }: WhatsAppReminderButtonProps) {
-  const { clientes } = useSupabase()
+  const { clientesPorId } = useSupabase()
   const [enviando, setEnviando] = useState(false)
 
   // Obtener datos del cliente
-  const cliente = clientes.find(c => c.id === poliza.clienteId)
+  const cliente = clientesPorId.get(poliza.clienteId)
   if (!cliente) return null
 
   const handleSendWhatsApp = () => {

@@ -12,7 +12,7 @@ import { situacionRenovacion } from "@/lib/renovaciones"
 import { todayDateOnly } from "@/lib/date-only"
 
 export function ProximosEventos() {
-  const { eventos, polizas, clientes, companias } = useSupabase()
+  const { eventos, polizas, clientesPorId, companiasPorId } = useSupabase()
   const router = useRouter()
   const hoy = new Date()
 
@@ -43,8 +43,8 @@ export function ProximosEventos() {
       const renovacion = situacionRenovacion(poliza, fechaHoy)
       const dias = renovacion.dias
       if (renovacion.generaAviso && dias >= 0 && dias <= 30) {
-        const cliente = clientes.find(c => c.id === poliza.clienteId)
-        const compania = companias.find(c => c.id === poliza.companiaId)
+        const cliente = clientesPorId.get(poliza.clienteId)
+        const compania = companiasPorId.get(poliza.companiaId)
         items.push({
           id: `poliza-${poliza.id}`,
           titulo: `Renovación: ${poliza.numeroPoliza}`,
@@ -64,7 +64,7 @@ export function ProximosEventos() {
       }
       return new Date(a.fecha).getTime() - new Date(b.fecha).getTime()
     }).slice(0, 8)
-  }, [eventos, polizas, clientes, companias, hoy])
+  }, [eventos, polizas, clientesPorId, companiasPorId, hoy])
 
   const getIconoTipo = (tipo: string) => {
     switch (tipo) {
@@ -120,7 +120,7 @@ export function ProximosEventos() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, x: -100 }}
-              transition={{ delay: index * 0.05 }}
+              transition={{ delay: Math.min(index * 0.05, 0.3) }}
               className={`p-4 rounded-xl border-l-4 ${getColorPrioridad(evento.prioridad)}`}
             >
               <div className="flex items-start gap-3">

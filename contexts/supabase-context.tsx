@@ -1,8 +1,9 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
+import { textoBuscablePoliza } from '@/lib/busqueda'
 import { useAuth } from '@/contexts/auth-context'
 import { auditLogger, AuditEventType } from '@/lib/security/audit-logger'
 import { calcularMontoMxnUdis, calcularPrimaTotalPlazo, calcularVigenciasPoliza, completarImportesComprometidos, generarRecibos, reciboComprometido, reciboPorCobrar, type EstadoRecibo } from '@/lib/payment-schedule'
@@ -208,13 +209,87 @@ const ESTATUS_POLIZA_CANCELADA: Poliza['estatus'][] = ['cancelada', 'cancelada-c
 async function seleccionarTodo(
   consulta: (desde: number, hasta: number) => PromiseLike<{ data: any[] | null; error: any }>,
 ): Promise<any[]> {
+  // Supabase entrega máximo 1,000 filas por petición: se piden de 4 en 4 páginas a la vez
+  // en lugar de una tras otra, lo que reduce a la mitad o menos la carga de pólizas y recibos.
   const TAMANO_PAGINA = 1000
+  const PAGINAS_EN_PARALELO = 4
   const filas: any[] = []
-  for (let desde = 0; ; desde += TAMANO_PAGINA) {
-    const { data, error } = await consulta(desde, desde + TAMANO_PAGINA - 1)
-    if (error) throw error
-    filas.push(...(data || []))
-    if (!data || data.length < TAMANO_PAGINA) return filas
+  for (let desde = 0; ; desde += TAMANO_PAGINA * PAGINAS_EN_PARALELO) {
+    const respuestas = await Promise.all(Array.from({ length: PAGINAS_EN_PARALELO }, (_, indice) => {
+      const inicio = desde + indice * TAMANO_PAGINA
+      return consulta(inicio, inicio + TAMANO_PAGINA - 1)
+    }))
+    for (const { data, error } of respuestas) {
+      if (error) throw error
+      filas.push(...(data || []))
+      if (!data || data.length < TAMANO_PAGINA) return filas
+    }
+  }
+}
+
+function mapearPoliza(p: any): Poliza {
+  // Algunas pólizas históricas sólo tenían prima. Usarla como respaldo evita
+  // que Cobranza las interprete erróneamente como pólizas de $0.
+  const prima = Number(p.prima || 0)
+  const primaEmitida = Number(p.prima_emitida || 0) > 0 ? Number(p.prima_emitida) : prima
+  const primaPrimerRecibo = Number(p.primer_recibo || 0)
+  const primaTotalRecibo = Number(p.prima_total_recibo || 0) > 0
+    ? Number(p.prima_total_recibo)
+    : (primaPrimerRecibo > 0 ? primaPrimerRecibo : prima)
+
+  return {
+    id: p.id,
+    clienteId: p.cliente_id,
+    companiaId: p.compania_id,
+    ramo: p.ramo as Poliza['ramo'],
+    grupo: p.grupo || undefined,
+    porcentajeComision: p.porcentaje_comision == null ? undefined : Number(p.porcentaje_comision),
+    numeroPoliza: p.numero_poliza,
+    vigenciaInicio: p.vigencia_inicio,
+    vigenciaFin: p.vigencia_fin,
+    vigenciaPagoFin: p.vigencia_pago_fin || undefined,
+    vigenciaProductoFin: p.vigencia_producto_fin || undefined,
+    prima,
+    formaPago: p.forma_pago as Poliza['formaPago'],
+    estatus: p.estatus as Poliza['estatus'],
+    renovacionEstado: p.renovacion_estado || (p.estatus === 'por-renovar' ? 'pendiente' : 'sin_iniciar'),
+    renovadaDesdeId: p.renovada_desde_id || undefined,
+    renovadaAId: p.renovada_a_id || undefined,
+    vendedorId: p.vendedor_id || undefined,
+    folios: p.folios || [],
+    tramites: p.tramites || 0,
+    primaEmitida,
+    primaCobrada: p.prima_cobrada || 0,
+    fechaEmision: p.fecha_emision,
+    periodoGracia: p.periodo_gracia || undefined,
+    cancelacionMotivo: p.cancelacion_motivo as Poliza['cancelacionMotivo'] || undefined,
+    rehabilitacionFecha: p.rehabilitacion_fecha || undefined,
+    agente: p.agente || undefined,
+    incisoEndoso: p.inciso_endoso || undefined,
+    nombreAsegurado: p.nombre_asegurado || undefined,
+    ultimoDiaPago: p.ultimo_dia_pago || undefined,
+    numeroRecibo: p.numero_recibo || undefined,
+    primaTotalRecibo,
+    registroSistemaCobranza: p.registro_sistema_cobranza || false,
+    fechasRecordatorio: p.fechas_recordatorio || undefined,
+    comentarios: p.comentarios || undefined,
+    notas: p.notas || undefined,
+    marcaActualizacion: p.marca_actualizacion || false,
+    vigenciaVidaPago: p.vigencia_vida_pago ?? undefined,
+    vigenciaVidaProducto: p.vigencia_vida_producto ?? p.anos_vida_producto ?? undefined,
+    anosVidaProducto: p.anos_vida_producto ?? undefined,
+    primerRecibo: p.primer_recibo ?? undefined,
+    recibosSubsecuentes: p.recibos_subsecuentes ?? undefined,
+    diasGraciaPrimerRecibo: p.dias_gracia_primer_recibo ?? undefined,
+    diasGraciaSubsecuentes: p.dias_gracia_subsecuentes ?? undefined,
+    tipoPago: p.tipo_pago || undefined,
+    primaTotal: p.prima_total ?? undefined,
+    divisas: p.divisas || undefined,
+    valorUdiInicial: p.valor_udi_inicial ?? undefined,
+    vehiculoAmis: p.vehiculo_amis || undefined,
+    vehiculoClave: p.vehiculo_clave || undefined,
+    vehiculoDescripcion: p.vehiculo_descripcion || undefined,
+    vehiculoModelo: p.vehiculo_modelo || undefined,
   }
 }
 
@@ -373,6 +448,14 @@ interface SupabaseContextType {
   // Pólizas
   polizas: Poliza[]
   loadingPolizas: boolean
+
+  // Índices para buscar por id sin recorrer las listas completas en cada fila.
+  polizasPorId: Map<string, Poliza>
+  clientesPorId: Map<string, Cliente>
+  companiasPorId: Map<string, Compania>
+  pagosPorPoliza: Map<string, PagoPoliza[]>
+  /** Texto normalizado de cada póliza para el buscador (ver lib/busqueda.ts). */
+  textoBusquedaPoliza: Map<string, string>
   agregarPoliza: (poliza: Omit<Poliza, 'id'>) => Promise<string | null>
   actualizarPoliza: (id: string, poliza: Partial<Poliza>) => Promise<void>
   eliminarPoliza: (id: string) => Promise<void>
@@ -631,71 +714,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         .order('id')
         .range(desde, hasta))
 
-      const mapped: Poliza[] = (data || []).map((p: any) => {
-        // Algunas pólizas históricas sólo tenían prima. Usarla como respaldo evita
-        // que Cobranza las interprete erróneamente como pólizas de $0.
-        const prima = Number(p.prima || 0)
-        const primaEmitida = Number(p.prima_emitida || 0) > 0 ? Number(p.prima_emitida) : prima
-        const primaPrimerRecibo = Number(p.primer_recibo || 0)
-        const primaTotalRecibo = Number(p.prima_total_recibo || 0) > 0
-          ? Number(p.prima_total_recibo)
-          : (primaPrimerRecibo > 0 ? primaPrimerRecibo : prima)
-
-        return {
-        id: p.id,
-        clienteId: p.cliente_id,
-        companiaId: p.compania_id,
-        ramo: p.ramo as Poliza['ramo'],
-        grupo: p.grupo || undefined,
-        porcentajeComision: p.porcentaje_comision == null ? undefined : Number(p.porcentaje_comision),
-        numeroPoliza: p.numero_poliza,
-        vigenciaInicio: p.vigencia_inicio,
-        vigenciaFin: p.vigencia_fin,
-        vigenciaPagoFin: p.vigencia_pago_fin || undefined,
-        vigenciaProductoFin: p.vigencia_producto_fin || undefined,
-        prima,
-        formaPago: p.forma_pago as Poliza['formaPago'],
-        estatus: p.estatus as Poliza['estatus'],
-        renovacionEstado: p.renovacion_estado || (p.estatus === 'por-renovar' ? 'pendiente' : 'sin_iniciar'),
-        renovadaDesdeId: p.renovada_desde_id || undefined,
-        renovadaAId: p.renovada_a_id || undefined,
-        vendedorId: p.vendedor_id || undefined,
-        folios: p.folios || [],
-        tramites: p.tramites || 0,
-        primaEmitida,
-        primaCobrada: p.prima_cobrada || 0,
-        fechaEmision: p.fecha_emision,
-        periodoGracia: p.periodo_gracia || undefined,
-        cancelacionMotivo: p.cancelacion_motivo as Poliza['cancelacionMotivo'] || undefined,
-        rehabilitacionFecha: p.rehabilitacion_fecha || undefined,
-        agente: p.agente || undefined,
-        incisoEndoso: p.inciso_endoso || undefined,
-        nombreAsegurado: p.nombre_asegurado || undefined,
-        ultimoDiaPago: p.ultimo_dia_pago || undefined,
-        numeroRecibo: p.numero_recibo || undefined,
-        primaTotalRecibo,
-        registroSistemaCobranza: p.registro_sistema_cobranza || false,
-        fechasRecordatorio: p.fechas_recordatorio || undefined,
-        comentarios: p.comentarios || undefined,
-        notas: p.notas || undefined,
-        marcaActualizacion: p.marca_actualizacion || false,
-        vigenciaVidaPago: p.vigencia_vida_pago ?? undefined,
-        vigenciaVidaProducto: p.vigencia_vida_producto ?? p.anos_vida_producto ?? undefined,
-        anosVidaProducto: p.anos_vida_producto ?? undefined,
-        primerRecibo: p.primer_recibo ?? undefined,
-        recibosSubsecuentes: p.recibos_subsecuentes ?? undefined,
-        diasGraciaPrimerRecibo: p.dias_gracia_primer_recibo ?? undefined,
-        diasGraciaSubsecuentes: p.dias_gracia_subsecuentes ?? undefined,
-        tipoPago: p.tipo_pago || undefined,
-        primaTotal: p.prima_total ?? undefined,
-        divisas: p.divisas || undefined,
-        valorUdiInicial: p.valor_udi_inicial ?? undefined,
-        vehiculoAmis: p.vehiculo_amis || undefined,
-        vehiculoClave: p.vehiculo_clave || undefined,
-        vehiculoDescripcion: p.vehiculo_descripcion || undefined,
-        vehiculoModelo: p.vehiculo_modelo || undefined,
-        }
-      })
+      const mapped: Poliza[] = (data || []).map(mapearPoliza)
 
       setPolizas(mapped)
     } catch (err: any) {
@@ -706,6 +725,37 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   }
 
   const getActor = () => usuariosSistema.find(item => item.email === usuario?.email)
+
+  /**
+   * Vuelve a leer sólo las pólizas indicadas y sus recibos, y los reemplaza en memoria.
+   * Recargar todas las pólizas y recibos tras cada guardado bajaba ~13 MB cada vez.
+   */
+  const refrescarPolizas = async (ids: Array<string | undefined>) => {
+    const polizaIds = [...new Set(ids.filter((id): id is string => !!id))]
+    if (!polizaIds.length) return
+    const [polizasResp, pagosResp] = await Promise.all([
+      supabase.from('polizas').select('*').in('id', polizaIds),
+      supabase.from('pagos').select('*').in('poliza_id', polizaIds),
+    ])
+    if (polizasResp.error || pagosResp.error) {
+      console.error('Error al refrescar pólizas:', (polizasResp.error || pagosResp.error)?.message)
+      await Promise.all([fetchPolizas(), fetchPagos()])
+      return
+    }
+    const actualizadas = new Map((polizasResp.data || []).map((item: any) => [item.id, mapearPoliza(item)]))
+    setPolizas(previas => {
+      const siguientes = previas
+        .filter(poliza => !polizaIds.includes(poliza.id) || actualizadas.has(poliza.id))
+        .map(poliza => actualizadas.get(poliza.id) || poliza)
+      const nuevas = [...actualizadas.values()].filter(poliza => !previas.some(previa => previa.id === poliza.id))
+      // Mismo orden que la carga completa: las más recientes primero.
+      return [...nuevas, ...siguientes]
+    })
+    setPagos(previos => [
+      ...previos.filter(pago => !polizaIds.includes(pago.polizaId)),
+      ...(pagosResp.data || []).map(mapearPago),
+    ].sort((left, right) => (left.fechaLimite || '').localeCompare(right.fechaLimite || '') || left.id.localeCompare(right.id)))
+  }
 
   const fetchUsuariosSistema = async () => {
     const { data, error } = await supabase.from('usuarios').select('*').eq('activo', true).order('nombre')
@@ -1020,7 +1070,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       })
     }
 
-    await fetchPagos()
+    await refrescarPolizas([polizaId])
   }
 
   const sincronizarResumenCobranza = async (polizaId: string, metodoPago?: string) => {
@@ -1137,7 +1187,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       referencia: datos.referencia,
       comprobanteUrl: comprobante?.url,
     })
-    await Promise.all([fetchPagos(), fetchPolizas(), fetchHistorialPolizas()])
+    await Promise.all([refrescarPolizas([pago.polizaId]), fetchHistorialPolizas()])
     toast.success(`Pago del recibo ${pago.numeroRecibo}/${pago.totalRecibos} registrado; queda pendiente de validar`)
   }
 
@@ -1262,7 +1312,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     } catch (error: any) {
       toast.warning('Pago validado, pero no se generó la comisión: ' + error.message)
     }
-    await Promise.all([fetchPagos(), fetchPolizas(), fetchHistorialPolizas(), fetchComisiones().catch(error => console.error('Error fetching comisiones:', error.message))])
+    await Promise.all([refrescarPolizas([pago.polizaId]), fetchHistorialPolizas(), fetchComisiones().catch(error => console.error('Error fetching comisiones:', error.message))])
     toast.success(`Pago del recibo ${pago.numeroRecibo}/${pago.totalRecibos} validado`)
   }
 
@@ -1351,7 +1401,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         toast.warning('El pago se anuló, pero no se ajustó su comisión: ' + error.message)
       }
     }
-    await Promise.all([fetchPagos(), fetchPolizas(), fetchHistorialPolizas(), fetchComisiones().catch(error => console.error('Error fetching comisiones:', error.message))])
+    await Promise.all([refrescarPolizas([pago.polizaId]), fetchHistorialPolizas(), fetchComisiones().catch(error => console.error('Error fetching comisiones:', error.message))])
     toast.success(`Pago del recibo ${pago.numeroRecibo}/${pago.totalRecibos} ${pago.estatus === 'por_validar' ? 'rechazado' : 'anulado'}`)
   }
 
@@ -1380,7 +1430,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       throw polizaError
     }
     await registrarHistorial(polizaId, 'renovacion_iniciada', 'renovacion_estado', poliza.renovacionEstado, siguienteEstado, { renovacionId: data.id })
-    await Promise.all([fetchRenovaciones(), fetchPolizas(), fetchHistorialPolizas()])
+    await Promise.all([fetchRenovaciones(), refrescarPolizas([polizaId]), fetchHistorialPolizas()])
     return data.id
   }
 
@@ -1419,7 +1469,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       renovacionId,
       polizaRenovadaId,
     })
-    await Promise.all([fetchRenovaciones(), fetchPolizas(), fetchHistorialPolizas()])
+    await Promise.all([fetchRenovaciones(), refrescarPolizas([renovacion.polizaOrigenId, polizaRenovadaId]), fetchHistorialPolizas()])
   }
 
   const cancelarRenovacion = async (polizaId: string, motivo: string) => {
@@ -1448,7 +1498,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       renovacionId: renovacion.id,
       motivo,
     })
-    await Promise.all([fetchRenovaciones(), fetchPolizas(), fetchHistorialPolizas()])
+    await Promise.all([fetchRenovaciones(), refrescarPolizas([polizaId]), fetchHistorialPolizas()])
   }
 
   const getOrCreateFlotilla = async (polizaId: string): Promise<string> => {
@@ -1635,12 +1685,12 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         formaPago: poliza.formaPago,
       })
       toast.success('Póliza creada exitosamente')
-      await Promise.all([fetchPolizas(), fetchPagos(), fetchHistorialPolizas(), ...(poliza.ramo === 'flotilla' ? [fetchFlotillaUnidades()] : [])])
+      await Promise.all([refrescarPolizas([data.id]), fetchHistorialPolizas(), ...(poliza.ramo === 'flotilla' ? [fetchFlotillaUnidades()] : [])])
       return data.id
     } catch (err: any) {
       if (polizaCreadaId) {
         toast.error('La póliza fue creada, pero su configuración operativa quedó incompleta: ' + err.message)
-        await Promise.all([fetchPolizas(), fetchPagos(), fetchHistorialPolizas()])
+        await Promise.all([refrescarPolizas([polizaCreadaId]), fetchHistorialPolizas()])
         return polizaCreadaId
       }
       toast.error('Error al crear póliza: ' + err.message)
@@ -1791,10 +1841,10 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
               motivo_cancelacion: null,
             }).eq('id', item.id)))
             await supabase.from('polizas').update({ estatus: anterior.estatus }).eq('id', id)
-            await fetchPolizas()
+            await refrescarPolizas([id])
             throw error
           }
-          await fetchPagos()
+          await refrescarPolizas([id])
         } else if (requiereRegeneracion) {
           try {
             await regenerarRecibosPoliza(id, {
@@ -1846,7 +1896,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       }
 
       toast.success('Póliza actualizada')
-      await Promise.all([fetchPolizas(), fetchHistorialPolizas()])
+      await Promise.all([refrescarPolizas([id]), fetchHistorialPolizas()])
     } catch (err: any) {
       toast.error('Error al actualizar póliza: ' + err.message)
       throw err
@@ -1858,7 +1908,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       const { error } = await supabase.from('polizas').delete().eq('id', id)
       if (error) throw error
       toast.success('Póliza eliminada')
-      await fetchPolizas()
+      await refrescarPolizas([id])
     } catch (err: any) {
       toast.error('Error al eliminar póliza: ' + err.message)
     }
@@ -2222,7 +2272,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       if (error) throw error
       await registrarHistorial(polizaId, 'estatus_cambiado', 'estatus', anterior?.estatus, 'vencida', { motivo: justificacion })
       toast.success('Póliza marcada como vencida')
-      await Promise.all([fetchPolizas(), fetchHistorialPolizas()])
+      await Promise.all([refrescarPolizas([polizaId]), fetchHistorialPolizas()])
     } catch (err: any) {
       toast.error('Error al marcar póliza como vencida: ' + err.message)
       throw err
@@ -2429,6 +2479,23 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const polizasPorId = useMemo(() => new Map(polizas.map(poliza => [poliza.id, poliza])), [polizas])
+  const clientesPorId = useMemo(() => new Map(clientes.map(cliente => [cliente.id, cliente])), [clientes])
+  const companiasPorId = useMemo(() => new Map(companias.map(compania => [compania.id, compania])), [companias])
+  const pagosPorPoliza = useMemo(() => {
+    const indice = new Map<string, PagoPoliza[]>()
+    for (const pago of pagos) {
+      const lista = indice.get(pago.polizaId)
+      if (lista) lista.push(pago)
+      else indice.set(pago.polizaId, [pago])
+    }
+    return indice
+  }, [pagos])
+  const textoBusquedaPoliza = useMemo(() => new Map(polizas.map(poliza => [
+    poliza.id,
+    textoBuscablePoliza(poliza, clientesPorId.get(poliza.clienteId), companiasPorId.get(poliza.companiaId)?.nombre),
+  ])), [polizas, clientesPorId, companiasPorId])
+
   // ==================== REFETCH ALL ====================
   const refetchAll = async () => {
     await Promise.all([
@@ -2466,6 +2533,11 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       
       polizas,
       loadingPolizas,
+      polizasPorId,
+      clientesPorId,
+      companiasPorId,
+      pagosPorPoliza,
+      textoBusquedaPoliza,
       agregarPoliza,
       actualizarPoliza,
       eliminarPoliza,

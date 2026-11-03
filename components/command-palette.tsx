@@ -15,7 +15,7 @@ interface CommandPaletteProps {
 }
 
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
-  const { clientes, polizas, companias } = useSupabase()
+  const { clientes, polizas, companias, clientesPorId } = useSupabase()
   const [query, setQuery] = useState("")
   const [selectedIndex, setSelectedIndex] = useState(0)
   const router = useRouter()
@@ -43,7 +43,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       .filter((p) => p.numeroPoliza.toLowerCase().includes(query.toLowerCase()))
       .slice(0, 3)
       .map((p) => {
-        const cliente = clientes.find((c) => c.id === p.clienteId)
+        const cliente = clientesPorId.get(p.clienteId)
         return {
           tipo: "poliza" as const,
           id: p.id,
@@ -134,7 +134,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                     onClick={resultado.accion}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.05 }}
+                    transition={{ delay: Math.min(index * 0.05, 0.3) }}
                   >
                     <div
                       className={cn(

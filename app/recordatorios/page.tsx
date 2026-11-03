@@ -6,6 +6,8 @@ import { PageHeader } from "@/components/page-header"
 import { GlassCard } from "@/components/glass-card"
 import { NeoButton } from "@/components/neo-button"
 import { useSupabase } from "@/contexts/supabase-context"
+import { useListaPorTandas } from "@/hooks/use-lista-por-tandas"
+import { CargarMas } from "@/components/cargar-mas"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { motion } from "framer-motion"
@@ -38,7 +40,7 @@ interface RecordatorioAuto {
 }
 
 export default function RecordatoriosPage() {
-  const { polizas, clientes, companias, pagos } = useSupabase()
+  const { polizas, clientesPorId, companiasPorId, pagosPorPoliza } = useSupabase()
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [filtro, setFiltro] = useState<"todos" | "alta" | "media" | "baja">("todos")
   const [expandido, setExpandido] = useState<string | null>(null)
@@ -49,11 +51,11 @@ export default function RecordatoriosPage() {
     const items: RecordatorioAuto[] = []
 
     polizas.forEach(poliza => {
-      const cliente = clientes.find(c => c.id === poliza.clienteId)
-      const compania = companias.find(c => c.id === poliza.companiaId)
+      const cliente = clientesPorId.get(poliza.clienteId)
+      const compania = companiasPorId.get(poliza.companiaId)
       // Los recibos con pago por validar no generan recordatorio: el cliente ya pagó.
       const polizaCancelada = poliza.estatus.startsWith("cancelada")
-      const reciboPendiente = polizaCancelada ? undefined : pagos.filter(pago => pago.polizaId === poliza.id && reciboPorCobrar(pago)).sort((left, right) => left.fechaLimite.localeCompare(right.fechaLimite))[0]
+      const reciboPendiente = polizaCancelada ? undefined : (pagosPorPoliza.get(poliza.id) || []).filter(pago => reciboPorCobrar(pago)).sort((left, right) => left.fechaLimite.localeCompare(right.fechaLimite))[0]
       if (!cliente) return
 
       // Recordatorio por fecha límite de pago
@@ -121,11 +123,12 @@ export default function RecordatoriosPage() {
       if (orden[a.urgencia] !== orden[b.urgencia]) return orden[a.urgencia] - orden[b.urgencia]
       return a.diasRestantes - b.diasRestantes
     })
-  }, [polizas, clientes, companias, pagos])
+  }, [polizas, clientesPorId, companiasPorId, pagosPorPoliza])
 
-  const recordatoriosFiltrados = filtro === "todos"
+  const recordatoriosFiltrados = useMemo(() => filtro === "todos"
     ? recordatoriosAuto
-    : recordatoriosAuto.filter(r => r.urgencia === filtro)
+    : recordatoriosAuto.filter(r => r.urgencia === filtro), [recordatoriosAuto, filtro])
+  const { visibles: recordatoriosVisibles, restantes, mostrarMas } = useListaPorTandas(recordatoriosFiltrados, filtro)
 
   const urgenciaConfig = {
     alta: { color: "bg-red-500/10 text-red-600 border-red-500/20", dot: "bg-red-500", icon: AlertCircle, label: "Urgente" },
@@ -213,14 +216,14 @@ export default function RecordatoriosPage() {
                 <p className="text-xs text-muted-foreground mt-1">Las alertas se generan automáticamente desde tus pólizas</p>
               </GlassCard>
             ) : (
-              recordatoriosFiltrados.map((rec, index) => {
+              recordatoriosVisibles.map(rec => {
                 const cfg = urgenciaConfig[rec.urgencia]
                 const tipoCfg = tipoConfig[rec.tipo]
                 const TipoIcon = tipoCfg.icon
                 const isExpanded = expandido === rec.id
 
                 return (
-                  <motion.div key={rec.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.03 }}>
+                  <div key={rec.id}>
                     <GlassCard className={`overflow-hidden border-l-4 ${rec.urgencia === "alta" ? "border-red-500" : rec.urgencia === "media" ? "border-yellow-500" : "border-green-500"}`}>
                       <div className="p-4">
                         <div className="flex items-start justify-between gap-3">
@@ -281,10 +284,11 @@ export default function RecordatoriosPage() {
                         )}
                       </div>
                     </GlassCard>
-                  </motion.div>
+                  </div>
                 )
               })
             )}
+            <CargarMas restantes={restantes} onMas={mostrarMas} />
           </div>
 
           {/* Modal recordatorio manual */}

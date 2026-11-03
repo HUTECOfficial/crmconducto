@@ -8,10 +8,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { motion } from "framer-motion"
 import { Search, RefreshCw, Eye, Download, Clock, CheckCircle, AlertCircle } from "lucide-react"
 import { ProtectedRoute } from "@/components/protected-route"
 import { useSupabase } from "@/contexts/supabase-context"
+import { normalizarBusqueda } from "@/lib/busqueda"
+import { useListaPorTandas } from "@/hooks/use-lista-por-tandas"
+import { CargarMas } from "@/components/cargar-mas"
 import { formatDateOnly } from "@/lib/date-only"
 import { RAMOS, etiquetaRamo } from "@/lib/ramos"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -32,7 +34,7 @@ interface ConsultaResult {
 }
 
 export default function ConsultaPolizasPage() {
-  const { polizas, clientes, companias } = useSupabase()
+  const { polizas, clientesPorId, companiasPorId } = useSupabase()
   const [numeroPoliza, setNumeroPoliza] = useState("")
   const [nombreCliente, setNombreCliente] = useState("")
   const [nombreAsegurado, setNombreAsegurado] = useState("")
@@ -47,27 +49,20 @@ export default function ConsultaPolizasPage() {
     if (!hayCriterio) return
 
     setIsLoading(true)
-    await new Promise(resolve => setTimeout(resolve, 600))
 
-    const encontradas = polizas.filter(poliza => {
-      const cliente = clientes.find(c => c.id === poliza.clienteId)
-      const matchNumero = numeroPoliza
-        ? poliza.numeroPoliza.toLowerCase().includes(numeroPoliza.toLowerCase())
-        : true
-      const matchNombre = nombreCliente
-        ? cliente?.nombre.toLowerCase().includes(nombreCliente.toLowerCase())
-        : true
-      const matchAsegurado = nombreAsegurado
-        ? (poliza.nombreAsegurado || "").toLowerCase().includes(nombreAsegurado.toLowerCase())
-        : true
-      const matchRamo = ramo === "todos" || poliza.ramo === ramo
-      const matchGrupo = grupo ? (poliza.grupo || "").toLowerCase().includes(grupo.toLowerCase()) : true
-      return matchNumero && matchNombre && matchAsegurado && matchRamo && matchGrupo
-    })
+    // Sin acentos ni mayúsculas: "gomez" encuentra "GÓMEZ".
+    const contiene = (texto: string | undefined, buscado: string) =>
+      !buscado || normalizarBusqueda(texto || "").includes(normalizarBusqueda(buscado))
+    const encontradas = polizas.filter(poliza =>
+      contiene(poliza.numeroPoliza, numeroPoliza) &&
+      contiene(clientesPorId.get(poliza.clienteId)?.nombre, nombreCliente) &&
+      contiene(poliza.nombreAsegurado, nombreAsegurado) &&
+      (ramo === "todos" || poliza.ramo === ramo) &&
+      contiene(poliza.grupo, grupo))
 
     const mapped: ConsultaResult[] = encontradas.map(poliza => {
-      const cliente = clientes.find(c => c.id === poliza.clienteId)
-      const compania = companias.find(c => c.id === poliza.companiaId)
+      const cliente = clientesPorId.get(poliza.clienteId)
+      const compania = companiasPorId.get(poliza.companiaId)
       return {
         id: poliza.id,
         numeroPoliza: poliza.numeroPoliza,
@@ -88,6 +83,8 @@ export default function ConsultaPolizasPage() {
     setUltimaConsulta(new Date())
     setIsLoading(false)
   }
+
+  const { visibles: resultadosVisibles, restantes, mostrarMas } = useListaPorTandas(resultados, ultimaConsulta, 50)
 
   const getEstatusColor = (estatus: string, estatusReal: string) => {
     if (estatus !== estatusReal) {
@@ -271,12 +268,9 @@ export default function ConsultaPolizasPage() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {resultados.map((resultado, index) => (
-                      <motion.div
+                    {resultadosVisibles.map(resultado => (
+                      <div
                         key={resultado.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.1 }}
                         className="glass rounded-2xl p-4 hover:scale-[1.01] transition-all"
                       >
                         <div className="flex items-start justify-between mb-3">
@@ -357,8 +351,9 @@ export default function ConsultaPolizasPage() {
                             Actualizar
                           </Button>
                         </div>
-                      </motion.div>
+                      </div>
                     ))}
+                    <CargarMas restantes={restantes} onMas={mostrarMas} />
                   </div>
                 )}
               </GlassCard>

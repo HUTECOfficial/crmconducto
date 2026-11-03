@@ -41,7 +41,7 @@ function mxn(monto: number) {
 
 export default function ComisionesPage() {
   const { tienePermiso } = useAuth()
-  const { comisiones, polizas, clientes, companias, usuariosSistema, marcarComisionesPagadas, resolverComisionPorRevertir, generarComisionesFaltantes } = useSupabase()
+  const { comisiones, polizas, companias, usuariosSistema, marcarComisionesPagadas, resolverComisionPorRevertir, generarComisionesFaltantes, clientesPorId, companiasPorId, polizasPorId } = useSupabase()
 
   const [filtroEstado, setFiltroEstado] = useState<EstadoComision | "activas" | "todas">("activas")
   const [filtroVendedor, setFiltroVendedor] = useState("todos")
@@ -58,15 +58,15 @@ export default function ComisionesPage() {
   const [procesando, setProcesando] = useState(false)
 
   const filas = useMemo(() => comisiones.map(comision => {
-    const poliza = polizas.find(item => item.id === comision.polizaId)
+    const poliza = polizasPorId.get(comision.polizaId)
     return {
       comision,
       poliza,
-      cliente: clientes.find(item => item.id === poliza?.clienteId),
-      compania: companias.find(item => item.id === poliza?.companiaId),
+      cliente: clientesPorId.get(poliza?.clienteId ?? ""),
+      compania: companiasPorId.get(poliza?.companiaId ?? ""),
       vendedor: usuariosSistema.find(item => item.id === comision.vendedorId),
     }
-  }), [comisiones, polizas, clientes, companias, usuariosSistema])
+  }), [comisiones, polizasPorId, clientesPorId, companiasPorId, usuariosSistema])
 
   const filtradas = filas.filter(({ comision, poliza, cliente, compania }) => {
     if (filtroEstado === "activas" && comision.estatus === "cancelada") return false

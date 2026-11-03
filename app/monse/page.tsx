@@ -23,19 +23,19 @@ import {
 } from "lucide-react"
 
 export default function MontsePage() {
-  const { clientes, polizas, prospectos, eventos } = useSupabase()
+  const { clientes, polizas, prospectos, eventos, clientesPorId } = useSupabase()
 
   // Filtrar datos de Montse
   const clientesMontse = useMemo(() => clientes.filter(c => c.notas?.includes("Montse") || false), [clientes])
   const polizasMontse = useMemo(() => polizas.filter(p => {
-    const cliente = clientes.find(c => c.id === p.clienteId)
+    const cliente = clientesPorId.get(p.clienteId)
     return cliente && (cliente.notas?.includes("Montse") || false)
-  }), [polizas, clientes])
+  }), [polizas, clientesPorId])
   const prospectosMontse = useMemo(() => prospectos.filter(p => p.asignadoA === "Montse"), [prospectos])
   const eventosMontse = useMemo(() => eventos.filter(e => {
-    const cliente = clientes.find(c => c.id === e.clienteId)
+    const cliente = clientesPorId.get(e.clienteId ?? "")
     return cliente && (cliente.notas?.includes("Montse") || false)
-  }), [eventos, clientes])
+  }), [eventos, clientesPorId])
 
   // Métricas
   const polizasActivas = polizasMontse.filter(p => p.estatus === "activa").length

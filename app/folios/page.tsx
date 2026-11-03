@@ -221,7 +221,7 @@ export default function FoliosPage() {
                   key={folio.id}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.04 }}
+                  transition={{ delay: Math.min(index * 0.04, 0.3) }}
                 >
                   <GlassCard className="p-4">
                     <div className="flex items-start justify-between gap-4">

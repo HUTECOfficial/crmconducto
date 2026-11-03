@@ -10,7 +10,7 @@ import { ProtectedRoute } from "@/components/protected-route"
 import { WhatsAppReminderButton } from "@/components/whatsapp-reminder-button"
 import { motion } from "framer-motion"
 import { AlertCircle, DollarSign, TrendingDown, MessageSquare, Edit2, Check, X, Upload, Clock, FileText, Ban } from "lucide-react"
-import { useState, useEffect, useMemo, useRef, Suspense } from "react"
+import { useState, useEffect, useMemo, useRef, Suspense, useDeferredValue } from "react"
 import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -18,6 +18,9 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useSupabase, type Cliente, type PagoPoliza, type Poliza } from "@/contexts/supabase-context"
+import { coincideTerminos, terminosBusqueda } from "@/lib/busqueda"
+import { useListaPorTandas } from "@/hooks/use-lista-por-tandas"
+import { CargarMas } from "@/components/cargar-mas"
 import { addMonthsDateOnly, formatDateOnly, todayDateOnly } from "@/lib/date-only"
 import { reciboPorCobrar } from "@/lib/payment-schedule"
 import { ESTATUS_EN_COBRANZA, ETIQUETA_ESTATUS_COBRANZA, compararPorVencimiento, polizaEnCobranza, situacionCobranzaPoliza, type EstatusEnCobranza, type NivelSemaforo, type SituacionCobranzaPoliza } from "@/lib/cobranza"
@@ -32,11 +35,6 @@ type TipoAccion = "pagada" | "validar" | "cancelar" | "anular-pago" | "vencida"
 
 function formatearMonto(monto: number) {
   return monto.toLocaleString("es-MX", { maximumFractionDigits: 2 })
-}
-
-/** Minúsculas y sin acentos, para que "gomez" encuentre "Gómez". */
-function normalizarBusqueda(texto: string) {
-  return texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim()
 }
 
 function obtenerPrimaRecibo(poliza: Poliza) {
@@ -121,7 +119,10 @@ function EstadoRenovacionBadge({ poliza }: { poliza: Poliza }) {
 
 function PolizasPendientesContent() {
   const searchParams = useSearchParams()
-  const { polizas, clientes, companias, pagos, usuariosSistema, registrarPago, validarPago, anularPago, actualizarPoliza, marcarComoVencido } = useSupabase()
+  const {
+    polizas, usuariosSistema, registrarPago, validarPago, anularPago, actualizarPoliza, marcarComoVencido,
+    polizasPorId, clientesPorId, companiasPorId, pagosPorPoliza, textoBusquedaPoliza,
+  } = useSupabase()
 
   const [filtroCobranza, setFiltroCobranza] = useState<FiltroCobranza>("pendientes")
   const [filtroEstatus, setFiltroEstatus] = useState<FiltroEstatus>("todas")
@@ -195,41 +196,22 @@ function PolizasPendientesContent() {
   const filasBase = useMemo(() => polizas
     .filter(poliza => polizaEnCobranza(poliza.estatus))
     .map(poliza => {
-      const recibos = pagos.filter(pago => pago.polizaId === poliza.id)
+      const recibos = pagosPorPoliza.get(poliza.id) || []
       const situacion = situacionCobranzaPoliza(recibos, {
         primaTotal: Number(poliza.primaEmitida || poliza.prima || 0),
         primaCobrada: Number(poliza.primaCobrada || 0),
         fechaVencimiento: poliza.ultimoDiaPago || poliza.vigenciaFin,
       }, hoy)
       return { poliza, recibos, situacion }
-    }), [polizas, pagos, hoy])
+    }), [polizas, pagosPorPoliza, hoy])
 
-  // Texto buscable de cada póliza: número, cliente (nombre, teléfono, correo, RFC), asegurado,
-  // aseguradora, ramo y grupo.
+  // La búsqueda se aplica diferida: escribir no espera a que se redibuje la lista.
+  const busquedaDiferida = useDeferredValue(busqueda)
   const coincideBusqueda = useMemo(() => {
-    const terminos = normalizarBusqueda(busqueda).split(/\s+/).filter(Boolean)
+    const terminos = terminosBusqueda(busquedaDiferida)
     if (terminos.length === 0) return () => true
-    const clientesPorId = new Map(clientes.map(cliente => [cliente.id, cliente]))
-    const companiasPorId = new Map(companias.map(compania => [compania.id, compania.nombre]))
-    return (poliza: Poliza) => {
-      const cliente = clientesPorId.get(poliza.clienteId)
-      const telefonos = [cliente?.telefono, ...(cliente?.telefonos || []).map(telefono => telefono.numero)].filter(Boolean) as string[]
-      const texto = normalizarBusqueda([
-        poliza.numeroPoliza,
-        cliente?.nombre,
-        // También sin espacios ni guiones, para encontrar "5512345678" aunque se guardó "55 1234-5678".
-        ...telefonos,
-        ...telefonos.map(telefono => telefono.replace(/\D/g, "")),
-        cliente?.email,
-        cliente?.rfc,
-        poliza.nombreAsegurado,
-        companiasPorId.get(poliza.companiaId),
-        etiquetaRamo(poliza.ramo),
-        poliza.grupo,
-      ].filter(Boolean).join(" "))
-      return terminos.every(termino => texto.includes(termino))
-    }
-  }, [busqueda, clientes, companias])
+    return (poliza: Poliza) => coincideTerminos(textoBusquedaPoliza.get(poliza.id) || "", terminos)
+  }, [busquedaDiferida, textoBusquedaPoliza])
 
   const filas = useMemo(() => filasBase
     .filter(({ poliza, situacion }) => {
@@ -248,9 +230,13 @@ function PolizasPendientesContent() {
     .sort((left, right) => compararPorVencimiento(left.situacion, right.situacion)), [filasBase, coincideBusqueda, filtroEstatus, filtroCobranza, filtroSemaforo, fechaDesde, fechaHasta])
 
   // Coincidencias que los filtros actuales esconden (p. ej. una vencida buscando en "Pendientes").
-  const coincidenciasOcultas = busqueda.trim()
+  const coincidenciasOcultas = useMemo(() => busquedaDiferida.trim()
     ? filasBase.filter(({ poliza }) => coincideBusqueda(poliza)).length - filas.length
-    : 0
+    : 0, [busquedaDiferida, filasBase, coincideBusqueda, filas])
+  const { visibles: filasVisibles, restantes, mostrarMas } = useListaPorTandas(
+    filas,
+    `${busquedaDiferida}|${filtroCobranza}|${filtroEstatus}|${filtroSemaforo}|${fechaDesde}|${fechaHasta}`,
+  )
 
   const conteoSemaforo = useMemo(() => filasBase.reduce((acc, { situacion }) => {
     if (situacion.estado !== "pagada") acc[situacion.semaforo] = (acc[situacion.semaforo] || 0) + 1
@@ -259,7 +245,7 @@ function PolizasPendientesContent() {
 
   // Totales en MXN: los recibos UDIS cobrados usan su conversión guardada y el saldo,
   // el valor UDI de hoy (estimado).
-  const totalesMxn = filas.reduce((acc, { poliza, recibos, situacion }) => {
+  const totalesMxn = useMemo(() => filas.reduce((acc, { poliza, recibos, situacion }) => {
     if (poliza.divisas !== "UDIS") {
       acc.pendiente += situacion.pendiente
       acc.porValidar += situacion.porValidar
@@ -272,7 +258,7 @@ function PolizasPendientesContent() {
     if (valorUdiHoy) acc.pendiente += situacion.pendiente * valorUdiHoy
     else if (situacion.pendiente > 0) acc.udisSinConvertir += situacion.pendiente
     return acc
-  }, { pendiente: 0, porValidar: 0, cobrado: 0, udisSinConvertir: 0 })
+  }, { pendiente: 0, porValidar: 0, cobrado: 0, udisSinConvertir: 0 }), [filas, valorUdiHoy])
   const totalPendiente = totalesMxn.pendiente
   const totalPorValidar = totalesMxn.porValidar
   const totalCobrado = totalesMxn.cobrado
@@ -298,7 +284,7 @@ function PolizasPendientesContent() {
   }
 
   const guardarComentario = async (polizaId: string) => {
-    const poliza = polizas.find(p => p.id === polizaId)
+    const poliza = polizasPorId.get(polizaId)
     const comentarioActual = poliza?.comentarios || ""
     const fecha = new Date().toLocaleDateString('es-MX')
     const nuevoComentario = comentarioActual
@@ -310,7 +296,7 @@ function PolizasPendientesContent() {
   }
 
   const reciboParaAccion = (poliza: Poliza, tipo: TipoAccion): PagoPoliza | null => {
-    const recibos = pagos.filter(pago => pago.polizaId === poliza.id)
+    const recibos = pagosPorPoliza.get(poliza.id) || []
     if (tipo === "pagada") {
       return recibos.filter(reciboPorCobrar).sort((left, right) => left.fechaLimite.localeCompare(right.fechaLimite))[0] ?? null
     }
@@ -426,7 +412,7 @@ function PolizasPendientesContent() {
   }
 
   const marcarRecordatorio = async (polizaId: string, numRecordatorio: 1 | 2 | 3, recibo?: PagoPoliza) => {
-    const poliza = polizas.find(p => p.id === polizaId)
+    const poliza = polizasPorId.get(polizaId)
     if (!poliza) return
     const actuales = poliza.fechasRecordatorio || {}
     // Los recordatorios se llevan por recibo: al pasar al siguiente recibo empiezan de cero.
@@ -447,9 +433,9 @@ function PolizasPendientesContent() {
   // Rechazo del cargo (tarjeta o domiciliación) del recibo actual: se registra la fecha y se
   // abre WhatsApp con el aviso para el cliente.
   const marcarRechazo = async (poliza: Poliza, recibo: PagoPoliza, numero: 1 | 2) => {
-    const cliente = clientes.find(item => item.id === poliza.clienteId)
+    const cliente = clientesPorId.get(poliza.clienteId)
     const telefono = whatsappCliente(cliente)
-    const compania = companias.find(item => item.id === poliza.companiaId)?.nombre
+    const compania = companiasPorId.get(poliza.companiaId)?.nombre
     // La ventana se abre antes de guardar para que el navegador no la bloquee.
     const ventana = telefono ? window.open(`https://wa.me/${telefono}?text=${encodeURIComponent(mensajeRechazo(numero, cliente, poliza, recibo, compania))}`, "_blank") : null
     const actuales = poliza.fechasRecordatorio || {}
@@ -728,9 +714,9 @@ function PolizasPendientesContent() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filas.map(({ poliza, situacion }, index) => {
-                    const cliente = clientes.find(c => c.id === poliza.clienteId)
-                    const compania = companias.find(c => c.id === poliza.companiaId)
+                  {filasVisibles.map(({ poliza, situacion }) => {
+                    const cliente = clientesPorId.get(poliza.clienteId)
+                    const compania = companiasPorId.get(poliza.companiaId)
                     const recibo = situacion.reciboActual
                     const primaRecibo = recibo?.monto ?? obtenerPrimaRecibo(poliza)
                     const periodo = periodoRecibo(poliza, recibo)
@@ -738,11 +724,8 @@ function PolizasPendientesContent() {
                     const celda = "p-4 border-r border-border/40 align-top"
 
                     return (
-                      <motion.tr
+                      <tr
                         key={poliza.id}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: Math.min(index * 0.02, 0.4) }}
                         className={`${SEMAFORO[situacion.semaforo].fila} border-b border-border/40 transition-colors align-top`}
                       >
                         <td className={celda}>
@@ -856,31 +839,27 @@ function PolizasPendientesContent() {
                         <td className="p-4 text-center align-top">
                           {botonesCobranza(poliza, situacion)}
                         </td>
-                      </motion.tr>
+                      </tr>
                     )
                   })}
                 </tbody>
               </table>
             </div>
+            <CargarMas restantes={restantes} onMas={mostrarMas} />
           </GlassCard>
 
           {/* Vista de Cards para Móvil/Tablet */}
           <div className="lg:hidden space-y-4">
-            {filas.map(({ poliza, situacion }, index) => {
-              const cliente = clientes.find(c => c.id === poliza.clienteId)
-              const compania = companias.find(c => c.id === poliza.companiaId)
+            {filasVisibles.map(({ poliza, situacion }) => {
+              const cliente = clientesPorId.get(poliza.clienteId)
+              const compania = companiasPorId.get(poliza.companiaId)
               const recibo = situacion.reciboActual
               const primaRecibo = recibo?.monto ?? obtenerPrimaRecibo(poliza)
               const periodo = periodoRecibo(poliza, recibo)
               const recordatorios = recordatoriosDelRecibo(poliza, recibo)
 
               return (
-                <motion.div
-                  key={poliza.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: Math.min(index * 0.03, 0.4) }}
-                >
+                <div key={poliza.id}>
                   <GlassCard className={`p-4 border ${SEMAFORO[situacion.semaforo].card}`}>
                     {/* Header de la card */}
                     <div className="flex items-start justify-between gap-3 mb-3">
@@ -1008,9 +987,10 @@ function PolizasPendientesContent() {
                       {botonesCobranza(poliza, situacion, true)}
                     </div>
                   </GlassCard>
-                </motion.div>
+                </div>
               )
             })}
+            <CargarMas restantes={restantes} onMas={mostrarMas} />
           </div>
 
           {filas.length === 0 && (
@@ -1043,12 +1023,12 @@ function PolizasPendientesContent() {
           <DialogHeader>
             <DialogTitle>Comentarios de la Póliza</DialogTitle>
             <DialogDescription>
-              {polizas.find(p => p.id === verComentarioId)?.numeroPoliza}
+              {verComentarioId && polizasPorId.get(verComentarioId)?.numeroPoliza}
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
             <div className="bg-muted rounded-lg p-4 text-sm whitespace-pre-line max-h-[300px] overflow-y-auto">
-              {polizas.find(p => p.id === verComentarioId)?.comentarios || "Sin comentarios"}
+              {(verComentarioId && polizasPorId.get(verComentarioId)?.comentarios) || "Sin comentarios"}
             </div>
           </div>
           <div className="flex justify-end">
@@ -1084,7 +1064,7 @@ function PolizasPendientesContent() {
               <div className="p-3 rounded-lg bg-muted space-y-1">
                 <p className="text-sm font-semibold">{polizaAccion.numeroPoliza}</p>
                 <p className="text-xs text-muted-foreground">
-                  {clientes.find(c => c.id === polizaAccion.clienteId)?.nombre}
+                  {clientesPorId.get(polizaAccion.clienteId)?.nombre}
                   {reciboAccion && ` • Recibo ${reciboAccion.numeroRecibo}/${reciboAccion.totalRecibos} • ${formatearMonto(reciboAccion.monto)} ${reciboAccion.moneda}`}
                 </p>
                 {reciboAccion && <p className="text-xs text-muted-foreground">Fecha límite: {formatDateOnly(reciboAccion.fechaLimite)}</p>}

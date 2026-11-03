@@ -194,7 +194,7 @@ export default function UsuariosPage() {
                       className="border-b border-border/30 hover:bg-muted/50 transition-colors"
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.05 }}
+                      transition={{ delay: Math.min(index * 0.05, 0.3) }}
                     >
                       <td className="p-4">
                         <div className="flex items-center gap-3">

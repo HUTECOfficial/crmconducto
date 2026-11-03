@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { PageHeader } from "@/components/page-header"
 import { GlassCard } from "@/components/glass-card"
@@ -10,6 +10,8 @@ import { ProtectedRoute } from "@/components/protected-route"
 import { Calendar, Bell, AlertCircle, CheckCircle2, Clock } from "lucide-react"
 import { motion } from "framer-motion"
 import { useSupabase } from "@/contexts/supabase-context"
+import { useListaPorTandas } from "@/hooks/use-lista-por-tandas"
+import { CargarMas } from "@/components/cargar-mas"
 import { toast } from "sonner"
 import { todayDateOnly } from "@/lib/date-only"
 import { situacionRenovacion } from "@/lib/renovaciones"
@@ -28,7 +30,7 @@ interface Notificacion {
 }
 
 export default function CalendarioNotificacionesPage() {
-  const { polizas, clientes, companias, pagos } = useSupabase()
+  const { polizas, pagos, clientesPorId, companiasPorId, pagosPorPoliza } = useSupabase()
   const [filtroTipo, setFiltroTipo] = useState<TipoNotificacion | "todas">("todas")
   const [notificacionesLeidas, setNotificacionesLeidas] = useState<Set<string>>(new Set())
 
@@ -38,8 +40,8 @@ export default function CalendarioNotificacionesPage() {
     const hoy = todayDateOnly()
 
     polizas.forEach(poliza => {
-      const cliente = clientes.find(c => c.id === poliza.clienteId)
-      const compania = companias.find(c => c.id === poliza.companiaId)
+      const cliente = clientesPorId.get(poliza.clienteId)
+      const compania = companiasPorId.get(poliza.companiaId)
       // Una sola regla de renovación: sólo avisa si no está renovada, en proceso ni cancelada.
       const renovacion = situacionRenovacion(poliza, hoy)
       const diasParaVencer = renovacion.dias
@@ -85,7 +87,7 @@ export default function CalendarioNotificacionesPage() {
       }
 
       // Notificaciones de pago pendiente: desde los recibos; los pagos por validar no cuentan.
-      const cobranza = situacionCobranzaPoliza(pagos.filter(pago => pago.polizaId === poliza.id), {
+      const cobranza = situacionCobranzaPoliza((pagosPorPoliza.get(poliza.id) || []), {
         primaTotal: Number(poliza.primaEmitida || poliza.prima || 0),
         primaCobrada: Number(poliza.primaCobrada || 0),
         fechaVencimiento: poliza.ultimoDiaPago || poliza.vigenciaFin,
@@ -123,10 +125,11 @@ export default function CalendarioNotificacionesPage() {
     })
   }
 
-  const notificaciones = generarNotificaciones()
-  const notificacionesFiltradas = filtroTipo === "todas" 
+  const notificaciones = useMemo(generarNotificaciones, [polizas, clientesPorId, companiasPorId, pagosPorPoliza])
+  const notificacionesFiltradas = useMemo(() => filtroTipo === "todas"
     ? notificaciones.filter(n => !notificacionesLeidas.has(n.id))
-    : notificaciones.filter(n => n.tipo === filtroTipo && !notificacionesLeidas.has(n.id))
+    : notificaciones.filter(n => n.tipo === filtroTipo && !notificacionesLeidas.has(n.id)), [notificaciones, filtroTipo, notificacionesLeidas])
+  const { visibles: notificacionesVisibles, restantes, mostrarMas } = useListaPorTandas(notificacionesFiltradas, filtroTipo)
 
   const marcarComoLeida = (id: string) => {
     setNotificacionesLeidas(prev => new Set([...prev, id]))
@@ -273,15 +276,10 @@ export default function CalendarioNotificacionesPage() {
 
           {/* Lista de Notificaciones */}
           <div className="space-y-3">
-            {notificacionesFiltradas.map((notificacion, index) => {
+            {notificacionesVisibles.map(notificacion => {
               const colors = getColorClasses(notificacion.tipo)
               return (
-                <motion.div
-                  key={notificacion.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.03 }}
-                >
+                <div key={notificacion.id}>
                   <GlassCard className={`p-4 border-l-4 ${colors.bg} ${colors.border}`}>
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
@@ -322,9 +320,10 @@ export default function CalendarioNotificacionesPage() {
                       </div>
                     </div>
                   </GlassCard>
-                </motion.div>
+                </div>
               )
             })}
+            <CargarMas restantes={restantes} onMas={mostrarMas} />
           </div>
 
           {notificacionesFiltradas.length === 0 && (

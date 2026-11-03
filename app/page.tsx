@@ -16,32 +16,33 @@ import { useSupabase } from "@/contexts/supabase-context"
 import { todayDateOnly } from "@/lib/date-only"
 import { compararPorVencimiento, situacionCobranzaPoliza, polizaEnCobranza } from "@/lib/cobranza"
 import { situacionRenovacion } from "@/lib/renovaciones"
+import { useMemo } from "react"
 
 export default function DashboardPage() {
   const { usuario } = useAuth()
   const router = useRouter()
-  const { polizas, clientes, companias, pagos } = useSupabase()
+  const { polizas, clientesPorId, companiasPorId, pagosPorPoliza } = useSupabase()
 
   const hoy = todayDateOnly()
 
   // Cobranza calculada desde los recibos: sólo cuenta lo que realmente falta por pagar.
-  const cobranzaPolizas = polizas
+  const cobranzaPolizas = useMemo(() => polizas
     .filter(p => polizaEnCobranza(p.estatus))
     .map(poliza => ({
       poliza,
-      situacion: situacionCobranzaPoliza(pagos.filter(pago => pago.polizaId === poliza.id), {
+      situacion: situacionCobranzaPoliza(pagosPorPoliza.get(poliza.id) || [], {
         primaTotal: Number(poliza.primaEmitida || poliza.prima || 0),
         primaCobrada: Number(poliza.primaCobrada || 0),
         fechaVencimiento: poliza.ultimoDiaPago || poliza.vigenciaFin,
       }, hoy),
     }))
-    .filter(({ situacion }) => situacion.estado !== "pagada")
+    .filter(({ situacion }) => situacion.estado !== "pagada"), [polizas, pagosPorPoliza, hoy])
 
   // Pólizas por cobrar: con recibos pendientes o pagos por validar
   const polizasPorCobrar = cobranzaPolizas.length
 
   // Renovaciones pendientes (regla única de 60 días, ver lib/renovaciones)
-  const renovacionesProximas = polizas.filter(p => situacionRenovacion(p, hoy).generaAviso).length
+  const renovacionesProximas = useMemo(() => polizas.filter(p => situacionRenovacion(p, hoy).generaAviso).length, [polizas, hoy])
 
   // Registro de pólizas activas
   const registroPolizas = polizas.filter(p => p.estatus === "activa").length
@@ -192,8 +193,8 @@ export default function DashboardPage() {
               <div className="space-y-3">
                 {cobranzaProxima.length > 0 ? (
                   cobranzaProxima.map(({ poliza, situacion }, index) => {
-                    const cliente = clientes.find((c) => c.id === poliza.clienteId)
-                    const compania = companias.find((c) => c.id === poliza.companiaId)
+                    const cliente = clientesPorId.get(poliza.clienteId)
+                    const compania = companiasPorId.get(poliza.companiaId)
                     const diasDiferencia = situacion.diasRestantes ?? 0
                     const yaVencida = diasDiferencia < 0
                     const colorSemaforo = {
@@ -211,7 +212,7 @@ export default function DashboardPage() {
                         className="p-4 rounded-2xl bg-muted/50 hover:bg-muted transition-colors cursor-pointer"
                         initial={{ opacity: 0, x: -20 }}
                         animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: index * 0.1 }}
+                        transition={{ delay: Math.min(index * 0.1, 0.3) }}
                         onClick={() => router.push('/polizas-pendientes')}
                       >
                         <div className="flex items-start justify-between mb-2">
@@ -269,8 +270,8 @@ export default function DashboardPage() {
 
               <div className="space-y-3">
                 {polizas.filter(p => p.estatus === "por-renovar").slice(0, 5).map((poliza, index) => {
-                  const cliente = clientes.find((c) => c.id === poliza.clienteId)
-                  const compania = companias.find((c) => c.id === poliza.companiaId)
+                  const cliente = clientesPorId.get(poliza.clienteId)
+                  const compania = companiasPorId.get(poliza.companiaId)
                   
                   return (
                     <motion.div
@@ -278,7 +279,7 @@ export default function DashboardPage() {
                       className="p-4 rounded-2xl bg-muted/50 hover:bg-muted transition-colors"
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: index * 0.1 }}
+                      transition={{ delay: Math.min(index * 0.1, 0.3) }}
                     >
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex-1">

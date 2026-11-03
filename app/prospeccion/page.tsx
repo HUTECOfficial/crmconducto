@@ -206,7 +206,7 @@ export default function ProspeccionPage() {
                             key={p.id}
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
-                            transition={{ delay: i * 0.02 }}
+                            transition={{ delay: Math.min(i * 0.02, 0.3) }}
                             className="border-b border-border/20 hover:bg-muted/30 transition-colors"
                           >
                             <td className="p-3 font-medium">{p.nombre}</td>

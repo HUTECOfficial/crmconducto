@@ -54,7 +54,7 @@ export default function AjustesPage() {
                   className="flex items-center gap-4 p-4 rounded-2xl bg-muted/50"
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.1 }}
+                  transition={{ delay: Math.min(index * 0.1, 0.3) }}
                 >
                   <div className="flex items-center gap-3 flex-1">
                     <div className="w-8 h-8 rounded-full flex items-center justify-center bg-background">
@@ -90,7 +90,7 @@ export default function AjustesPage() {
                   className="flex items-center justify-between p-4 rounded-2xl bg-muted/50"
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.1 }}
+                  transition={{ delay: Math.min(index * 0.1, 0.3) }}
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full" style={{ backgroundColor: compania.color }} />
@@ -121,7 +121,7 @@ export default function AjustesPage() {
                   className="flex items-center justify-between p-4 rounded-2xl bg-muted/50"
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.1 }}
+                  transition={{ delay: Math.min(index * 0.1, 0.3) }}
                 >
                   <div className="flex items-center gap-3">
                     <Badge variant={index === 0 ? "default" : "secondary"}>{rol}</Badge>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { PageHeader } from "@/components/page-header"
 import { GlassCard } from "@/components/glass-card"
@@ -17,11 +17,13 @@ import { PdfUploadZone } from "@/components/pdf-upload-zone"
 import { ClienteDocumentos } from "@/components/cliente-documentos"
 import { EventoRapidoButton } from "@/components/evento-rapido-button"
 import { WhatsAppShareButton } from "@/components/whatsapp-share-button"
-import { motion } from "framer-motion"
 import { toast } from "sonner"
 import { todayDateOnly } from "@/lib/date-only"
 import { etiquetaRamo } from "@/lib/ramos"
 import { registrarEnBitacora } from "@/lib/bitacora-registro"
+import { coincideTerminos, normalizarBusqueda, terminosBusqueda } from "@/lib/busqueda"
+import { useListaPorTandas } from "@/hooks/use-lista-por-tandas"
+import { CargarMas } from "@/components/cargar-mas"
 import {
   Plus, Search, X, User, Mail, Phone, Building2, FileText,
   Edit2, Trash2, Users, CheckCircle, XCircle, FolderOpen
@@ -76,20 +78,29 @@ export default function ClientesPage() {
     })
   }, [modalDetalle, clienteSeleccionado?.id])
 
-  const clientesFiltrados = clientes.filter(c => {
-    if (filtroEstatus !== "todos" && c.estatus !== filtroEstatus) return false
-    if (busqueda) {
-      const q = busqueda.toLowerCase()
-      return (
-        c.nombre.toLowerCase().includes(q) ||
-        c.email.toLowerCase().includes(q) ||
-        c.telefono.includes(q) ||
-        (c.empresa || "").toLowerCase().includes(q) ||
-        (c.rfc || "").toLowerCase().includes(q)
-      )
+  // Texto buscable de cada cliente, armado una vez por carga (sin acentos ni mayúsculas).
+  const textoBusquedaCliente = useMemo(() => new Map(clientes.map(c => [c.id, normalizarBusqueda([
+    c.nombre, c.email, c.telefono, c.telefono.replace(/\D/g, ""), c.empresa, c.rfc,
+  ].filter(Boolean).join(" "))])), [clientes])
+  const busquedaDiferida = useDeferredValue(busqueda)
+  const clientesFiltrados = useMemo(() => {
+    const terminos = terminosBusqueda(busquedaDiferida)
+    return clientes.filter(c => {
+      if (filtroEstatus !== "todos" && c.estatus !== filtroEstatus) return false
+      return coincideTerminos(textoBusquedaCliente.get(c.id) || "", terminos)
+    })
+  }, [clientes, textoBusquedaCliente, busquedaDiferida, filtroEstatus])
+  const { visibles: clientesVisibles, restantes, mostrarMas } = useListaPorTandas(clientesFiltrados, `${busquedaDiferida}|${filtroEstatus}`)
+
+  const polizasPorCliente = useMemo(() => {
+    const indice = new Map<string, typeof polizas>()
+    for (const poliza of polizas) {
+      const lista = indice.get(poliza.clienteId)
+      if (lista) lista.push(poliza)
+      else indice.set(poliza.clienteId, [poliza])
     }
-    return true
-  })
+    return indice
+  }, [polizas])
 
   const handleCrear = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -170,8 +181,7 @@ export default function ClientesPage() {
     setModalDetalle(false)
   }
 
-  const polizasCliente = (clienteId: string) =>
-    polizas.filter(p => p.clienteId === clienteId)
+  const polizasCliente = (clienteId: string) => polizasPorCliente.get(clienteId) || []
 
   const FieldGroup = ({ label, icon: Icon, children }: { label: string; icon: any; children: React.ReactNode }) => (
     <div className="space-y-2">
@@ -351,15 +361,12 @@ export default function ClientesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {clientesFiltrados.map((cliente, index) => {
+                    {clientesVisibles.map(cliente => {
                       const nPolizas = polizasCliente(cliente.id).length
                       return (
-                        <motion.tr
+                        <tr
                           key={cliente.id}
                           className="border-b border-border/30 hover:bg-muted/40 cursor-pointer transition-colors"
-                          initial={{ opacity: 0, y: 6 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: index * 0.02 }}
                           onClick={() => { setClienteSeleccionado(cliente); setModalDetalle(true) }}
                         >
                           <td className="p-3">
@@ -410,11 +417,12 @@ export default function ClientesPage() {
                               </Button>
                             </div>
                           </td>
-                        </motion.tr>
+                        </tr>
                       )
                     })}
                   </tbody>
                 </table>
+                <CargarMas restantes={restantes} onMas={mostrarMas} />
               </div>
             )}
           </GlassCard>
