@@ -8,6 +8,7 @@ import { ToastProvider } from "@/components/toast-provider"
 import { SupabaseProvider } from "@/contexts/supabase-context"
 import { Toaster } from "@/components/ui/sonner"
 import { BitacoraNavegacion } from "@/components/bitacora-navegacion"
+import { AsistenteConi } from "@/components/asistente-coni"
 
 const inter = Inter({
   subsets: ["latin"],
@@ -40,6 +41,7 @@ export default function RootLayout({
             <BitacoraNavegacion />
             <SupabaseProvider>
               <CommandPaletteProvider>{children}</CommandPaletteProvider>
+              <AsistenteConi />
               <Toaster position="top-right" richColors />
             </SupabaseProvider>
           </AuthProvider>

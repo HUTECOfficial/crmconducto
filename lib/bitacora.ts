@@ -69,6 +69,7 @@ export const PANTALLAS: Record<string, string> = {
   '/usuarios': 'Usuarios',
   '/bitacora': 'Bitácora',
   '/tutoriales': 'Tutoriales',
+  '/coni-telegram': 'Coni en Telegram',
   '/documentacion': 'Documentación',
   '/objetivos': 'Objetivos',
   '/multicotizador': 'Multicotizador',
@@ -90,6 +91,7 @@ export const MODULOS: Record<string, string> = {
   usuarios: 'Usuarios',
   companias: 'Compañías',
   pantalla: 'Pantallas',
+  asistente: 'Asistente Coni',
   auth: 'Sesión',
 }
 
