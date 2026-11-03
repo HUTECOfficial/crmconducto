@@ -336,3 +336,30 @@ export function resumirCobranza(recibos: ReciboExistente[], primaTotal: number, 
     proximoPago,
   }
 }
+
+/**
+ * Días de gracia que ya usan los recibos vigentes de una póliza (el valor más común para el
+ * primer recibo y para los subsecuentes). Sirve para regenerar recibos sin cambiar la práctica
+ * de la póliza cuando no tiene días de gracia capturados: p. ej. un cargo mensual que vence el
+ * mismo día que inicia no debe pasar a 30 días de gracia.
+ */
+export function diasGraciaObservados(
+  recibos: Array<Pick<ReciboExistente, 'numeroRecibo' | 'fechaEmision' | 'fechaLimite' | 'estatus'>>,
+): { primerRecibo?: number; subsecuentes?: number } {
+  const masComun = (lista: typeof recibos) => {
+    const conteo = new Map<number, number>()
+    for (const recibo of lista) {
+      if (!recibo.fechaEmision || !recibo.fechaLimite) continue
+      const dias = differenceInCalendarDays(recibo.fechaLimite, recibo.fechaEmision)
+      if (dias >= 0) conteo.set(dias, (conteo.get(dias) || 0) + 1)
+    }
+    let mejor: number | undefined
+    for (const [dias, veces] of conteo) if (mejor === undefined || veces > conteo.get(mejor)!) mejor = dias
+    return mejor
+  }
+  const vigentes = recibos.filter(recibo => recibo.estatus !== 'cancelado')
+  return {
+    primerRecibo: masComun(vigentes.filter(recibo => recibo.numeroRecibo === 1)),
+    subsecuentes: masComun(vigentes.filter(recibo => recibo.numeroRecibo > 1)),
+  }
+}

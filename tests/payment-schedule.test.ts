@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { calcularMontoMxnUdis, calcularPrimaTotalPlazo, calcularVigenciasPoliza, completarImportesComprometidos, estadoCobranzaRecibo, generarRecibos, resumirCobranza, type PeriodicidadPago, type ReciboExistente } from '../lib/payment-schedule'
+import { calcularMontoMxnUdis, calcularPrimaTotalPlazo, calcularVigenciasPoliza, completarImportesComprometidos, diasGraciaObservados, estadoCobranzaRecibo, generarRecibos, resumirCobranza, type PeriodicidadPago, type ReciboExistente } from '../lib/payment-schedule'
 
 const expectedCounts: Record<PeriodicidadPago, number> = {
   anual: 1,
@@ -242,4 +242,22 @@ test('sin primer recibo, el pagado en $0 toma su parte proporcional', () => {
     recibosPagados: [{ id: 'p1', monto: 0, numeroRecibo: 1, totalRecibos: 2, fechaEmision: '2026-01-01', fechaLimite: '2026-01-31', estatus: 'pagado' }],
   })
   assert.deepEqual(recibos.map(recibo => recibo.monto), [10_000])
+})
+
+test('días de gracia observados: respeta la práctica de la póliza', () => {
+  const recibo = (numeroRecibo: number, fechaEmision: string, fechaLimite: string, estatus: ReciboExistente['estatus'] = 'pagado') =>
+    ({ numeroRecibo, fechaEmision, fechaLimite, estatus })
+  // Caso 96695U04: primer recibo con 30 días; cargo mensual que vence el mismo día 10.
+  assert.deepEqual(diasGraciaObservados([
+    recibo(1, '2026-05-25', '2026-06-24'),
+    recibo(2, '2026-06-10', '2026-07-10'),
+    recibo(3, '2026-08-10', '2026-08-10'),
+    recibo(4, '2026-09-10', '2026-09-10'),
+    recibo(5, '2026-10-10', '2026-10-10'),
+    recibo(6, '2026-11-10', '2026-11-10', 'pendiente'),
+    // Los cancelados no cuentan: pueden venir de una regeneración equivocada.
+    recibo(6, '2026-11-10', '2026-12-10', 'cancelado'),
+    recibo(7, '2026-12-10', '2027-01-09', 'cancelado'),
+  ]), { primerRecibo: 30, subsecuentes: 0 })
+  assert.deepEqual(diasGraciaObservados([]), { primerRecibo: undefined, subsecuentes: undefined })
 })

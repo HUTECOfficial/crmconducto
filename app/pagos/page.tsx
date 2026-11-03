@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useEffect, useRef } from "react"
+import { useState, useMemo, useRef } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { PageHeader } from "@/components/page-header"
 import { GlassCard } from "@/components/glass-card"
@@ -21,6 +21,8 @@ import { ProtectedRoute } from "@/components/protected-route"
 import { differenceInCalendarDays, formatDateOnly, toDateOnly, todayDateOnly } from "@/lib/date-only"
 import { estadoCobranzaRecibo, reciboPorCobrar } from "@/lib/payment-schedule"
 import { obtenerValorUdi } from "@/lib/udi"
+import { useUdiPorFecha } from "@/hooks/use-udi-por-fecha"
+import { EquivalenteUdi } from "@/components/equivalente-udi"
 import { toast } from "sonner"
 
 interface PagoView extends PagoPoliza {
@@ -42,7 +44,6 @@ export default function PagosPage() {
   const [referencia, setReferencia] = useState("")
   const [valorUdi, setValorUdi] = useState("")
   const [fechaValorUdi, setFechaValorUdi] = useState("")
-  const [valorUdiActual, setValorUdiActual] = useState<number | null>(null)
   const [cargandoUdi, setCargandoUdi] = useState(false)
   const [errorUdi, setErrorUdi] = useState("")
   const [motivoAnulacion, setMotivoAnulacion] = useState("")
@@ -62,7 +63,6 @@ export default function PagosPage() {
     }
     try {
       const udi = await obtenerValorUdi(fecha)
-      if (!fecha || fecha === todayDateOnly()) setValorUdiActual(udi.valor)
       // Ignora respuestas de una fecha que el usuario ya cambió.
       if (fechaUdiSolicitada.current === fecha) {
         setValorUdi(udi.valor.toString())
@@ -78,7 +78,8 @@ export default function PagosPage() {
     }
   }
 
-  useEffect(() => { void cargarValorUdi() }, [])
+  // Recibos por cobrar en UDIS: en pesos con la UDI del día en que se pagará cada uno.
+  const { udiParaRecibo } = useUdiPorFecha(pagos.some(pago => pago.moneda === "UDIS"))
 
   // Generar vista de pagos desde pólizas activas
   const pagosView = useMemo(() => pagos
@@ -271,7 +272,7 @@ export default function PagosPage() {
                         return (
                           <button key={pago.id} onClick={() => reciboPorCobrar(pago) && abrirRegistro(pago)} className="block w-full text-left text-xs p-1 rounded bg-muted/50 truncate" style={{ borderLeft: `3px solid ${pago.companiaColor}` }}>
                             {pago.numeroRecibo}/{pago.totalRecibos} · {pago.monto.toLocaleString()} {pago.moneda}
-                            {pago.moneda === "UDIS" && reciboPorCobrar(pago) && valorUdiActual && ` · $${(pago.monto * valorUdiActual).toLocaleString("es-MX", { maximumFractionDigits: 2 })}`}
+                            {pago.moneda === "UDIS" && reciboPorCobrar(pago) && udiParaRecibo(pago.fechaLimite) && ` · $${(pago.monto * udiParaRecibo(pago.fechaLimite)!.valor).toLocaleString("es-MX", { maximumFractionDigits: 2 })}`}
                             {pago.estatusCobranza === "por_validar" && <Badge className="ml-1 text-[10px] px-1 py-0 bg-purple-600 text-white">Por validar</Badge>}
                             {reciboPorCobrar(pago) && diasRestantes <= 7 && <Badge variant="destructive" className="ml-1 text-[10px] px-1 py-0">{diasRestantes < 0 ? "Vencido" : `${diasRestantes}d`}</Badge>}
                           </button>
@@ -293,9 +294,9 @@ export default function PagosPage() {
                   {pagosVisibles.map(pago => (
                     <tr key={pago.id} className="border-b border-border/30 hover:bg-muted/50 transition-colors">
                       <td className="p-4"><p className="font-medium">{pago.clienteNombre}</p><p className="text-xs text-muted-foreground">{pago.companiaNombre}</p></td>
-                      <td className="p-4"><p className="font-mono text-sm">{pago.numeroPoliza}</p><p className="text-xs">Recibo {pago.numeroRecibo}/{pago.totalRecibos} · Anualidad {pago.anualidad}</p></td>
+                      <td className="p-4 max-w-[13rem]"><p className="font-mono text-sm [overflow-wrap:anywhere]">{pago.numeroPoliza}</p><p className="text-xs">Recibo {pago.numeroRecibo}/{pago.totalRecibos} · Anualidad {pago.anualidad}</p></td>
                       <td className="p-4 capitalize">{pago.periodicidad}</td>
-                      <td className="p-4"><p className="font-semibold">{pago.monto.toLocaleString()} {pago.moneda}</p>{pago.moneda === "UDIS" && !reciboPorCobrar(pago) && pago.montoMxn != null && <p className="text-xs text-muted-foreground">${pago.montoMxn.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN · UDI {pago.valorUdi?.toFixed(6)}{pago.fechaPago ? ` del ${formatDateOnly(pago.fechaPago)}` : ""}</p>}{pago.moneda === "UDIS" && reciboPorCobrar(pago) && <p className="text-xs text-muted-foreground">{cargandoUdi ? "Consultando UDI actual..." : valorUdiActual ? `$${(pago.monto * valorUdiActual).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN · UDI actual ${valorUdiActual.toFixed(6)}` : "UDI actual no disponible"}</p>}</td>
+                      <td className="p-4"><p className="font-semibold">{pago.monto.toLocaleString()} {pago.moneda}</p>{pago.moneda === "UDIS" && !reciboPorCobrar(pago) && pago.montoMxn != null && <p className="text-xs text-muted-foreground">${pago.montoMxn.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN · UDI {pago.valorUdi?.toFixed(6)}{pago.fechaPago ? ` del ${formatDateOnly(pago.fechaPago)}` : ""}</p>}{pago.moneda === "UDIS" && reciboPorCobrar(pago) && <EquivalenteUdi udis={pago.monto} udi={udiParaRecibo(pago.fechaLimite)} />}</td>
                       <td className="p-4 text-sm"><p>{formatDateOnly(pago.fechaEmision)}</p><p className="text-xs text-muted-foreground">Límite: {formatDateOnly(pago.fechaLimite)}</p></td>
                       <td className="p-4"><Badge variant={pago.estatusCobranza === "pagado" ? "default" : pago.estatusCobranza === "vencido" ? "destructive" : "secondary"} className={pago.estatusCobranza === "por_validar" ? "bg-purple-600 text-white" : undefined}>{pago.estatusCobranza.replace("_", " ")}</Badge>{pago.comprobanteUrl && <a href={pago.comprobanteUrl} target="_blank" rel="noreferrer" className="mt-1 flex items-center gap-1 text-xs text-blue-600 hover:underline"><FileText className="h-3 w-3" />Comprobante</a>}</td>
                       <td className="p-4"><div className="flex flex-wrap gap-2">{pago.estatusCobranza === "por_validar" ? <><Button size="sm" className="bg-purple-600 hover:bg-purple-700 text-white" disabled={guardando} onClick={() => void confirmarValidacion(pago)}><Check className="mr-1 h-4 w-4" />Validar</Button><Button size="sm" variant="outline" className="text-red-600" onClick={() => { setPagoAnular(pago); setMotivoAnulacion("") }}>Rechazar</Button></> : pago.estatusCobranza === "pagado" ? <Button size="sm" variant="outline" className="text-red-600" onClick={() => { setPagoAnular(pago); setMotivoAnulacion("") }}><Undo2 className="mr-1 h-4 w-4" />Anular pago</Button> : <Button size="sm" onClick={() => abrirRegistro(pago)}>Cobrar</Button>}</div></td>
@@ -312,7 +313,7 @@ export default function PagosPage() {
       <Dialog open={!!pagoSeleccionado} onOpenChange={open => { if (!open) setPagoSeleccionado(null) }}>
         <DialogContent className="sm:max-w-[440px]">
           <DialogHeader><DialogTitle>Registrar pago</DialogTitle><DialogDescription>El pago quedará pendiente de validar; al validarlo se refleja como cobrado.</DialogDescription></DialogHeader>
-          {pagoSeleccionado && <div className="rounded-xl bg-muted/40 p-3 text-sm"><p className="font-mono font-semibold">{pagoSeleccionado.numeroPoliza}</p><p>Recibo {pagoSeleccionado.numeroRecibo}/{pagoSeleccionado.totalRecibos} · Anualidad {pagoSeleccionado.anualidad}</p><p>{pagoSeleccionado.monto.toLocaleString()} {pagoSeleccionado.moneda}</p><p className="text-xs text-muted-foreground">Fecha límite: {formatDateOnly(pagoSeleccionado.fechaLimite)}</p></div>}
+          {pagoSeleccionado && <div className="rounded-xl bg-muted/40 p-3 text-sm"><p className="font-mono font-semibold [overflow-wrap:anywhere]">{pagoSeleccionado.numeroPoliza}</p><p>Recibo {pagoSeleccionado.numeroRecibo}/{pagoSeleccionado.totalRecibos} · Anualidad {pagoSeleccionado.anualidad}</p><p>{pagoSeleccionado.monto.toLocaleString()} {pagoSeleccionado.moneda}</p><p className="text-xs text-muted-foreground">Fecha límite: {formatDateOnly(pagoSeleccionado.fechaLimite)}</p></div>}
           <div className="space-y-2"><Label>Método de pago *</Label><Select value={metodoPago} onValueChange={setMetodoPago}><SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger><SelectContent><SelectItem value="efectivo">Efectivo</SelectItem><SelectItem value="transferencia">Transferencia</SelectItem><SelectItem value="tarjeta">Tarjeta</SelectItem><SelectItem value="domiciliacion">Domiciliación</SelectItem><SelectItem value="cheque">Cheque</SelectItem></SelectContent></Select></div>
           <div className="space-y-2"><Label>Fecha de pago *</Label><Input type="date" value={fechaPago} max={todayDateOnly()} onChange={event => {
             const fecha = event.target.value
@@ -331,7 +332,7 @@ export default function PagosPage() {
       <Dialog open={!!pagoAnular} onOpenChange={open => { if (!open) setPagoAnular(null) }}>
         <DialogContent className="sm:max-w-[440px]">
           <DialogHeader><DialogTitle>{pagoAnular?.estatusCobranza === "por_validar" ? "Rechazar pago" : "Anular pago registrado"}</DialogTitle><DialogDescription>El recibo volverá a pendiente y la acción quedará registrada en el historial.</DialogDescription></DialogHeader>
-          {pagoAnular && <div className="rounded-xl bg-muted/40 p-3 text-sm"><p className="font-mono font-semibold">{pagoAnular.numeroPoliza}</p><p>Recibo {pagoAnular.numeroRecibo}/{pagoAnular.totalRecibos} · {pagoAnular.monto.toLocaleString()} {pagoAnular.moneda}</p></div>}
+          {pagoAnular && <div className="rounded-xl bg-muted/40 p-3 text-sm"><p className="font-mono font-semibold [overflow-wrap:anywhere]">{pagoAnular.numeroPoliza}</p><p>Recibo {pagoAnular.numeroRecibo}/{pagoAnular.totalRecibos} · {pagoAnular.monto.toLocaleString()} {pagoAnular.moneda}</p></div>}
           <div className="space-y-2"><Label>{pagoAnular?.estatusCobranza === "por_validar" ? "Motivo del rechazo *" : "Motivo de anulación *"}</Label><Input value={motivoAnulacion} onChange={event => setMotivoAnulacion(event.target.value)} placeholder="Ej: pago marcado por error" /></div>
           <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setPagoAnular(null)}>Cancelar</Button><Button variant="destructive" disabled={guardando} onClick={confirmarAnulacion}>{guardando ? "Guardando..." : pagoAnular?.estatusCobranza === "por_validar" ? "Rechazar pago" : "Anular pago"}</Button></div>
         </DialogContent>

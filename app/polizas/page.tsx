@@ -23,7 +23,7 @@ import { VehiculoSelector } from "@/components/vehiculo-selector"
 import { FlotillaUnidades } from "@/components/flotilla-unidades"
 import type { VehiculoAxa } from "@/contexts/supabase-context"
 import { formatDateOnly, todayDateOnly } from "@/lib/date-only"
-import { calcularPrimaTotalPlazo, calcularVigenciasPoliza, generarRecibos, reciboComprometido } from "@/lib/payment-schedule"
+import { calcularPrimaTotalPlazo, calcularVigenciasPoliza, diasGraciaObservados, generarRecibos, reciboComprometido } from "@/lib/payment-schedule"
 import { toast } from "sonner"
 import { RAMOS, etiquetaRamo } from "@/lib/ramos"
 import { situacionRenovacion } from "@/lib/renovaciones"
@@ -32,6 +32,8 @@ import { registrarEnBitacora } from "@/lib/bitacora-registro"
 import { coincideTerminos, terminosBusqueda } from "@/lib/busqueda"
 import { useListaPorTandas } from "@/hooks/use-lista-por-tandas"
 import { CargarMas } from "@/components/cargar-mas"
+import { EquivalenteUdi } from "@/components/equivalente-udi"
+import { useUdiPorFecha } from "@/hooks/use-udi-por-fecha"
 
 const ESTATUS_COLORS: Record<string, string> = {
   activa: "bg-green-500/10 text-green-500 border-green-500/20",
@@ -125,8 +127,37 @@ function PolizasContent() {
 
   const [nuevoCliente, setNuevoCliente] = useState({ nombre: "", email: "", telefono: "", empresa: "" })
 
+  // Póliza en UDIS: vista previa de cuánto será cada recibo en pesos con la UDI del día en que
+  // se pagará (su fecha límite). Usa el mismo cálculo de recibos que se guarda al crear la póliza.
+  const capturaEnUdis = modalNuevaPoliza && nuevaPoliza.divisas === "UDIS"
+  const { udiParaRecibo, cargando: cargandoUdi, error: errorUdi } = useUdiPorFecha(capturaEnUdis)
+  const recibosUdisVistaPrevia = useMemo(() => {
+    if (!capturaEnUdis) return []
+    const prima = parseFloat(nuevaPoliza.prima)
+    const primerRecibo = parseFloat(nuevaPoliza.primerRecibo)
+    const esVida = nuevaPoliza.ramo === "vida"
+    const vigenciaFin = esVida ? nuevaPoliza.vigenciaPagoFin : nuevaPoliza.vigenciaFin
+    if (!(prima > 0) || !nuevaPoliza.formaPago || !nuevaPoliza.vigenciaInicio || !vigenciaFin) return []
+    try {
+      return generarRecibos({
+        primaTotal: esVida ? calcularPrimaTotalPlazo(prima, Number(nuevaPoliza.vigenciaVidaPago)) : prima,
+        primaAnual: esVida ? prima : undefined,
+        vigenciaInicio: nuevaPoliza.vigenciaInicio,
+        vigenciaFin,
+        periodicidad: nuevaPoliza.formaPago as SPoliza["formaPago"],
+        primerRecibo: primerRecibo > 0 ? primerRecibo : undefined,
+        diasGraciaPrimerRecibo: nuevaPoliza.diasGraciaPrimerRecibo ? parseInt(nuevaPoliza.diasGraciaPrimerRecibo) : undefined,
+        diasGraciaSubsecuentes: nuevaPoliza.diasGraciaSubsecuentes ? parseInt(nuevaPoliza.diasGraciaSubsecuentes) : undefined,
+      })
+    } catch {
+      return []
+    }
+  }, [capturaEnUdis, nuevaPoliza.prima, nuevaPoliza.primerRecibo, nuevaPoliza.ramo, nuevaPoliza.vigenciaInicio, nuevaPoliza.vigenciaFin,
+    nuevaPoliza.vigenciaPagoFin, nuevaPoliza.vigenciaVidaPago, nuevaPoliza.formaPago, nuevaPoliza.diasGraciaPrimerRecibo, nuevaPoliza.diasGraciaSubsecuentes])
+
   // Estado edición
   const [editForm, setEditForm] = useState({
+    numeroPoliza: "",
     estatus: "" as SPoliza["estatus"] | "",
     comentarios: "", notas: "", prima: "", primaTotal: "",
     formaPago: "" as SPoliza["formaPago"] | "",
@@ -448,6 +479,7 @@ function PolizasContent() {
   const abrirEdicion = (poliza: SPoliza) => {
     setPolizaEditar(poliza)
     setEditForm({
+      numeroPoliza: poliza.numeroPoliza,
       estatus: poliza.estatus,
       comentarios: poliza.comentarios || "",
       notas: poliza.notas || "",
@@ -495,6 +527,15 @@ function PolizasContent() {
 
   const guardarEdicion = async () => {
     if (!polizaEditar) return
+    const numeroPoliza = editForm.numeroPoliza.trim().toUpperCase()
+    if (!numeroPoliza) {
+      toast.error("El número de póliza es obligatorio")
+      return
+    }
+    if (numeroPoliza !== polizaEditar.numeroPoliza && polizas.some(p => p.id !== polizaEditar.id && p.numeroPoliza === numeroPoliza)) {
+      toast.error(`Ya existe otra póliza con el número ${numeroPoliza}`)
+      return
+    }
     if (!editForm.vigenciaInicio) {
       toast.error("La fecha de inicio de vigencia es obligatoria")
       return
@@ -526,6 +567,7 @@ function PolizasContent() {
         : primaPoliza
 
     await actualizarPoliza(polizaEditar.id, {
+      numeroPoliza: numeroPoliza !== polizaEditar.numeroPoliza ? numeroPoliza : undefined,
       estatus: editForm.estatus as SPoliza["estatus"],
       ramo: editForm.ramo && editForm.ramo !== polizaEditar.ramo ? editForm.ramo : undefined,
       grupo: editForm.grupo,
@@ -692,6 +734,12 @@ function PolizasContent() {
     `${busquedaDiferida}|${filtroCompania}|${filtroRamo}|${filtroGrupo}|${filtroEstatus}`,
   )
 
+  // Días de gracia que ya usan los recibos de la póliza en edición (se aplican si no se capturan).
+  const graciaEdicion = useMemo(
+    () => diasGraciaObservados(polizaEditar ? pagosPorPoliza.get(polizaEditar.id) || [] : []),
+    [polizaEditar, pagosPorPoliza],
+  )
+
   const gruposDisponibles = useMemo(() => Array.from(new Set(
     polizas.filter(p => filtroRamo === "todos" || p.ramo === filtroRamo).map(p => p.grupo).filter((grupo): grupo is string => !!grupo),
   )).sort((a, b) => a.localeCompare(b, "es")), [polizas, filtroRamo])
@@ -824,7 +872,7 @@ function PolizasContent() {
                           <p className="font-medium">{poliza.nombreAsegurado || cliente?.nombre || "—"}</p>
                           <p className="text-xs text-muted-foreground">{cliente?.nombre}</p>
                         </td>
-                        <td className="p-3 font-mono text-sm">{poliza.numeroPoliza}</td>
+                        <td className="p-3 font-mono text-sm max-w-[13rem] [overflow-wrap:anywhere]">{poliza.numeroPoliza}</td>
                         <td className="p-3">
                           <Badge variant="outline" style={{ borderColor: compania?.color, color: compania?.color }}>
                             {compania?.nombre || "—"}
@@ -890,7 +938,7 @@ function PolizasContent() {
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex-1 min-w-0">
                         <p className="font-medium truncate">{poliza.nombreAsegurado || cliente?.nombre}</p>
-                        <p className="font-mono text-xs text-muted-foreground">{poliza.numeroPoliza}</p>
+                        <p className="font-mono text-xs text-muted-foreground [overflow-wrap:anywhere]">{poliza.numeroPoliza}</p>
                       </div>
                       <div className="flex items-center gap-1">
                         <Badge className={ESTATUS_COLORS[getEstatusVisible(poliza)] || ESTATUS_COLORS.activa} variant="outline">{getEstatusLabel(getEstatusVisible(poliza))}</Badge>
@@ -963,7 +1011,7 @@ function PolizasContent() {
                       ].map(([label, value]) => (
                         <div key={label} className="space-y-1">
                           <p className="text-xs text-muted-foreground">{label}</p>
-                          <p className="font-medium capitalize">{value}</p>
+                          <p className="font-medium capitalize [overflow-wrap:anywhere]">{value}</p>
                         </div>
                       ))}
                     </div>
@@ -1013,10 +1061,18 @@ function PolizasContent() {
           <Dialog open={modalEditarPoliza} onOpenChange={setModalEditarPoliza}>
             <DialogContent className="glass-strong max-w-3xl">
               <DialogHeader>
-                <DialogTitle className="font-serif text-xl">Editar Póliza: {polizaEditar?.numeroPoliza}</DialogTitle>
+                <DialogTitle className="font-serif text-xl [overflow-wrap:anywhere]">Editar Póliza: {polizaEditar?.numeroPoliza}</DialogTitle>
                 <DialogDescription>Modifica los datos de la póliza; recibos, cobranza y renovación se actualizan en todos los módulos.</DialogDescription>
               </DialogHeader>
               <div className="space-y-4 mt-2 max-h-[70vh] overflow-y-auto pr-2">
+                <div>
+                  <Label className="text-xs">Número de póliza</Label>
+                  <Input
+                    value={editForm.numeroPoliza}
+                    onChange={e => setEditForm(f => ({ ...f, numeroPoliza: e.target.value }))}
+                    className="h-8 font-mono"
+                  />
+                </div>
                 <div>
                   <Label className="text-xs">Estatus</Label>
                   <Select value={editForm.estatus} onValueChange={v => setEditForm(f => ({ ...f, estatus: v as any }))}>
@@ -1154,7 +1210,7 @@ function PolizasContent() {
                   </div>
                 </div>
                 {editForm.divisas === "UDIS" && (
-                  <p className="col-span-2 text-xs text-muted-foreground">Los recibos se conservan en UDIS y se convierten a MXN con el valor UDI de Banco de México de la fecha de pago.</p>
+                  <p className="col-span-2 text-xs text-muted-foreground">Los recibos se conservan en UDIS. Antes de pagar se muestran en pesos con la UDI de su fecha límite, y al registrar el pago se fija con la UDI de la fecha de pago (Banco de México).</p>
                 )}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -1189,12 +1245,15 @@ function PolizasContent() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label className="text-xs">Días Gracia — Primer Recibo</Label>
-                    <Input type="number" min="0" value={editForm.diasGraciaPrimerRecibo} onChange={e => setEditForm(f => ({ ...f, diasGraciaPrimerRecibo: e.target.value }))} className="h-8" placeholder="Ej: 30" />
+                    <Input type="number" min="0" value={editForm.diasGraciaPrimerRecibo} onChange={e => setEditForm(f => ({ ...f, diasGraciaPrimerRecibo: e.target.value }))} className="h-8"
+                      placeholder={graciaEdicion.primerRecibo !== undefined ? `Como sus recibos: ${graciaEdicion.primerRecibo} días` : "Ej: 30"} />
                   </div>
                   <div>
                     <Label className="text-xs">Días Gracia — Subsecuentes</Label>
-                    <Input type="number" min="0" value={editForm.diasGraciaSubsecuentes} onChange={e => setEditForm(f => ({ ...f, diasGraciaSubsecuentes: e.target.value }))} className="h-8" placeholder="Ej: 15" />
+                    <Input type="number" min="0" value={editForm.diasGraciaSubsecuentes} onChange={e => setEditForm(f => ({ ...f, diasGraciaSubsecuentes: e.target.value }))} className="h-8"
+                      placeholder={graciaEdicion.subsecuentes !== undefined ? `Como sus recibos: ${graciaEdicion.subsecuentes} días` : "Ej: 15"} />
                   </div>
+                  <p className="col-span-2 text-xs text-muted-foreground">Déjalos vacíos para conservar los días de gracia que ya usan los recibos de la póliza. Un cargo mensual que vence el mismo día que inicia lleva 0.</p>
                 </div>
                 <div>
                   <Label className="text-xs">Comentarios</Label>
@@ -1432,7 +1491,7 @@ function PolizasContent() {
                   </div>
                 </div>
                 {nuevaPoliza.divisas === "UDIS" && (
-                  <p className="text-xs text-muted-foreground">El valor en pesos se obtiene dinámicamente de Banco de México al cobrar cada recibo.</p>
+                  <p className="text-xs text-muted-foreground">Abajo verás cuánto es cada recibo en pesos con la UDI del día en que se pagará. Al registrar el pago se usa la UDI de la fecha de pago.</p>
                 )}
 
                 {/* Prima anual y forma de pago */}
@@ -1502,6 +1561,26 @@ function PolizasContent() {
                       onChange={e => setNuevaPoliza(p => ({ ...p, recibosSubsecuentes: e.target.value }))} />
                   </div>
                 </div>
+
+                {capturaEnUdis && recibosUdisVistaPrevia.length > 0 && (
+                  <div className="rounded-xl border border-border/60 bg-muted/30 p-3 space-y-2">
+                    <p className="text-sm font-semibold">Recibos en pesos (UDI del día de pago)</p>
+                    {cargandoUdi && <p className="text-xs text-muted-foreground">Consultando UDI de Banco de México…</p>}
+                    {errorUdi && <p className="text-xs text-destructive">{errorUdi}</p>}
+                    <div className="space-y-1 max-h-56 overflow-y-auto">
+                      {recibosUdisVistaPrevia.map(recibo => (
+                        <div key={recibo.numeroRecibo} className="grid grid-cols-[3.5rem_1fr] gap-2 text-xs">
+                          <span className="font-mono font-semibold">{recibo.numeroRecibo}/{recibo.totalRecibos}</span>
+                          <div>
+                            <p className="font-medium">{recibo.monto.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UDIS · paga a más tardar {formatDateOnly(recibo.fechaLimite)}</p>
+                            <EquivalenteUdi udis={recibo.monto} udi={udiParaRecibo(recibo.fechaLimite)} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">Banco de México publica la UDI por quincenas: los recibos marcados como estimados se recalculan solos cuando se publica su valor.</p>
+                  </div>
+                )}
 
                 {/* Tipo de pago */}
                 <div className="space-y-2">

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,7 +12,8 @@ import { estadoCobranzaRecibo, reciboPorCobrar } from "@/lib/payment-schedule"
 import { situacionCobranzaPoliza } from "@/lib/cobranza"
 import { ETIQUETA_RENOVACION, situacionRenovacion } from "@/lib/renovaciones"
 import { resumirComisiones } from "@/lib/comisiones"
-import { obtenerValorUdi } from "@/lib/udi"
+import { useUdiPorFecha } from "@/hooks/use-udi-por-fecha"
+import { EquivalenteUdi } from "@/components/equivalente-udi"
 import { SemaforoPill } from "@/components/semaforo-cobranza"
 
 const ETIQUETA_MOVIMIENTO: Record<string, string> = {
@@ -49,7 +50,6 @@ interface PolizaCobranzaPanelProps {
  */
 export function PolizaCobranzaPanel({ poliza, conAcciones = false }: PolizaCobranzaPanelProps) {
   const { historialPolizas, renovaciones, comisiones, usuariosSistema, validarPago, anularPago, pagosPorPoliza, polizasPorId } = useSupabase()
-  const [valorUdiHoy, setValorUdiHoy] = useState<number | null>(null)
   const [rechazandoId, setRechazandoId] = useState<string | null>(null)
   const [motivoRechazo, setMotivoRechazo] = useState("")
   const [procesandoId, setProcesandoId] = useState<string | null>(null)
@@ -75,10 +75,11 @@ export function PolizaCobranzaPanel({ poliza, conAcciones = false }: PolizaCobra
   const resumenComisiones = resumirComisiones(comisionesPoliza)
   const cobradoMxn = esUdis ? recibos.filter(item => item.estatus === "pagado").reduce((sum, item) => sum + (item.montoMxn ?? 0), 0) : situacion.cobrado
 
-  useEffect(() => {
-    if (!esUdis || !recibos.some(reciboPorCobrar)) return
-    obtenerValorUdi().then(udi => setValorUdiHoy(udi.valor)).catch(() => setValorUdiHoy(null))
-  }, [esUdis, recibos])
+  // Pendientes en UDIS: en pesos con la UDI del día en que se pagará cada recibo.
+  const { udiParaRecibo } = useUdiPorFecha(esUdis && recibos.some(reciboPorCobrar))
+  const pendienteMxn = esUdis
+    ? recibos.filter(reciboPorCobrar).reduce((sum, item) => sum + item.monto * (udiParaRecibo(item.fechaLimite)?.valor ?? 0), 0)
+    : 0
 
   const validar = async (pago: PagoPoliza) => {
     setProcesandoId(pago.id)
@@ -130,7 +131,7 @@ export function PolizaCobranzaPanel({ poliza, conAcciones = false }: PolizaCobra
           <div>
             <p className="text-xs text-muted-foreground">Pendiente</p>
             <p className="font-semibold text-orange-600">{importe(situacion.pendiente, moneda)}</p>
-            {esUdis && valorUdiHoy && situacion.pendiente > 0 && <p className="text-xs text-muted-foreground">≈ {mxn(situacion.pendiente * valorUdiHoy)} hoy</p>}
+            {esUdis && pendienteMxn > 0 && <p className="text-xs text-muted-foreground">≈ {mxn(pendienteMxn)} con la UDI de cada fecha de pago</p>}
           </div>
         </div>
 
@@ -149,11 +150,12 @@ export function PolizaCobranzaPanel({ poliza, conAcciones = false }: PolizaCobra
                       {recibo.moneda === "UDIS" && recibo.montoMxn != null && !reciboPorCobrar(recibo) && (
                         <p className="text-muted-foreground">{mxn(recibo.montoMxn)} · UDI {recibo.valorUdi?.toFixed(6)}{recibo.fechaValorUdi ? ` del ${formatDateOnly(recibo.fechaValorUdi)}` : ""}</p>
                       )}
-                      {recibo.moneda === "UDIS" && reciboPorCobrar(recibo) && valorUdiHoy && (
-                        <p className="text-muted-foreground">≈ {mxn(recibo.monto * valorUdiHoy)} con UDI de hoy</p>
+                      {recibo.moneda === "UDIS" && reciboPorCobrar(recibo) && (
+                        <EquivalenteUdi udis={recibo.monto} udi={udiParaRecibo(recibo.fechaLimite)} className="text-muted-foreground" />
                       )}
                     </div>
                     <div className="hidden sm:block">
+                      <p className="text-muted-foreground">Inicia {formatDateOnly(recibo.fechaEmision)}</p>
                       <p>Vence {formatDateOnly(recibo.fechaLimite)}</p>
                       {recibo.fechaPago && <p className="text-muted-foreground">Pagado {formatDateOnly(recibo.fechaPago)}{recibo.metodoPago ? ` · ${recibo.metodoPago}` : ""}</p>}
                     </div>
@@ -228,8 +230,8 @@ export function PolizaCobranzaPanel({ poliza, conAcciones = false }: PolizaCobra
         <div className="grid grid-cols-2 gap-3 text-xs">
           <div><p className="text-muted-foreground">Fecha de renovación</p><p className="font-medium">{formatDateOnly(renovacion.fecha)} ({renovacion.dias >= 0 ? `en ${renovacion.dias} días` : `hace ${Math.abs(renovacion.dias)} días`})</p></div>
           <div><p className="text-muted-foreground">Avisos al cliente</p><p className="font-medium">{renovacion.generaAviso ? "Activos" : "Detenidos"}</p></div>
-          {polizaAnterior && <div><p className="text-muted-foreground">Renovación de</p><p className="font-mono font-medium">{polizaAnterior.numeroPoliza}</p></div>}
-          {polizaNueva && <div><p className="text-muted-foreground">Renovada con</p><p className="font-mono font-medium">{polizaNueva.numeroPoliza}</p></div>}
+          {polizaAnterior && <div><p className="text-muted-foreground">Renovación de</p><p className="font-mono font-medium [overflow-wrap:anywhere]">{polizaAnterior.numeroPoliza}</p></div>}
+          {polizaNueva && <div><p className="text-muted-foreground">Renovada con</p><p className="font-mono font-medium [overflow-wrap:anywhere]">{polizaNueva.numeroPoliza}</p></div>}
           {renovacionActiva && (
             <div className="col-span-2">
               <p className="text-muted-foreground">Último trámite</p>

@@ -265,7 +265,7 @@ export default function RecordatoriosPage() {
                             <div className="grid grid-cols-2 gap-3 text-xs">
                               <div>
                                 <p className="text-muted-foreground">Póliza</p>
-                                <p className="font-mono font-semibold">{rec.numeroPoliza}</p>
+                                <p className="font-mono font-semibold [overflow-wrap:anywhere]">{rec.numeroPoliza}</p>
                               </div>
                               <div>
                                 <p className="text-muted-foreground">Prima total</p>

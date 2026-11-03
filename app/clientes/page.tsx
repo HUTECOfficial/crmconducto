@@ -560,7 +560,7 @@ export default function ClientesPage() {
                       <div className="space-y-1 max-h-36 overflow-y-auto">
                         {polizasCliente(clienteSeleccionado.id).map(p => (
                           <div key={p.id} className="flex items-center justify-between text-xs p-2 rounded-lg bg-muted/40">
-                            <span className="font-mono font-medium">{p.numeroPoliza}</span>
+                            <span className="font-mono font-medium [overflow-wrap:anywhere]">{p.numeroPoliza}</span>
                             <div className="flex items-center gap-2">
                               <span className="text-muted-foreground">{etiquetaRamo(p.ramo)}{p.grupo ? ` · ${p.grupo}` : ""}</span>
                               <Badge variant="outline" className="text-xs">{p.estatus}</Badge>

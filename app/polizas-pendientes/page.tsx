@@ -26,6 +26,8 @@ import { reciboPorCobrar } from "@/lib/payment-schedule"
 import { ESTATUS_EN_COBRANZA, ETIQUETA_ESTATUS_COBRANZA, compararPorVencimiento, polizaEnCobranza, situacionCobranzaPoliza, type EstatusEnCobranza, type NivelSemaforo, type SituacionCobranzaPoliza } from "@/lib/cobranza"
 import { ORDEN_SEMAFORO, SEMAFORO, SemaforoPill } from "@/components/semaforo-cobranza"
 import { obtenerValorUdi } from "@/lib/udi"
+import { useUdiPorFecha } from "@/hooks/use-udi-por-fecha"
+import { EquivalenteUdi } from "@/components/equivalente-udi"
 import { etiquetaRamo } from "@/lib/ramos"
 import { ETIQUETA_RENOVACION, situacionRenovacion } from "@/lib/renovaciones"
 
@@ -149,7 +151,6 @@ function PolizasPendientesContent() {
   const [comprobante, setComprobante] = useState<File | null>(null)
   const [fechaPagoAccion, setFechaPagoAccion] = useState(todayDateOnly())
   const [guardando, setGuardando] = useState(false)
-  const [valorUdiHoy, setValorUdiHoy] = useState<number | null>(null)
   // Registrar pago pide revisar y confirmar los datos antes de guardarlos.
   const [confirmandoPago, setConfirmandoPago] = useState(false)
 
@@ -187,10 +188,8 @@ function PolizasPendientesContent() {
   const hoy = todayDateOnly()
   const hayUdis = polizas.some(poliza => poliza.divisas === "UDIS")
 
-  useEffect(() => {
-    if (!hayUdis) return
-    obtenerValorUdi().then(udi => setValorUdiHoy(udi.valor)).catch(() => setValorUdiHoy(null))
-  }, [hayUdis])
+  // Recibos en UDIS: el equivalente en pesos usa la UDI del día en que se pagará cada recibo.
+  const { udiParaRecibo } = useUdiPorFecha(hayUdis)
 
   // La cobranza se calcula desde los recibos de cada póliza, no desde prima emitida - cobrada.
   const filasBase = useMemo(() => polizas
@@ -243,8 +242,8 @@ function PolizasPendientesContent() {
     return acc
   }, {} as Partial<Record<NivelSemaforo, number>>), [filasBase])
 
-  // Totales en MXN: los recibos UDIS cobrados usan su conversión guardada y el saldo,
-  // el valor UDI de hoy (estimado).
+  // Totales en MXN: los recibos UDIS cobrados usan su conversión guardada y los pendientes,
+  // la UDI del día en que se pagará cada uno.
   const totalesMxn = useMemo(() => filas.reduce((acc, { poliza, recibos, situacion }) => {
     if (poliza.divisas !== "UDIS") {
       acc.pendiente += situacion.pendiente
@@ -255,10 +254,13 @@ function PolizasPendientesContent() {
     const convertido = (estatus: string) => recibos.filter(item => item.estatus === estatus).reduce((sum, item) => sum + (item.montoMxn ?? 0), 0)
     acc.cobrado += convertido("pagado")
     acc.porValidar += convertido("por_validar")
-    if (valorUdiHoy) acc.pendiente += situacion.pendiente * valorUdiHoy
-    else if (situacion.pendiente > 0) acc.udisSinConvertir += situacion.pendiente
+    for (const recibo of recibos.filter(reciboPorCobrar)) {
+      const udi = udiParaRecibo(recibo.fechaLimite)
+      if (udi) acc.pendiente += recibo.monto * udi.valor
+      else acc.udisSinConvertir += recibo.monto
+    }
     return acc
-  }, { pendiente: 0, porValidar: 0, cobrado: 0, udisSinConvertir: 0 }), [filas, valorUdiHoy])
+  }, { pendiente: 0, porValidar: 0, cobrado: 0, udisSinConvertir: 0 }), [filas, udiParaRecibo])
   const totalPendiente = totalesMxn.pendiente
   const totalPorValidar = totalesMxn.porValidar
   const totalCobrado = totalesMxn.cobrado
@@ -606,7 +608,7 @@ function PolizasPendientesContent() {
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
               Prima emitida de la lista: ${formatearMonto(totalEmitido)} MXN
-              {hayUdis && (valorUdiHoy ? ` · saldos en UDIS convertidos con UDI de hoy ${valorUdiHoy.toFixed(6)}` : "")}
+              {hayUdis && " · saldos en UDIS convertidos con la UDI del día de pago de cada recibo"}
               {totalesMxn.udisSinConvertir > 0 && ` · ${formatearMonto(totalesMxn.udisSinConvertir)} UDIS pendientes sin convertir (UDI no disponible)`}
             </p>
           </GlassCard>
@@ -733,7 +735,7 @@ function PolizasPendientesContent() {
                           <RechazoBancarioBadge poliza={poliza} />
                           <EstadoRenovacionBadge poliza={poliza} />
                         </td>
-                        <td className={`${celda} font-mono font-bold`}>
+                        <td className={`${celda} font-mono font-bold max-w-[13rem] [overflow-wrap:anywhere]`}>
                           {poliza.numeroPoliza}
                         </td>
                         <td className={celda}>
@@ -769,7 +771,7 @@ function PolizasPendientesContent() {
                           {formatearMonto(primaRecibo)} {recibo?.moneda && recibo.moneda !== "MXN" ? recibo.moneda : ""}
                           {recibo?.moneda === "UDIS" && (recibo.montoMxn != null && recibo.estatus === "por_validar"
                             ? <p className="text-xs font-normal text-muted-foreground">${formatearMonto(recibo.montoMxn)} MXN</p>
-                            : valorUdiHoy ? <p className="text-xs font-normal text-muted-foreground">≈ ${formatearMonto(recibo.monto * valorUdiHoy)} MXN hoy</p> : null)}
+                            : <EquivalenteUdi udis={recibo.monto} udi={udiParaRecibo(recibo.fechaLimite)} className="text-xs font-normal text-muted-foreground" />)}
                         </td>
                         <td className={`${celda} text-center`}>
                           {poliza.registroSistemaCobranza ? (
@@ -864,7 +866,7 @@ function PolizasPendientesContent() {
                     {/* Header de la card */}
                     <div className="flex items-start justify-between gap-3 mb-3">
                       <div>
-                        <p className="font-mono font-bold text-sm">{poliza.numeroPoliza}</p>
+                        <p className="font-mono font-bold text-sm [overflow-wrap:anywhere]">{poliza.numeroPoliza}</p>
                         <Badge
                           variant="outline"
                           className="mt-1"
@@ -909,6 +911,7 @@ function PolizasPendientesContent() {
                       <div>
                         <p className="text-muted-foreground">Prima del recibo</p>
                         <p className="font-bold text-green-700">{formatearMonto(primaRecibo)} {recibo?.moneda || poliza.divisas || "MXN"}</p>
+                        {recibo?.moneda === "UDIS" && reciboPorCobrar(recibo) && <EquivalenteUdi udis={recibo.monto} udi={udiParaRecibo(recibo.fechaLimite)} />}
                       </div>
                       <div>
                         <p className="text-muted-foreground">En sistema</p>

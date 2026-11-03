@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { textoBuscablePoliza } from '@/lib/busqueda'
 import { useAuth } from '@/contexts/auth-context'
 import { auditLogger, AuditEventType } from '@/lib/security/audit-logger'
-import { calcularMontoMxnUdis, calcularPrimaTotalPlazo, calcularVigenciasPoliza, completarImportesComprometidos, generarRecibos, reciboComprometido, reciboPorCobrar, type EstadoRecibo } from '@/lib/payment-schedule'
+import { calcularMontoMxnUdis, calcularPrimaTotalPlazo, calcularVigenciasPoliza, completarImportesComprometidos, diasGraciaObservados, generarRecibos, reciboComprometido, reciboPorCobrar, type EstadoRecibo } from '@/lib/payment-schedule'
 import { compareDateOnly, todayDateOnly } from '@/lib/date-only'
 import type { Ramo } from '@/lib/ramos'
 import { baseComisionRecibo, calcularComision, estadoComisionAlAnularPago, type EstadoComision } from '@/lib/comisiones'
@@ -929,6 +929,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     if (recibosError) throw recibosError
     const recibosActuales = (recibosDb || []).map(mapearPago)
     const pendientes = recibosActuales.filter(reciboPorCobrar)
+    // Sin días de gracia capturados se respetan los que ya usan sus recibos, no los 30 por defecto.
+    const graciaObservada = diasGraciaObservados(recibosActuales)
     const totalConfigurado = Number(configuracion.primaTotal || configuracion.prima || 0)
     const entradaRecibos = {
       primaTotal: totalConfigurado,
@@ -939,8 +941,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       primerRecibo: configuracion.primerRecibo,
       recibosPagados: recibosActuales,
       periodicidadPagados: actual.formaPago,
-      diasGraciaPrimerRecibo: configuracion.diasGraciaPrimerRecibo,
-      diasGraciaSubsecuentes: configuracion.diasGraciaSubsecuentes,
+      diasGraciaPrimerRecibo: configuracion.diasGraciaPrimerRecibo ?? graciaObservada.primerRecibo,
+      diasGraciaSubsecuentes: configuracion.diasGraciaSubsecuentes ?? graciaObservada.subsecuentes,
     }
     // Los recibos por validar se conservan igual que los pagados: ya hay un pago registrado.
     // Los que se importaron en $0 reciben el importe que les toca para que el saldo cuadre.

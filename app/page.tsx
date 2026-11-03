@@ -218,7 +218,7 @@ export default function DashboardPage() {
                         <div className="flex items-start justify-between mb-2">
                           <div className="flex-1">
                             <p className="font-semibold">{cliente?.nombre}</p>
-                            <p className="text-sm text-muted-foreground">{poliza.numeroPoliza}</p>
+                            <p className="text-sm text-muted-foreground [overflow-wrap:anywhere]">{poliza.numeroPoliza}</p>
                           </div>
                           <Badge variant="secondary" className={colorSemaforo}>
                             {situacion.semaforo === "morado" ? "Por validar" : situacion.diasRestantes === undefined ? "Sin fecha" : yaVencida ? `Vencida ${Math.abs(diasDiferencia)}d` : `${diasDiferencia}d restantes`}
@@ -284,7 +284,7 @@ export default function DashboardPage() {
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex-1">
                           <p className="font-semibold">{cliente?.nombre}</p>
-                          <p className="text-sm text-muted-foreground">{poliza.numeroPoliza}</p>
+                          <p className="text-sm text-muted-foreground [overflow-wrap:anywhere]">{poliza.numeroPoliza}</p>
                         </div>
                         <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-200">
                           En Trámite
