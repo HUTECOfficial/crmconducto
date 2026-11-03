@@ -703,9 +703,11 @@ function PolizasPendientesContent() {
 
           {/* Tabla de Pólizas Pendientes - Desktop */}
           <GlassCard className="overflow-hidden hidden lg:block">
-            <div className="overflow-x-auto">
+            {/* Scroll propio a la altura de la pantalla: así el encabezado negro queda fijo
+                al bajar y la barra horizontal siempre está a la vista. */}
+            <div className="overflow-auto max-h-[calc(100vh-6rem)]">
               <table className="w-full text-sm">
-                <thead>
+                <thead className="sticky top-0 z-20 [&_th]:bg-zinc-900">
                   <tr className="bg-zinc-900 text-white">
                     <th className="p-3 text-left font-bold border-r border-zinc-700">VENCE EN</th>
                     <th className="p-3 text-left font-bold border-r border-zinc-700">PÓLIZA</th>
