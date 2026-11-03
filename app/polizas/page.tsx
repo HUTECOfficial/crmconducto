@@ -241,6 +241,12 @@ function PolizasContent() {
     }
   }, [editForm.vigenciaInicio, editForm.vigenciaVidaPago, editForm.vigenciaVidaProducto, polizaEditar?.ramo])
 
+  // Fuera de Vida la prima capturada es la prima total del plazo.
+  useEffect(() => {
+    if (!polizaEditar || polizaEditar.ramo === "vida") return
+    setEditForm(form => form.primaTotal === form.prima ? form : { ...form, primaTotal: form.prima })
+  }, [editForm.prima, polizaEditar])
+
   useEffect(() => {
     if (polizaEditar?.ramo !== "vida" || !editForm.prima || !editForm.vigenciaVidaPago) return
     try {
@@ -484,7 +490,8 @@ function PolizasContent() {
       comentarios: poliza.comentarios || "",
       notas: poliza.notas || "",
       prima: poliza.prima.toString(),
-      primaTotal: (poliza.primaTotal ?? poliza.prima).toString(),
+      // La importación dejó prima_total en 0: en ese caso la prima total es la prima.
+      primaTotal: (poliza.primaTotal || poliza.prima).toString(),
       formaPago: poliza.formaPago,
       tipoPago: poliza.tipoPago || "",
       ultimoDiaPago: poliza.ultimoDiaPago || "",
@@ -1128,7 +1135,7 @@ function PolizasContent() {
                   </div>
                 </div>
                 <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-                  Si la prima o la forma de pago cambian, los recibos ya cobrados se conservan y sólo se recalculan los pendientes a partir de donde termina lo pagado. No se permite reducir el total por debajo de lo ya cobrado.
+                  Si la prima o la forma de pago cambian, los recibos ya cobrados se conservan y sólo se recalculan los pendientes a partir de donde termina lo pagado. Los pagados que llegaron del Excel sin importe sí se recalculan con la prima y el primer recibo. No se permite reducir el total por debajo de lo ya cobrado.
                 </p>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -1239,8 +1246,11 @@ function PolizasContent() {
                   </div>
                   <div>
                     <Label className="text-xs">Recibos subsecuentes ({editForm.divisas})</Label>
-                    <Input type="number" value={editForm.recibosSubsecuentes} onChange={e => setEditForm(f => ({ ...f, recibosSubsecuentes: e.target.value }))} className="h-8" placeholder="0.00" />
+                    <Input type="number" value={editForm.recibosSubsecuentes} readOnly className="h-8 bg-muted" placeholder="0.00" />
                   </div>
+                  <p className="col-span-2 text-xs text-muted-foreground">
+                    Los subsecuentes se calculan solos: (prima total − primer recibo) ÷ recibos restantes. Para cambiarlos, ajusta la prima total o el primer recibo.
+                  </p>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>

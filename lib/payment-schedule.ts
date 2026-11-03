@@ -25,7 +25,15 @@ export interface ReciboExistente {
   fechaLimite: string
   fechaPago?: string
   estatus: EstadoRecibo
+  /**
+   * El importe no lo capturó nadie: el recibo se importó sin importe y el sistema le asignó el
+   * que le toca según la prima. Se recalcula si cambian la prima o el primer recibo.
+   */
+  importeEstimado?: boolean
 }
+
+/** Nota con la que la importación marca los recibos que llegaron sin importe. */
+export const MARCA_IMPORTE_POR_CAPTURAR = 'Importe pendiente de capturar'
 
 export interface ReciboProgramado {
   monto: number
@@ -193,17 +201,20 @@ function finCoberturaPagados(pagados: ReciboExistente[], input: GenerarRecibosIn
 /**
  * Recibos cobrados o por validar que llegaron sin importe ($0, p. ej. importados): reciben el importe
  * que les toca en el calendario completo con que se emitieron (el 1 usa "primer recibo" si se capturó).
- * Así el saldo pendiente no carga toda la prima. Devuelve todos los comprometidos, ordenados.
+ * Así el saldo pendiente no carga toda la prima. Los que ya recibieron un importe estimado se
+ * recalculan con la configuración actual (p. ej. si se corrige la prima o el primer recibo).
+ * Devuelve todos los comprometidos, ordenados.
  */
 export function completarImportesComprometidos(input: GenerarRecibosInput): ReciboExistente[] {
   const comprometidos = [...(input.recibosPagados || [])]
     .filter(reciboComprometido)
     .sort((left, right) => left.numeroRecibo - right.numeroRecibo)
-  if (!comprometidos.some(recibo => recibo.monto <= 0)) return comprometidos
+  const porCompletar = (recibo: ReciboExistente) => recibo.monto <= 0 || !!recibo.importeEstimado
+  if (!comprometidos.some(porCompletar)) return comprometidos
 
   const plan = generarRecibos({ ...input, periodicidad: input.periodicidadPagados ?? input.periodicidad, recibosPagados: [] })
   return comprometidos.map(recibo => {
-    if (recibo.monto > 0) return recibo
+    if (!porCompletar(recibo)) return recibo
     const lugar = plan.find(item => item.numeroRecibo === recibo.numeroRecibo && item.totalRecibos === recibo.totalRecibos)
     const monto = lugar?.monto ?? (recibo.numeroRecibo === 1 && input.primerRecibo && input.primerRecibo > 0 ? input.primerRecibo : 0)
     return monto > 0 ? { ...recibo, monto } : recibo

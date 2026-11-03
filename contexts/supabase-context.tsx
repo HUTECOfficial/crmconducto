@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { textoBuscablePoliza } from '@/lib/busqueda'
 import { useAuth } from '@/contexts/auth-context'
 import { auditLogger, AuditEventType } from '@/lib/security/audit-logger'
-import { calcularMontoMxnUdis, calcularPrimaTotalPlazo, calcularVigenciasPoliza, completarImportesComprometidos, diasGraciaObservados, generarRecibos, reciboComprometido, reciboPorCobrar, type EstadoRecibo } from '@/lib/payment-schedule'
+import { calcularMontoMxnUdis, calcularPrimaTotalPlazo, calcularVigenciasPoliza, completarImportesComprometidos, diasGraciaObservados, generarRecibos, MARCA_IMPORTE_POR_CAPTURAR, reciboComprometido, reciboPorCobrar, type EstadoRecibo } from '@/lib/payment-schedule'
 import { compareDateOnly, todayDateOnly } from '@/lib/date-only'
 import type { Ramo } from '@/lib/ramos'
 import { baseComisionRecibo, calcularComision, estadoComisionAlAnularPago, type EstadoComision } from '@/lib/comisiones'
@@ -153,6 +153,8 @@ export interface PagoPoliza {
   referencia?: string
   estatus: EstadoRecibo
   notas?: string
+  /** Importado sin importe: el monto lo puso el sistema según la prima (ver completarImportesComprometidos). */
+  importeEstimado?: boolean
   anuladoEn?: string
   anuladoPor?: string
   motivoAnulacion?: string
@@ -313,6 +315,7 @@ function mapearPago(item: any): PagoPoliza {
     referencia: item.referencia || undefined,
     estatus: item.estatus as EstadoRecibo,
     notas: item.notas || undefined,
+    importeEstimado: (item.notas || '').includes(MARCA_IMPORTE_POR_CAPTURAR),
     anuladoEn: item.anulado_en || undefined,
     anuladoPor: item.anulado_por || undefined,
     motivoAnulacion: item.motivo_anulacion || undefined,

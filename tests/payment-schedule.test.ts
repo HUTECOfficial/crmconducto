@@ -261,3 +261,24 @@ test('días de gracia observados: respeta la práctica de la póliza', () => {
   ]), { primerRecibo: 30, subsecuentes: 0 })
   assert.deepEqual(diasGraciaObservados([]), { primerRecibo: undefined, subsecuentes: undefined })
 })
+
+test('importes estimados de recibos importados se recalculan si cambia la prima o el primer recibo', () => {
+  // Caso 8201004028: recibos 1 y 2 importados sin importe, autocompletados con una prima previa de $47,607.68.
+  const pagado = (id: string, numeroRecibo: number, fechaEmision: string): ReciboExistente => ({
+    id, monto: 11_901.92, numeroRecibo, totalRecibos: 4, fechaEmision, fechaLimite: fechaEmision, estatus: 'pagado', importeEstimado: true,
+  })
+  const entrada = {
+    primaTotal: 276_074.2,
+    primerRecibo: 69_923.35,
+    vigenciaInicio: '2026-05-22',
+    vigenciaFin: '2027-05-22',
+    periodicidad: 'trimestral' as const,
+    recibosPagados: [pagado('r1', 1, '2026-05-22'), pagado('r2', 2, '2026-08-22')],
+  }
+  assert.deepEqual(completarImportesComprometidos(entrada).map(recibo => recibo.monto), [69_923.35, 68_716.95])
+  assert.deepEqual(generarRecibos(entrada).map(recibo => recibo.monto), [68_716.95, 68_716.95])
+
+  // Un importe capturado de verdad (sin marca) no se toca.
+  const capturado = { ...entrada, recibosPagados: entrada.recibosPagados.map(recibo => ({ ...recibo, importeEstimado: false })) }
+  assert.deepEqual(completarImportesComprometidos(capturado).map(recibo => recibo.monto), [11_901.92, 11_901.92])
+})
