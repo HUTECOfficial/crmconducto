@@ -25,6 +25,7 @@ const EJEMPLOS = [
   ["Registrar pago", "📷 Foto del comprobante + \"pago de la 96695U04 por transferencia\""],
   ["Actualizar póliza", "Cambia el vendedor de la 2964 a Maggie"],
   ["Prospectos", "Nuevo prospecto Juan Pérez 5512345678, quiere GMM, referido"],
+  ["Comentar prospecto", "Comenta en Juan Pérez que pide cotización el lunes"],
   ["Agenda", "Agenda cita con Lozano el jueves a las 11"],
   ["Comentar", "Anota en la 2964 que el cliente paga el viernes"],
 ]

@@ -66,7 +66,7 @@ const esquemas = {
     estatus: z.enum(ESTATUS_PROSPECTO).optional(),
     prioridad: z.enum(PRIORIDADES).optional(),
     asignado_a: z.string().max(100).optional(),
-    nota: z.string().max(1000).optional(),
+    comentario: z.string().max(1000).optional(),
   }),
   proponer_actualizar_poliza: z.object({
     numero_poliza: z.string().min(1),
@@ -91,7 +91,7 @@ const esquemas = {
 export const DEFINICIONES_ACCIONES: Anthropic.Tool[] = [
   {
     name: "proponer_comentario",
-    description: "Prepara un comentario de seguimiento en una póliza (p. ej. 'le marqué, paga el viernes'). No lo guarda: el usuario lo confirma con un botón. Úsala cuando pidan anotar, comentar o dejar seguimiento.",
+    description: "Prepara un comentario de seguimiento en una PÓLIZA (p. ej. 'le marqué, paga el viernes'). No lo guarda: el usuario lo confirma con un botón. Para comentar a un PROSPECTO usa proponer_actualizar_prospecto con 'comentario'.",
     eager_input_streaming: true,
     input_schema: {
       type: "object",
@@ -142,7 +142,7 @@ export const DEFINICIONES_ACCIONES: Anthropic.Tool[] = [
   },
   {
     name: "proponer_actualizar_prospecto",
-    description: "Prepara cambios a un prospecto: estatus (nuevo, contactado, en-seguimiento, convertido, perdido, aprobado, rechazado), prioridad, responsable o una nota de seguimiento. No lo guarda: el usuario lo confirma con un botón.",
+    description: "Prepara cambios a un prospecto o le agrega un comentario de seguimiento (se guarda en los Comentarios del prospecto, igual que el botón 'Comentar' de Prospección): estatus (nuevo, contactado, en-seguimiento, convertido, perdido, aprobado, rechazado), prioridad, responsable y/o comentario. Úsala cuando pidan comentar, anotar o dar seguimiento a un prospecto. No lo guarda: el usuario lo confirma con un botón.",
     eager_input_streaming: true,
     input_schema: {
       type: "object",
@@ -151,7 +151,7 @@ export const DEFINICIONES_ACCIONES: Anthropic.Tool[] = [
         estatus: { type: "string", enum: [...ESTATUS_PROSPECTO] },
         prioridad: { type: "string", enum: [...PRIORIDADES] },
         asignado_a: { type: "string", description: "Nuevo responsable (nombre de un usuario del CRM)." },
-        nota: { type: "string", description: "Nota de seguimiento que se agrega a las notas." },
+        comentario: { type: "string", description: "Comentario de seguimiento, p. ej. 'le llamé, pide cotización el lunes'." },
       },
       required: ["prospecto"],
     },
@@ -270,9 +270,9 @@ export function herramientasDeAcciones(solicitante: Solicitante, propuestas: Pro
           if (d.estatus && d.estatus !== prospecto.estatus) cambios.push(`Estatus: ${prospecto.estatus} → ${d.estatus}`)
           if (d.prioridad && d.prioridad !== prospecto.prioridad) cambios.push(`Prioridad: ${prospecto.prioridad} → ${d.prioridad}`)
           if (responsable && responsable !== prospecto.asignado_a) cambios.push(`Responsable: ${prospecto.asignado_a || "sin asignar"} → ${responsable}`)
-          if (d.nota) cambios.push(`Nota: "${d.nota}"`)
+          if (d.comentario) cambios.push(`💬 Comentario: "${d.comentario}"`)
           if (!cambios.length) throw new Error("No hay cambios: el prospecto ya tiene esos datos.")
-          propuesta = await proponer(db, solicitante, "prospecto_cambio", { prospectoId: prospecto.id, estatus: d.estatus, prioridad: d.prioridad, asignadoA: responsable, nota: d.nota },
+          propuesta = await proponer(db, solicitante, "prospecto_cambio", { prospectoId: prospecto.id, estatus: d.estatus, prioridad: d.prioridad, asignadoA: responsable, nota: d.comentario },
             `✏️ Prospecto ${prospecto.nombre}\n${cambios.join("\n")}`)
         } else if (nombre === "proponer_actualizar_poliza") {
           const d = validada.data as z.infer<typeof esquemas.proponer_actualizar_poliza>
@@ -445,7 +445,9 @@ async function actualizarProspecto(db: SupabaseServidor, datos: any, usuario: an
   }
   const { error: e2 } = await db.from("prospectos").update(cambios).eq("id", datos.prospectoId)
   if (e2) throw e2
-  return `✅ Prospecto ${actual.nombre} actualizado.`
+  return datos.nota && !datos.estatus && !datos.prioridad && !datos.asignadoA
+    ? `✅ Comentario guardado en el prospecto ${actual.nombre}. Lo verás en Prospección.`
+    : `✅ Prospecto ${actual.nombre} actualizado.`
 }
 
 /** Cambios sin recálculo de recibos. Cancelar cancela los recibos por cobrar, como en el CRM. */

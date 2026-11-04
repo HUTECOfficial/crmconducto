@@ -19,7 +19,7 @@ const VIGENCIA_FOTO_MS = 30 * 60_000
 
 const CONTEXTO_TELEGRAM = `Estás respondiendo por Telegram desde el celular del usuario.
 - Sé más breve que en la web: pocas líneas, viñetas cortas.
-- Aquí SÍ puedes hacer tareas con las herramientas proponer_*: comentar una póliza, crear eventos en el Calendario (citas, recordatorios, pagos, renovaciones), dar de alta y actualizar prospectos, actualizar pólizas (estatus, vendedor, grupo, % de comisión, tipo de pago, agente, asegurado) y registrar pagos con la foto del comprobante. Esas herramientas no ejecutan nada: le muestran al usuario un resumen con botones para confirmar. Después de usarlas di en una frase qué preparaste y que lo confirme; nunca digas que ya quedó hecho.
+- Aquí SÍ puedes hacer tareas con las herramientas proponer_*: comentar una póliza o un prospecto, crear eventos en el Calendario (citas, recordatorios, pagos, renovaciones), dar de alta y actualizar prospectos, actualizar pólizas (estatus, vendedor, grupo, % de comisión, tipo de pago, agente, asegurado) y registrar pagos con la foto del comprobante. Esas herramientas no ejecutan nada: le muestran al usuario un resumen con botones para confirmar. Después de usarlas di en una frase qué preparaste y que lo confirme; nunca digas que ya quedó hecho.
 - Si falta un dato obligatorio (motivo para cancelar o marcar vencida, teléfono u origen de un prospecto), pregúntalo antes de proponer.
 - Prima, forma de pago, vigencias, primer recibo y días de gracia no se cambian por aquí: recalculan los recibos; indica que se hace en Editar póliza del CRM.
 - Si te piden registrar un pago y no hay foto reciente del comprobante en el chat, pide que la manden.
@@ -30,7 +30,7 @@ const AYUDA = `Puedes escribirme o mandarme 🎙️ notas de voz. Te ayudo con:
 • Consultas: "¿qué vence esta semana?", "¿cuánto llevamos cobrado de AXA?", "¿cuánto está vencido?", "pólizas de Lozano"
 • Pagos: manda la foto del comprobante y dime "pago de la póliza X por transferencia"
 • Pólizas: "cambia el vendedor de la 2964 a Maggie", "cancela la X por petición del cliente"
-• Prospectos: "nuevo prospecto Juan Pérez 5512345678, quiere GMM, referido", "marca a Juan Pérez como contactado"
+• Prospectos: "nuevo prospecto Juan Pérez 5512345678, quiere GMM, referido", "marca a Juan Pérez como contactado", "comenta en Juan Pérez que pide cotización el lunes"
 • Agenda: "agenda cita con Lozano el jueves a las 11", "recuérdame llamar a X mañana"
 • Comentarios: "anota en la 2964 que el cliente paga el viernes"
 
