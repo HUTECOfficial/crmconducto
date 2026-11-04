@@ -3,6 +3,7 @@
 import { useState, useMemo, useRef } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { PageHeader } from "@/components/page-header"
+import { coincideTerminos, normalizarBusqueda, terminosBusqueda } from "@/lib/busqueda"
 import { GlassCard } from "@/components/glass-card"
 import { NeoButton } from "@/components/neo-button"
 import { useSupabase, type PagoPoliza } from "@/contexts/supabase-context"
@@ -50,6 +51,7 @@ export default function PagosPage() {
   const [comprobante, setComprobante] = useState<File | null>(null)
   const [fechaPago, setFechaPago] = useState(todayDateOnly())
   const [guardando, setGuardando] = useState(false)
+  const [busqueda, setBusqueda] = useState("")
 
   // Sin fecha consulta el valor de hoy (vista previa); con fecha, el valor de la fecha de pago.
   const fechaUdiSolicitada = useRef<string | undefined>(undefined)
@@ -100,13 +102,19 @@ export default function PagosPage() {
     }), [pagos, polizasPorId, clientesPorId, companiasPorId])
 
   // Agrupar pagos por fecha
-  const pagosPorFecha = useMemo(() => pagosView.reduce((acc, pago) => {
+  // El buscador filtra el calendario y la lista: cliente, póliza, aseguradora o referencia.
+  const pagosFiltrados = useMemo(() => {
+    const terminos = terminosBusqueda(busqueda)
+    if (!terminos.length) return pagosView
+    return pagosView.filter(pago => coincideTerminos(normalizarBusqueda([pago.clienteNombre, pago.numeroPoliza, pago.companiaNombre, pago.referencia].filter(Boolean).join(" ")), terminos))
+  }, [pagosView, busqueda])
+  const pagosPorFecha = useMemo(() => pagosFiltrados.reduce((acc, pago) => {
     const fecha = pago.fechaLimite
     if (!acc[fecha]) acc[fecha] = []
     acc[fecha].push(pago)
     return acc
-  }, {} as Record<string, PagoView[]>), [pagosView])
-  const { visibles: pagosVisibles, restantes, mostrarMas } = useListaPorTandas(pagosView, pagosView.length)
+  }, {} as Record<string, PagoView[]>), [pagosFiltrados])
+  const { visibles: pagosVisibles, restantes, mostrarMas } = useListaPorTandas(pagosFiltrados, busqueda)
 
   const getDiasDelMes = () => {
     const year = mesActual.getFullYear()
@@ -221,6 +229,9 @@ export default function PagosPage() {
         <PageHeader
           title="Pagos"
           subtitle="Calendario de recibos y cobranza"
+          searchValue={busqueda}
+          onSearchChange={setBusqueda}
+          searchPlaceholder="Buscar cliente, póliza, aseguradora o referencia..."
           action={
             <NeoButton className="gap-2" onClick={() => abrirRegistro()}>
               <Plus className="w-5 h-5" />

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { PageHeader } from "@/components/page-header"
+import { coincideTerminos, normalizarBusqueda, terminosBusqueda } from "@/lib/busqueda"
 import { GlassCard } from "@/components/glass-card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -46,6 +47,7 @@ export default function TareasPage() {
   const [tareas, setTareas] = useState<Tarea[]>([])
   const [modalNueva, setModalNueva] = useState(false)
   const [filtroEstado, setFiltroEstado] = useState<"todas" | "pendiente" | "en-progreso" | "completada">("todas")
+  const [busqueda, setBusqueda] = useState("")
   const [tareasEnTiempo, setTareasEnTiempo] = useState<Record<string, number>>({})
 
   const [form, setForm] = useState({
@@ -169,8 +171,10 @@ export default function TareasPage() {
     ))
   }
 
+  const terminosTarea = terminosBusqueda(busqueda)
   const tareasFiltradas = tareas.filter(t =>
-    filtroEstado === "todas" ? true : t.estado === filtroEstado
+    (filtroEstado === "todas" || t.estado === filtroEstado) &&
+    coincideTerminos(normalizarBusqueda([t.titulo, t.descripcion].filter(Boolean).join(" ")), terminosTarea)
   )
 
   const formatearTiempo = (minutos: number) => {
@@ -193,6 +197,9 @@ export default function TareasPage() {
           <PageHeader
             title="Seguimiento de Tareas"
             subtitle="Gestiona y mide el tiempo de tus tareas"
+            searchValue={busqueda}
+            onSearchChange={setBusqueda}
+            searchPlaceholder="Buscar tarea..."
             action={
               <Button onClick={() => setModalNueva(true)} className="gap-2">
                 <Plus className="w-5 h-5" />

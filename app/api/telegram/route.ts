@@ -7,6 +7,7 @@ import { NOMBRE_ASISTENTE } from "@/lib/asistente/personalidad"
 import { supabaseServidor } from "@/lib/supabase-servidor"
 import { editarMensaje, enviarMensaje, escaparHtml, escribiendo, markdownATelegram, responderBoton, urlApp } from "@/lib/telegram/api"
 import { resumenDiario } from "@/lib/telegram/resumen"
+import { DURACION_MAXIMA_SEGUNDOS, transcribirNotaDeVoz } from "@/lib/telegram/voz"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -22,9 +23,10 @@ const CONTEXTO_TELEGRAM = `Estás respondiendo por Telegram desde el celular del
 - Si falta un dato obligatorio (motivo para cancelar o marcar vencida, teléfono u origen de un prospecto), pregúntalo antes de proponer.
 - Prima, forma de pago, vigencias, primer recibo y días de gracia no se cambian por aquí: recalculan los recibos; indica que se hace en Editar póliza del CRM.
 - Si te piden registrar un pago y no hay foto reciente del comprobante en el chat, pide que la manden.
-- Las rutas del CRM que enlaces se convierten en ligas que abren el CRM en el navegador.`
+- Las rutas del CRM que enlaces se convierten en ligas que abren el CRM en el navegador.
+- Los mensajes marcados [Nota de voz transcrita] vienen de un audio: la transcripción puede equivocarse en números de póliza o nombres. Si una búsqueda no encuentra lo que dijeron, propón la opción más parecida o pregunta, en vez de decir sólo que no existe.`
 
-const AYUDA = `Puedo ayudarte con:
+const AYUDA = `Puedes escribirme o mandarme 🎙️ notas de voz. Te ayudo con:
 • Consultas: "¿qué vence esta semana?", "¿cuánto llevamos cobrado de AXA?", "¿cuánto está vencido?", "pólizas de Lozano"
 • Pagos: manda la foto del comprobante y dime "pago de la póliza X por transferencia"
 • Pólizas: "cambia el vendedor de la 2964 a Maggie", "cancela la X por petición del cliente"
@@ -126,15 +128,37 @@ async function atenderMensaje(mensaje: any) {
     return
   }
 
+  // Nota de voz: se transcribe, se le muestra al usuario qué se entendió y se atiende como texto.
+  let textoFinal = texto
+  const audio = mensaje.voice ?? mensaje.audio
+  if (audio) {
+    if (Number(audio.duration) > DURACION_MAXIMA_SEGUNDOS) {
+      await enviarMensaje(chatId, "La nota de voz es muy larga 😅 Mándamela de máximo 3 minutos, o en varias.")
+      return
+    }
+    await escribiendo(chatId)
+    const transcripcion = await transcribirNotaDeVoz(audio.file_id)
+    if (!transcripcion) {
+      await enviarMensaje(chatId, "No alcancé a entender la nota de voz. ¿Me la repites o me lo escribes?")
+      return
+    }
+    await enviarMensaje(chatId, `🎙️ <i>Entendí:</i> «${escaparHtml(transcripcion)}»`)
+    textoFinal = [transcripcion, texto].filter(Boolean).join("\n")
+  }
+
   const { data: conversacion } = await admin.from("telegram_conversaciones").select("*").eq("telegram_chat_id", chatId).maybeSingle()
   // La foto más grande es la de mejor resolución; queda disponible 30 minutos para registrar el pago.
   const foto = Array.isArray(mensaje.photo) ? mensaje.photo[mensaje.photo.length - 1]?.file_id : mensaje.document?.mime_type?.startsWith("image/") ? mensaje.document.file_id : null
   const fotoVigente = foto ?? (conversacion?.foto_file_id && Date.now() - new Date(conversacion.foto_recibida_en).getTime() < VIGENCIA_FOTO_MS ? conversacion.foto_file_id : null)
-  if (!texto && !foto) {
-    await enviarMensaje(chatId, "Por ahora entiendo texto y fotos de comprobantes. 🙂")
+  if (!textoFinal && !foto) {
+    await enviarMensaje(chatId, "Por ahora entiendo texto, notas de voz y fotos de comprobantes. 🙂")
     return
   }
-  const pregunta = foto ? `[Adjunté una foto (comprobante de pago).] ${texto || "Te mando el comprobante de pago."}` : texto
+  const pregunta = [
+    audio ? "[Nota de voz transcrita]" : "",
+    foto ? "[Adjunté una foto (comprobante de pago).]" : "",
+    textoFinal || (foto ? "Te mando el comprobante de pago." : ""),
+  ].filter(Boolean).join(" ")
 
   await escribiendo(chatId)
   const anteriores: Array<{ rol: "user" | "assistant"; texto: string }> = conversacion?.mensajes || []

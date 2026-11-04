@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase"
 import { ESTATUS_EN_COBRANZA } from "@/lib/cobranza"
 import { addDaysDateOnly, todayDateOnly } from "@/lib/date-only"
 import { etiquetaRamo } from "@/lib/ramos"
+import { patronAproximado } from "@/lib/busqueda"
 
 /**
  * Herramientas de Coni, el asistente del CRM. Todas son de SÓLO LECTURA: consultan Supabase y
@@ -13,6 +14,7 @@ import { etiquetaRamo } from "@/lib/ramos"
 const POLIZA_CAMPOS = "id, numero_poliza, ramo, grupo, estatus, vigencia_inicio, vigencia_fin, prima, forma_pago, divisas, nombre_asegurado, clientes(id, nombre, telefono), companias(nombre)"
 
 const texto = (valor: string) => valor.trim().replace(/[%,()]/g, " ").replace(/\s+/g, " ")
+
 
 function resumirPoliza(p: any) {
   return {
@@ -167,13 +169,28 @@ async function buscarPolizas({ busqueda, solo_en_cobranza }: z.infer<typeof esqu
   if (solo_en_cobranza) consulta = consulta.in("estatus", [...ESTATUS_EN_COBRANZA])
   const { data, error } = await consulta
   if (error) throw error
+  if (!data.length) {
+    const patron = patronAproximado(busqueda)
+    if (patron) {
+      const { data: parecidas } = await supabase.from("polizas").select(POLIZA_CAMPOS).ilike("numero_poliza", patron).limit(5)
+      if (parecidas?.length) {
+        return { encontradas: 0, coincidencias_aproximadas: parecidas.map(resumirPoliza), nota: "No hubo coincidencia exacta; estas pólizas tienen un número parecido. Confirma con el usuario cuál es." }
+      }
+    }
+  }
   return { encontradas: data.length, polizas: data.map(resumirPoliza) }
 }
 
 async function cobranzaPoliza({ numero_poliza }: z.infer<typeof esquemas.cobranza_poliza>) {
   const { data: polizas, error } = await supabase.from("polizas").select(POLIZA_CAMPOS).ilike("numero_poliza", texto(numero_poliza)).limit(3)
   if (error) throw error
-  if (!polizas.length) return { error: `No encontré la póliza ${numero_poliza}. Prueba con buscar_polizas.` }
+  if (!polizas.length) {
+    const patron = patronAproximado(numero_poliza)
+    const { data: parecidas } = patron ? await supabase.from("polizas").select("numero_poliza").ilike("numero_poliza", patron).limit(5) : { data: null }
+    return parecidas?.length
+      ? { error: `No encontré la póliza ${numero_poliza}. Números parecidos: ${parecidas.map(p => p.numero_poliza).join(", ")}. Confirma con el usuario cuál es.` }
+      : { error: `No encontré la póliza ${numero_poliza}. Prueba con buscar_polizas.` }
+  }
   const hoy = todayDateOnly()
   return {
     polizas: await Promise.all(polizas.map(async poliza => {

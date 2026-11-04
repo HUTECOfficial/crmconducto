@@ -38,3 +38,12 @@ export function textoBuscablePoliza(
     poliza.grupo,
   ].filter(Boolean).join(' '))
 }
+
+/**
+ * Patrón aproximado para números de póliza dictados por voz: "9669504" encuentra "96695U04"
+ * (mismos caracteres en el mismo orden, con letras o separadores de por medio). Sólo con 5 o más.
+ */
+export function patronAproximado(numero: string): string | null {
+  const caracteres = numero.toUpperCase().replace(/[^A-Z0-9]/g, "")
+  return caracteres.length >= 5 ? `%${caracteres.split("").join("%")}%` : null
+}

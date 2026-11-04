@@ -175,15 +175,24 @@ function PolizasContent() {
     if (filtro === "renovaciones") setFiltroEstatus("pendientes-renovar")
   }, [searchParams])
 
-  // Enlace directo desde la bitácora: /polizas?poliza=<id> abre su detalle una sola vez.
-  const polizaDesdeEnlace = searchParams.get("poliza")
-  const enlaceAbierto = useRef<string | null>(null)
+  // Desde la búsqueda rápida: /polizas?compania=<id> muestra las pólizas de esa aseguradora.
+  const companiaDesdeEnlace = searchParams.get("compania")
   useEffect(() => {
-    if (!polizaDesdeEnlace || enlaceAbierto.current === polizaDesdeEnlace) return
+    if (!companiaDesdeEnlace) return
+    setFiltroCompania(companiaDesdeEnlace)
+    setFiltroEstatus("todos")
+    window.history.replaceState(null, "", window.location.pathname)
+  }, [companiaDesdeEnlace])
+
+  // Enlace directo (bitácora, búsqueda rápida, Coni): /polizas?poliza=<id> abre su detalle una sola vez.
+  // Al abrirla se quita el parámetro: así una recarga de datos no la reabre y buscarla otra vez sí.
+  const polizaDesdeEnlace = searchParams.get("poliza")
+  useEffect(() => {
+    if (!polizaDesdeEnlace) return
     const poliza = polizas.find(p => p.id === polizaDesdeEnlace)
     if (!poliza) return
-    enlaceAbierto.current = polizaDesdeEnlace
     setPolizaSeleccionada(poliza)
+    window.history.replaceState(null, "", window.location.pathname)
   }, [polizaDesdeEnlace, polizas])
 
   useEffect(() => {

@@ -39,6 +39,7 @@ import {
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/contexts/auth-context"
 import { Button } from "@/components/ui/button"
+import { abrirBusquedaRapida, etiquetaAtajoBusqueda } from "@/lib/atajo-busqueda"
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard, permiso: "dashboard" as const },
@@ -85,6 +86,8 @@ export function Sidebar() {
   const { usuario, tienePermiso, logout } = useAuth()
   const [submenuAbierto, setSubmenuAbierto] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [atajo, setAtajo] = useState("⌘K")
+  useEffect(() => setAtajo(etiquetaAtajoBusqueda()), [])
 
   // Cerrar sidebar cuando cambia la ruta (en móvil)
   useEffect(() => {
@@ -154,7 +157,9 @@ export function Sidebar() {
         <h1 className="text-lg font-bold font-serif bg-gradient-to-r from-primary via-secondary to-accent bg-clip-text text-transparent">
           CONDUCTO CRM
         </h1>
-        <div className="w-11" /> {/* Spacer para centrar el título */}
+        <button className="hamburger-btn" onClick={abrirBusquedaRapida} aria-label="Búsqueda rápida">
+          <Search className="w-5 h-5" />
+        </button>
       </header>
 
       {/* Overlay para cerrar sidebar en móvil */}
@@ -189,6 +194,17 @@ export function Sidebar() {
           </div>
         </div>
       </div>
+
+      {/* Búsqueda rápida global (⌘K en Mac, Ctrl + K en Windows) */}
+      <button
+        type="button"
+        onClick={() => { setSidebarOpen(false); abrirBusquedaRapida() }}
+        className="mb-4 flex w-full items-center gap-3 rounded-2xl border border-border/60 bg-background/60 px-4 py-2.5 text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+      >
+        <Search className="h-4 w-4" />
+        <span className="flex-1 text-left">Búsqueda rápida</span>
+        <kbd className="rounded-md border border-border bg-muted px-1.5 py-0.5 text-[11px] font-medium">{atajo}</kbd>
+      </button>
 
       {/* Navegación */}
       <nav className="space-y-2 flex-1 overflow-y-auto">

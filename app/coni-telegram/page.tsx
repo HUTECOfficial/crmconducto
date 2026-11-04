@@ -148,6 +148,7 @@ export default function ConiTelegramPage() {
                 ))}
               </div>
               <ul className="space-y-1 text-sm text-muted-foreground">
+                <li>• Puedes escribirle o mandarle <b>notas de voz</b> (hasta 3 minutos): te responde qué entendió y lo atiende igual.</li>
                 <li>• Antes de guardar algo, {NOMBRE_ASISTENTE} te muestra el resumen con botones <b>✅ Confirmar</b> / <b>❌ Cancelar</b>.</li>
                 <li>• Los pagos quedan <b>por validar</b>; alguien del equipo los valida en Pólizas pendientes, igual que hoy.</li>
                 <li>• De lunes a sábado a las 8:00 te manda el resumen del día. Escribe <code>/resumen</code> para pedirlo cuando quieras.</li>

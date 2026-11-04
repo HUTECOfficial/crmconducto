@@ -7,6 +7,7 @@ import { calcularMontoMxnUdis, reciboPorCobrar } from "@/lib/payment-schedule"
 import { valorUdiDelDia } from "@/lib/udi-dof"
 import { descargarArchivo } from "@/lib/telegram/api"
 import type { HerramientasExtra } from "@/lib/asistente/agente"
+import { patronAproximado } from "@/lib/busqueda"
 
 /**
  * Tareas que Coni puede hacer desde Telegram. Coni sólo PROPONE (valida y arma un resumen);
@@ -200,9 +201,17 @@ async function buscarPoliza(db: SupabaseServidor, numero: string) {
     .select("id, numero_poliza, cliente_id, comentarios, estatus, clientes(nombre)")
     .ilike("numero_poliza", numero.trim()).limit(2)
   if (error) throw error
-  if (!data?.length) throw new Error(`No encontré la póliza ${numero}.`)
-  if (data.length > 1) throw new Error(`Hay más de una póliza que coincide con ${numero}; dime el número completo.`)
-  return data[0] as any
+  if (data?.length === 1) return data[0] as any
+  if (data && data.length > 1) throw new Error(`Hay más de una póliza que coincide con ${numero}; dime el número completo.`)
+  // Número dictado por voz (p. ej. "9669504" por "96695U04"): sólo si el parecido es único.
+  // El resumen de confirmación muestra el número real, así que el usuario lo valida.
+  const patron = patronAproximado(numero)
+  if (patron) {
+    const { data: parecidas } = await db.from("polizas").select("id, numero_poliza, cliente_id, comentarios, estatus, clientes(nombre)").ilike("numero_poliza", patron).limit(3)
+    if (parecidas?.length === 1) return parecidas[0] as any
+    if (parecidas && parecidas.length > 1) throw new Error(`No encontré ${numero}; números parecidos: ${parecidas.map(p => p.numero_poliza).join(", ")}. ¿Cuál es?`)
+  }
+  throw new Error(`No encontré la póliza ${numero}.`)
 }
 
 type TipoAccion = "comentario" | "evento" | "pago" | "prospecto" | "prospecto_cambio" | "poliza_cambio"

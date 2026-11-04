@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { PageHeader } from "@/components/page-header"
+import { coincideTerminos, normalizarBusqueda, terminosBusqueda } from "@/lib/busqueda"
 import { GlassCard } from "@/components/glass-card"
 import { NeoButton } from "@/components/neo-button"
 import { useSupabase } from "@/contexts/supabase-context"
@@ -44,6 +45,7 @@ export default function RecordatoriosPage() {
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [filtro, setFiltro] = useState<"todos" | "alta" | "media" | "baja">("todos")
   const [expandido, setExpandido] = useState<string | null>(null)
+  const [busqueda, setBusqueda] = useState("")
 
   // Auto-generar recordatorios desde pólizas con fecha límite de pago o próximas a vencer
   const recordatoriosAuto = useMemo((): RecordatorioAuto[] => {
@@ -125,10 +127,12 @@ export default function RecordatoriosPage() {
     })
   }, [polizas, clientesPorId, companiasPorId, pagosPorPoliza])
 
-  const recordatoriosFiltrados = useMemo(() => filtro === "todos"
-    ? recordatoriosAuto
-    : recordatoriosAuto.filter(r => r.urgencia === filtro), [recordatoriosAuto, filtro])
-  const { visibles: recordatoriosVisibles, restantes, mostrarMas } = useListaPorTandas(recordatoriosFiltrados, filtro)
+  const recordatoriosFiltrados = useMemo(() => {
+    const terminos = terminosBusqueda(busqueda)
+    return recordatoriosAuto.filter(r => (filtro === "todos" || r.urgencia === filtro) &&
+      coincideTerminos(normalizarBusqueda([r.titulo, r.descripcion, r.clienteNombre, r.clienteTelefono, r.numeroPoliza].join(" ")), terminos))
+  }, [recordatoriosAuto, filtro, busqueda])
+  const { visibles: recordatoriosVisibles, restantes, mostrarMas } = useListaPorTandas(recordatoriosFiltrados, `${filtro}|${busqueda}`)
 
   const urgenciaConfig = {
     alta: { color: "bg-red-500/10 text-red-600 border-red-500/20", dot: "bg-red-500", icon: AlertCircle, label: "Urgente" },
@@ -161,6 +165,9 @@ export default function RecordatoriosPage() {
           <PageHeader
             title="Recordatorios"
             subtitle="Alertas automáticas generadas desde tus pólizas"
+            searchValue={busqueda}
+            onSearchChange={setBusqueda}
+            searchPlaceholder="Buscar cliente, póliza o teléfono..."
             action={
               <NeoButton onClick={() => setIsFormOpen(true)} className="gap-2">
                 <Plus className="w-5 h-5" />

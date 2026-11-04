@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { PageHeader } from "@/components/page-header"
+import { coincideTerminos, normalizarBusqueda, terminosBusqueda } from "@/lib/busqueda"
 import { GlassCard } from "@/components/glass-card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -33,6 +34,7 @@ export default function CalendarioNotificacionesPage() {
   const { polizas, pagos, clientesPorId, companiasPorId, pagosPorPoliza } = useSupabase()
   const [filtroTipo, setFiltroTipo] = useState<TipoNotificacion | "todas">("todas")
   const [notificacionesLeidas, setNotificacionesLeidas] = useState<Set<string>>(new Set())
+  const [busqueda, setBusqueda] = useState("")
 
   // Generar notificaciones basadas en pólizas
   const generarNotificaciones = (): Notificacion[] => {
@@ -126,10 +128,12 @@ export default function CalendarioNotificacionesPage() {
   }
 
   const notificaciones = useMemo(generarNotificaciones, [polizas, clientesPorId, companiasPorId, pagosPorPoliza])
-  const notificacionesFiltradas = useMemo(() => filtroTipo === "todas"
-    ? notificaciones.filter(n => !notificacionesLeidas.has(n.id))
-    : notificaciones.filter(n => n.tipo === filtroTipo && !notificacionesLeidas.has(n.id)), [notificaciones, filtroTipo, notificacionesLeidas])
-  const { visibles: notificacionesVisibles, restantes, mostrarMas } = useListaPorTandas(notificacionesFiltradas, filtroTipo)
+  const notificacionesFiltradas = useMemo(() => {
+    const terminos = terminosBusqueda(busqueda)
+    return notificaciones.filter(n => !notificacionesLeidas.has(n.id) && (filtroTipo === "todas" || n.tipo === filtroTipo) &&
+      coincideTerminos(normalizarBusqueda(`${n.titulo} ${n.descripcion}`), terminos))
+  }, [notificaciones, filtroTipo, notificacionesLeidas, busqueda])
+  const { visibles: notificacionesVisibles, restantes, mostrarMas } = useListaPorTandas(notificacionesFiltradas, `${filtroTipo}|${busqueda}`)
 
   const marcarComoLeida = (id: string) => {
     setNotificacionesLeidas(prev => new Set([...prev, id]))
@@ -182,6 +186,9 @@ export default function CalendarioNotificacionesPage() {
           <PageHeader
             title="Calendario de Notificaciones"
             subtitle="Sistema de alertas V-A-M (Verde-Amarillo-Magenta)"
+            searchValue={busqueda}
+            onSearchChange={setBusqueda}
+            searchPlaceholder="Buscar póliza o cliente..."
           />
 
           {/* KPIs de Notificaciones */}

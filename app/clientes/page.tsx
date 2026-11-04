@@ -1,6 +1,7 @@
 "use client"
 
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
+import { Suspense, useDeferredValue, useEffect, useMemo, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { Sidebar } from "@/components/sidebar"
 import { PageHeader } from "@/components/page-header"
 import { GlassCard } from "@/components/glass-card"
@@ -35,7 +36,8 @@ const emptyForm = {
   codigoPostal: "", notas: "", estatus: "activo" as "activo" | "inactivo",
 }
 
-export default function ClientesPage() {
+function ClientesContent() {
+  const searchParams = useSearchParams()
   const { clientes, loadingClientes, agregarCliente, actualizarCliente, eliminarCliente, polizas } = useSupabase()
 
   const [busqueda, setBusqueda] = useState("")
@@ -53,17 +55,16 @@ export default function ClientesPage() {
 
   const set = (key: string, val: string) => setForm(prev => ({ ...prev, [key]: val }))
 
-  // Enlace directo desde la bitácora: /clientes?cliente=<id> abre su detalle una sola vez.
-  const enlaceAbierto = useRef<string | null>(null)
+  // Enlace directo (bitácora, búsqueda rápida, Coni): /clientes?cliente=<id> abre su detalle una sola vez.
+  const clienteDesdeEnlace = searchParams.get("cliente")
   useEffect(() => {
-    const clienteDesdeEnlace = new URLSearchParams(window.location.search).get("cliente")
-    if (!clienteDesdeEnlace || enlaceAbierto.current === clienteDesdeEnlace) return
+    if (!clienteDesdeEnlace) return
     const cliente = clientes.find(c => c.id === clienteDesdeEnlace)
     if (!cliente) return
-    enlaceAbierto.current = clienteDesdeEnlace
     setClienteSeleccionado(cliente)
     setModalDetalle(true)
-  }, [clientes])
+    window.history.replaceState(null, "", window.location.pathname)
+  }, [clientes, clienteDesdeEnlace])
 
   useEffect(() => {
     if (!modalDetalle || !clienteSeleccionado) return
@@ -616,5 +617,13 @@ export default function ClientesPage() {
         </main>
       </div>
     </ProtectedRoute>
+  )
+}
+
+export default function ClientesPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Cargando...</div>}>
+      <ClientesContent />
+    </Suspense>
   )
 }

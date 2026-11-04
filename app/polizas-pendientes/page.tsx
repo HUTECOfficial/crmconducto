@@ -529,7 +529,7 @@ function PolizasPendientesContent() {
             subtitle="Gestión y seguimiento de cobranza"
             searchValue={busqueda}
             onSearchChange={setBusqueda}
-            searchPlaceholder="Buscar póliza, cliente, teléfono, aseguradora... (⌘K)"
+            searchPlaceholder="Buscar póliza, cliente, teléfono, aseguradora..."
           />
 
           {coincidenciasOcultas > 0 && (

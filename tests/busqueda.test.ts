@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { coincideTerminos, terminosBusqueda, textoBuscablePoliza } from '../lib/busqueda'
+import { coincideTerminos, patronAproximado, terminosBusqueda, textoBuscablePoliza } from '../lib/busqueda'
 
 const texto = textoBuscablePoliza(
   { numeroPoliza: '92880W03', nombreAsegurado: 'Julio César Lozano', ramo: 'gmm', grupo: 'Dagón' },
@@ -22,4 +22,10 @@ test('encuentra teléfonos aunque se capturen sin espacios ni guiones', () => {
 test('búsqueda vacía coincide con todo', () => {
   assert.deepEqual(terminosBusqueda('   '), [])
   assert.ok(coincideTerminos(texto, []))
+})
+
+test('número de póliza dictado por voz: mismos caracteres en el mismo orden', () => {
+  assert.equal(patronAproximado('9669504'), '%9%6%6%9%5%0%4%')
+  assert.equal(patronAproximado('96695-u04'), '%9%6%6%9%5%U%0%4%')
+  assert.equal(patronAproximado('2964'), null) // muy corto: daría demasiadas coincidencias
 })
