@@ -76,6 +76,7 @@ export function AsistenteConi() {
   const [borrador, setBorrador] = useState("")
   const [respondiendo, setRespondiendo] = useState(false)
   const [estado, setEstado] = useState<string | null>(null)
+  const [cupo, setCupo] = useState<{ restantes: number; limite: number } | null>(null)
   const abortar = useRef<AbortController | null>(null)
   const final = useRef<HTMLDivElement>(null)
   const entrada = useRef<HTMLTextAreaElement>(null)
@@ -137,6 +138,7 @@ export function AsistenteConi() {
       })
       if (!respuesta.ok || !respuesta.body) {
         const datos = await respuesta.json().catch(() => ({}))
+        if (respuesta.status === 429) setCupo(actual => ({ restantes: 0, limite: actual?.limite ?? 40 }))
         agregar(datos.error || "No pude conectarme. Intenta de nuevo.")
         return
       }
@@ -152,7 +154,10 @@ export function AsistenteConi() {
         for (const linea of lineas) {
           if (!linea.trim()) continue
           const evento = JSON.parse(linea) as { tipo: string; texto?: string }
-          if (evento.tipo === "texto" && evento.texto) {
+          if (evento.tipo === "limite") {
+            const datos = evento as unknown as { restantes: number; limite: number }
+            setCupo({ restantes: datos.restantes, limite: datos.limite })
+          } else if (evento.tipo === "texto" && evento.texto) {
             setEstado(null)
             agregar(evento.texto)
           } else if (evento.tipo === "estado" && evento.texto) {
@@ -296,6 +301,13 @@ export function AsistenteConi() {
                 </button>
               )}
             </form>
+            {cupo && (
+              <p className={`px-4 pb-2 -mt-1 text-[11px] ${cupo.restantes <= 5 ? "text-orange-600" : "text-muted-foreground"}`}>
+                {cupo.restantes === 0
+                  ? "Ya usaste tus peticiones de hoy; se reinician a la medianoche."
+                  : `Te ${cupo.restantes === 1 ? "queda 1 petición" : `quedan ${cupo.restantes} peticiones`} de ${cupo.limite} hoy (web y Telegram).`}
+              </p>
+            )}
           </motion.section>
         )}
       </AnimatePresence>

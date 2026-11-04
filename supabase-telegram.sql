@@ -70,6 +70,38 @@ ALTER TABLE public.telegram_updates ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.telegram_vinculos, public.telegram_codigos, public.telegram_conversaciones,
   public.telegram_acciones, public.telegram_updates FROM anon, authenticated;
 
+-- =====================================================
+-- LÍMITE DIARIO DE CONI (web + Telegram juntos)
+-- Cada usuario tiene N peticiones por día (hora de Ciudad de México). El servidor llama a
+-- asistente_consumir() antes de cada pregunta: suma 1 en una sola operación y devuelve las
+-- usadas, o -1 si ya llegó al límite.
+-- =====================================================
+CREATE TABLE IF NOT EXISTS public.asistente_uso (
+  usuario_email TEXT NOT NULL,
+  fecha DATE NOT NULL,
+  peticiones INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (usuario_email, fecha)
+);
+ALTER TABLE public.asistente_uso ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.asistente_uso FROM anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.asistente_consumir(p_email TEXT, p_limite INTEGER)
+RETURNS INTEGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_fecha DATE := (NOW() AT TIME ZONE 'America/Mexico_City')::DATE;
+  v_usadas INTEGER;
+BEGIN
+  INSERT INTO asistente_uso (usuario_email, fecha, peticiones)
+  VALUES (lower(p_email), v_fecha, 1)
+  ON CONFLICT (usuario_email, fecha) DO UPDATE
+    SET peticiones = asistente_uso.peticiones + 1
+    WHERE asistente_uso.peticiones < p_limite
+  RETURNING peticiones INTO v_usadas;
+  RETURN COALESCE(v_usadas, -1);
+END;
+$$;
+REVOKE EXECUTE ON FUNCTION public.asistente_consumir(TEXT, INTEGER) FROM PUBLIC, anon, authenticated;
+
 -- Que la API de Supabase vea las tablas nuevas de inmediato.
 NOTIFY pgrst, 'reload schema';
 

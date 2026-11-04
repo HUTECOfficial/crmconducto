@@ -8,6 +8,7 @@ import { supabaseServidor } from "@/lib/supabase-servidor"
 import { editarMensaje, enviarMensaje, escaparHtml, escribiendo, markdownATelegram, responderBoton, urlApp } from "@/lib/telegram/api"
 import { resumenDiario } from "@/lib/telegram/resumen"
 import { DURACION_MAXIMA_SEGUNDOS, transcribirNotaDeVoz } from "@/lib/telegram/voz"
+import { MENSAJE_LIMITE, consumirPeticion } from "@/lib/asistente/limite"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -128,6 +129,20 @@ async function atenderMensaje(mensaje: any) {
     return
   }
 
+  // Stickers, ubicaciones, etc. no se procesan ni cuentan como petición.
+  const procesable = texto || mensaje.voice || mensaje.audio || mensaje.photo || mensaje.document?.mime_type?.startsWith("image/")
+  if (!procesable) {
+    await enviarMensaje(chatId, "Por ahora entiendo texto, notas de voz y fotos de comprobantes. 🙂")
+    return
+  }
+
+  // 40 peticiones por usuario al día (web + Telegram). Se cuenta antes de transcribir o llamar a la IA.
+  const consumo = await consumirPeticion(usuario.email)
+  if (!consumo.permitido) {
+    await enviarMensaje(chatId, escaparHtml(MENSAJE_LIMITE))
+    return
+  }
+
   // Nota de voz: se transcribe, se le muestra al usuario qué se entendió y se atiende como texto.
   let textoFinal = texto
   const audio = mensaje.voice ?? mensaje.audio
@@ -172,7 +187,10 @@ async function atenderMensaje(mensaje: any) {
     extra: herramientasDeAcciones({ chatId, email: usuario.email, nombre: usuario.nombre, fotoFileId: fotoVigente }, propuestas),
   })
 
-  if (respuesta.trim()) await enviarMensaje(chatId, markdownATelegram(respuesta.trim()))
+  const avisoLimite = consumo.restantes !== null && consumo.restantes <= 5
+    ? `\n\n<i>Te ${consumo.restantes === 1 ? "queda 1 petición" : `quedan ${consumo.restantes} peticiones`} hoy.</i>`
+    : ""
+  if (respuesta.trim()) await enviarMensaje(chatId, markdownATelegram(respuesta.trim()) + avisoLimite)
   for (const propuesta of propuestas) {
     await enviarMensaje(chatId, escaparHtml(propuesta.resumen), [[
       { texto: "✅ Confirmar", datos: `si:${propuesta.id}` },
