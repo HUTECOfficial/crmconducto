@@ -80,6 +80,8 @@ export const permisos = {
     autorizaciones: true,
     verTodo: true,
     bitacora: true,
+    // Sólo Mauricio (administrador) ve la bitácora de todos; los demás, sólo la suya.
+    bitacoraCompleta: true,
   },
   gerencia: {
     dashboard: true,
@@ -97,7 +99,8 @@ export const permisos = {
     usuarios: true,
     autorizaciones: false,
     verTodo: true,
-    bitacora: false,
+    bitacora: true,
+    bitacoraCompleta: false,
   },
   asesor: {
     dashboard: true,
@@ -115,7 +118,8 @@ export const permisos = {
     usuarios: false,
     autorizaciones: false,
     verTodo: false,
-    bitacora: false,
+    bitacora: true,
+    bitacoraCompleta: false,
   },
   administrativo: {
     dashboard: true,
@@ -133,6 +137,7 @@ export const permisos = {
     usuarios: false,
     autorizaciones: false,
     verTodo: true,
-    bitacora: false,
+    bitacora: true,
+    bitacoraCompleta: false,
   },
 }

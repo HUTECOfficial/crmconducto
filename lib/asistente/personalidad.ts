@@ -29,7 +29,7 @@ export const PROMPT_SISTEMA = `Eres Coni, la asistente de Conducto CRM, el siste
 - Calendario (/calendario), Notificaciones (/calendario-notificaciones), Pagos (/pagos), Tareas (/tareas), Recordatorios (/recordatorios).
 - Indicadores de cobranza (/indicadores-cobranza), Comisiones (/comisiones), Reportes (/reportes).
 - Tutoriales (/tutoriales): 10 videos cortos de cada módulo; recomiéndalos cuando alguien no sepa usar una pantalla.
-- Administración: Ajustes (/ajustes), Usuarios (/usuarios), Bitácora (/bitacora, sólo administrador).
+- Administración: Ajustes (/ajustes), Usuarios (/usuarios), Bitácora (/bitacora; el administrador ve la de todos, los demás sólo la suya).
 
 ## Reglas del negocio
 - Cada póliza genera recibos según su forma de pago (mensual, trimestral, semestral, anual). Cada recibo tiene inicio y fecha límite (inicio + días de gracia de la póliza).

@@ -44,7 +44,10 @@ const hora = (iso: string) =>
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export default function BitacoraPage() {
-  const { tienePermiso } = useAuth()
+  const { usuario, tienePermiso } = useAuth()
+  // Sólo el administrador ve lo de todos; cada quien ve únicamente su propia bitácora.
+  const verTodos = tienePermiso("bitacoraCompleta")
+  const emailPropio = usuario?.email.toLowerCase() ?? null
   const { usuariosSistema, companias, clientes, polizas } = useSupabase()
 
   const [fecha, setFecha] = useState(todayDateOnly())
@@ -63,13 +66,16 @@ export default function BitacoraPage() {
 
   const cargar = useCallback(async () => {
     const { desde, hasta } = rangoDelDia(fecha)
+    if (!verTodos && !emailPropio) return
     const todas: EntradaBitacora[] = []
     for (let inicio = 0; inicio < MAX_ENTRADAS; inicio += 1000) {
-      const { data, error: consultaError } = await supabase
+      let consulta = supabase
         .from("bitacora")
         .select("*")
         .gte("created_at", desde)
         .lte("created_at", hasta)
+      if (!verTodos) consulta = consulta.eq("usuario_email", emailPropio!)
+      const { data, error: consultaError } = await consulta
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
         .range(inicio, inicio + 999)
@@ -87,7 +93,7 @@ export default function BitacoraPage() {
     setEntradas(todas)
     setCargando(false)
     setActualizado(hora(new Date().toISOString()))
-  }, [fecha])
+  }, [fecha, verTodos, emailPropio])
 
   useEffect(() => {
     setCargando(true)
@@ -188,7 +194,7 @@ export default function BitacoraPage() {
           <Sidebar />
           <main className="main-content-aligned">
             <PageHeader title="Bitácora" subtitle="Sin acceso" showSearch={false} />
-            <GlassCard className="p-8 text-center text-muted-foreground">Sólo el administrador puede consultar la bitácora.</GlassCard>
+            <GlassCard className="p-8 text-center text-muted-foreground">No tienes acceso a la bitácora.</GlassCard>
           </main>
         </div>
       </ProtectedRoute>
@@ -310,7 +316,9 @@ export default function BitacoraPage() {
         <main className="main-content-aligned">
           <PageHeader
             title="Bitácora"
-            subtitle="Quién consultó, agregó, modificó o eliminó qué, y a qué hora"
+            subtitle={verTodos
+              ? "Quién consultó, agregó, modificó o eliminó qué, y a qué hora"
+              : "Lo que consultaste, agregaste, modificaste o eliminaste, y a qué hora"}
             showSearch={false}
             action={
               <Button variant="outline" className="gap-2" disabled={cargando} onClick={() => { setCargando(true); void cargar() }}>
@@ -321,7 +329,7 @@ export default function BitacoraPage() {
 
           {error && <GlassCard className="p-6 mb-6 text-center text-red-600">{error}</GlassCard>}
 
-          {usuariosDelDia.length > 0 && (
+          {verTodos && usuariosDelDia.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-6">
               {usuariosDelDia.map(([clave, resumen]) => {
                 const activo = filtroUsuario === clave
@@ -347,7 +355,7 @@ export default function BitacoraPage() {
                 <Label className="text-xs">Día</Label>
                 <Input type="date" value={fecha} max={todayDateOnly()} onChange={event => event.target.value && setFecha(event.target.value)} />
               </div>
-              <div className="space-y-1">
+              {verTodos && <div className="space-y-1">
                 <Label className="text-xs">Usuario</Label>
                 <Select value={filtroUsuario} onValueChange={setFiltroUsuario}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -356,7 +364,7 @@ export default function BitacoraPage() {
                     {usuariosDelDia.map(([clave, resumen]) => <SelectItem key={clave} value={clave}>{resumen.nombre}</SelectItem>)}
                   </SelectContent>
                 </Select>
-              </div>
+              </div>}
               <div className="space-y-1">
                 <Label className="text-xs">Acción</Label>
                 <Select value={filtroAccion} onValueChange={(value: typeof filtroAccion) => setFiltroAccion(value)}>
@@ -382,7 +390,7 @@ export default function BitacoraPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1 lg:col-span-2">
+              <div className={`space-y-1 ${verTodos ? "lg:col-span-2" : "lg:col-span-3"}`}>
                 <Label className="text-xs">Buscar</Label>
                 <Input value={busqueda} onChange={event => setBusqueda(event.target.value)} placeholder="Póliza, cliente, usuario o descripción" />
               </div>
