@@ -47,9 +47,13 @@ CREATE TABLE IF NOT EXISTS public.telegram_acciones (
   resultado TEXT,
   creado_en TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
   resuelto_en TIMESTAMP WITH TIME ZONE,
-  CONSTRAINT telegram_acciones_tipo_check CHECK (tipo IN ('comentario', 'recordatorio', 'pago')),
+  CONSTRAINT telegram_acciones_tipo_check CHECK (tipo IN ('comentario', 'evento', 'recordatorio', 'pago', 'prospecto', 'prospecto_cambio', 'poliza_cambio')),
   CONSTRAINT telegram_acciones_estado_check CHECK (estado IN ('pendiente', 'confirmada', 'cancelada', 'fallida', 'expirada'))
 );
+-- Tipos de tarea (se amplió el 2026-11-03: eventos, prospectos y cambios de póliza).
+ALTER TABLE public.telegram_acciones DROP CONSTRAINT IF EXISTS telegram_acciones_tipo_check;
+ALTER TABLE public.telegram_acciones ADD CONSTRAINT telegram_acciones_tipo_check
+  CHECK (tipo IN ('comentario', 'evento', 'recordatorio', 'pago', 'prospecto', 'prospecto_cambio', 'poliza_cambio'));
 CREATE INDEX IF NOT EXISTS idx_telegram_acciones_chat ON public.telegram_acciones(telegram_chat_id, creado_en DESC);
 
 -- Telegram reintenta un mensaje si no recibe respuesta: así cada uno se procesa una vez.
@@ -65,6 +69,9 @@ ALTER TABLE public.telegram_acciones ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.telegram_updates ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.telegram_vinculos, public.telegram_codigos, public.telegram_conversaciones,
   public.telegram_acciones, public.telegram_updates FROM anon, authenticated;
+
+-- Que la API de Supabase vea las tablas nuevas de inmediato.
+NOTIFY pgrst, 'reload schema';
 
 -- Comprobación
 SELECT tablename, rowsecurity FROM pg_tables WHERE tablename LIKE 'telegram_%' ORDER BY 1;

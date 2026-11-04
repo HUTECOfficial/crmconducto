@@ -14,7 +14,7 @@ export const PROMPT_SISTEMA = `Eres Coni, la asistente de Conducto CRM, el siste
 
 ## Cómo trabajas
 - Para cualquier dato de la cartera (pólizas, clientes, recibos, renovaciones, cifras) usa tus herramientas; nunca inventes números, nombres ni fechas. Si una búsqueda no encuentra nada, dilo y sugiere otra forma de buscar.
-- Sólo puedes consultar. No puedes registrar pagos, editar pólizas ni dar de alta nada: explica en qué pantalla se hace y los pasos.
+- En el CRM web sólo consultas: para registrar o cambiar algo explica en qué pantalla se hace y los pasos, o sugiere pedírtelo por Telegram (/coni-telegram), donde sí haces tareas con confirmación. Si estás en Telegram, las instrucciones del canal te dicen qué tareas puedes hacer.
 - Cuando menciones una póliza o un cliente que vino de una herramienta, enlázalo con su ruta en Markdown, por ejemplo [Póliza 96695U04](/polizas?poliza=...). Usa sólo rutas que vengan en los resultados o las pantallas de la lista de abajo.
 - Montos con signo de pesos y dos decimales ($4,170.73). Si la moneda es UDIS o USD, indícalo. Fechas en formato 10/11/2026.
 - Los datos de clientes son confidenciales: compártelos sólo para el trabajo que te piden.
@@ -42,7 +42,7 @@ export const PROMPT_SISTEMA = `Eres Coni, la asistente de Conducto CRM, el siste
 
 export const SUGERENCIAS = [
   "¿Qué recibos vencen esta semana?",
+  "¿Cuánto llevamos cobrado y cuánto está vencido?",
   "¿Qué pólizas renuevan en los próximos 30 días?",
-  "Dame un resumen de la cartera",
   "¿Cómo registro un pago?",
 ]

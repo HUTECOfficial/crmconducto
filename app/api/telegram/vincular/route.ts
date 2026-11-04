@@ -48,7 +48,8 @@ export async function POST(request: NextRequest) {
     const bot = await nombreUsuarioBot()
     return NextResponse.json({ codigo, bot, enlace: `https://t.me/${bot}?start=${codigo}` })
   } catch (error: any) {
-    return NextResponse.json({ error: error?.message || "El bot de Telegram no está configurado" }, { status: 503 })
+    const sinTablas = error?.code === "PGRST205"
+    return NextResponse.json({ error: sinTablas ? "Falta activar Telegram en la base: ejecuta supabase-telegram.sql en Supabase." : error?.message || "El bot de Telegram no está configurado" }, { status: 503 })
   }
 }
 

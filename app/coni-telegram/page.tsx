@@ -21,10 +21,12 @@ interface Vinculo {
 }
 
 const EJEMPLOS = [
-  ["Consultar", "¿Qué recibos vencen esta semana?"],
+  ["Consultar saldos", "¿Cuánto llevamos cobrado de AXA y cuánto está vencido?"],
+  ["Registrar pago", "📷 Foto del comprobante + \"pago de la 96695U04 por transferencia\""],
+  ["Actualizar póliza", "Cambia el vendedor de la 2964 a Maggie"],
+  ["Prospectos", "Nuevo prospecto Juan Pérez 5512345678, quiere GMM, referido"],
+  ["Agenda", "Agenda cita con Lozano el jueves a las 11"],
   ["Comentar", "Anota en la 2964 que el cliente paga el viernes"],
-  ["Recordatorio", "Recuérdame llamar a Lozano mañana a las 10"],
-  ["Pago", "📷 Foto del comprobante + \"pago de la 96695U04 por transferencia\""],
 ]
 
 export default function ConiTelegramPage() {

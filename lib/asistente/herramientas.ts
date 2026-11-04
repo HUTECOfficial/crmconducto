@@ -45,6 +45,19 @@ const esquemas = {
   }),
   renovaciones_proximas: z.object({ dias: z.number().int().min(1).max(180).optional() }),
   resumen_cartera: z.object({}),
+  estado_de_cobranza: z.object({
+    aseguradora: z.string().optional(),
+    ramo: z.string().optional(),
+    cliente: z.string().optional(),
+    numero_poliza: z.string().optional(),
+    desde: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    hasta: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    listar_vencidos: z.boolean().optional(),
+  }),
+  buscar_prospectos: z.object({
+    busqueda: z.string().optional(),
+    estatus: z.enum(["nuevo", "contactado", "en-seguimiento", "convertido", "perdido", "aprobado", "rechazado"]).optional(),
+  }),
 }
 
 export type NombreHerramienta = keyof typeof esquemas
@@ -103,6 +116,37 @@ export const HERRAMIENTAS: Anthropic.Tool[] = [
     input_schema: {
       type: "object",
       properties: { dias: { type: "integer", description: "Días hacia adelante (por defecto 60, la regla del CRM)." } },
+      required: [],
+    },
+  },
+  {
+    name: "estado_de_cobranza",
+    description: "Saldos de cobranza por moneda: prima emitida (recibos vigentes), cobrada (pagos validados), por validar, pendiente por vencer y vencida, con número de recibos. Filtra por aseguradora, ramo, cliente o póliza. Con 'desde'/'hasta' además da lo cobrado en ese periodo (por fecha de pago) y lo que vence en ese periodo. Úsala para '¿cuánto hemos cobrado este mes?', '¿cuánto está vencido de AXA?', '¿cuánto debe Lozano?'.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        aseguradora: { type: "string", description: "Nombre o parte, p. ej. 'AXA'." },
+        ramo: { type: "string", enum: ["autos", "flotilla", "vida", "gastos-medicos", "accidentes-personales", "danos", "empresa", "hogar"] },
+        cliente: { type: "string", description: "Nombre o parte del nombre del cliente." },
+        numero_poliza: { type: "string" },
+        desde: { type: "string", description: "AAAA-MM-DD, inicio del periodo." },
+        hasta: { type: "string", description: "AAAA-MM-DD, fin del periodo." },
+        listar_vencidos: { type: "boolean", description: "true para incluir los 15 recibos vencidos más antiguos." },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "buscar_prospectos",
+    description: "Busca prospectos por nombre, teléfono, correo o empresa, o lista los de un estatus. Devuelve hasta 15 con su interés, origen, prioridad, estatus, responsable y notas.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        busqueda: { type: "string" },
+        estatus: { type: "string", enum: ["nuevo", "contactado", "en-seguimiento", "convertido", "perdido", "aprobado", "rechazado"] },
+      },
       required: [],
     },
   },
@@ -248,6 +292,76 @@ async function resumenCartera() {
   }
 }
 
+async function estadoDeCobranza(f: z.infer<typeof esquemas.estado_de_cobranza>) {
+  const hoy = todayDateOnly()
+  let consulta: any = supabase.from("pagos")
+    .select("monto, moneda, estatus, fecha_limite, fecha_pago, numero_recibo, total_recibos, polizas!inner(id, numero_poliza, ramo, estatus, clientes!inner(nombre), companias!inner(nombre))")
+    .neq("estatus", "cancelado")
+  if (f.aseguradora) consulta = consulta.ilike("polizas.companias.nombre", `%${texto(f.aseguradora)}%`)
+  if (f.ramo) consulta = consulta.eq("polizas.ramo", f.ramo)
+  if (f.cliente) consulta = consulta.ilike("polizas.clientes.nombre", `%${texto(f.cliente)}%`)
+  if (f.numero_poliza) consulta = consulta.ilike("polizas.numero_poliza", texto(f.numero_poliza))
+  const filas: any[] = []
+  for (let desde = 0; desde < 20000; desde += 1000) {
+    const { data, error } = await consulta.order("fecha_limite").range(desde, desde + 999)
+    if (error) throw error
+    filas.push(...data)
+    if (data.length < 1000) break
+  }
+  const vacio = () => ({ importe: 0, recibos: 0 })
+  const totales: Record<string, Record<string, { importe: number; recibos: number }>> = {}
+  const sumar = (moneda: string, clave: string, monto: number) => {
+    totales[moneda] ??= { emitido: vacio(), cobrado: vacio(), por_validar: vacio(), pendiente_por_vencer: vacio(), vencido: vacio(), cobrado_en_periodo: vacio(), vence_en_periodo: vacio() }
+    totales[moneda][clave].importe = Math.round((totales[moneda][clave].importe + monto) * 100) / 100
+    totales[moneda][clave].recibos++
+  }
+  const enPeriodo = (fecha?: string | null) => !!fecha && (!f.desde || fecha >= f.desde) && (!f.hasta || fecha <= f.hasta)
+  const vencidos: any[] = []
+  for (const r of filas) {
+    const moneda = r.moneda || "MXN"
+    const monto = Number(r.monto)
+    sumar(moneda, "emitido", monto)
+    if (r.estatus === "pagado") sumar(moneda, "cobrado", monto)
+    else if (r.estatus === "por_validar") sumar(moneda, "por_validar", monto)
+    else if (r.fecha_limite < hoy) { sumar(moneda, "vencido", monto); vencidos.push(r) }
+    else sumar(moneda, "pendiente_por_vencer", monto)
+    if (f.desde || f.hasta) {
+      if (r.estatus === "pagado" && enPeriodo(r.fecha_pago)) sumar(moneda, "cobrado_en_periodo", monto)
+      if (enPeriodo(r.fecha_limite)) sumar(moneda, "vence_en_periodo", monto)
+    }
+  }
+  return {
+    filtros: f,
+    nota: "Vencido = recibos sin pagar cuya fecha límite ya pasó (incluye pólizas canceladas por falta de pago si sus recibos no se cancelaron). Cobrado = pagos validados. cobrado_en_periodo sólo cuenta pagos con fecha de pago capturada: muchos recibos importados del Excel no la tienen, así que puede quedarse corto; dilo si lo reportas.",
+    totales_por_moneda: totales,
+    ...(f.listar_vencidos ? {
+      vencidos_mas_antiguos: vencidos.slice(0, 15).map(r => ({
+        poliza: r.polizas.numero_poliza, cliente: r.polizas.clientes?.nombre, aseguradora: r.polizas.companias?.nombre,
+        recibo: `${r.numero_recibo}/${r.total_recibos}`, importe: Number(r.monto), moneda: r.moneda, fecha_limite: r.fecha_limite,
+        ruta: `/polizas?poliza=${r.polizas.id}`,
+      })),
+    } : {}),
+  }
+}
+
+async function buscarProspectos({ busqueda, estatus }: z.infer<typeof esquemas.buscar_prospectos>) {
+  let consulta = supabase.from("prospectos")
+    .select("id, nombre, telefono, email, empresa, origen, interes, prioridad, estatus, fecha_contacto, asignado_a, notas")
+    .order("fecha_contacto", { ascending: false }).limit(15)
+  if (busqueda) {
+    const t = texto(busqueda)
+    consulta = consulta.or([`nombre.ilike.%${t}%`, `telefono.ilike.%${t}%`, `email.ilike.%${t}%`, `empresa.ilike.%${t}%`].join(","))
+  }
+  if (estatus) consulta = consulta.eq("estatus", estatus)
+  const { data, error } = await consulta
+  if (error) throw error
+  return {
+    encontrados: data.length,
+    prospectos: data.map(p => ({ ...p, interes: etiquetaRamo(p.interes), notas: p.notas?.slice(-300) ?? null })),
+    pantalla: "/prospeccion",
+  }
+}
+
 /** Ejecuta una herramienta validando antes su entrada (puede llegar truncada por el streaming). */
 export async function ejecutarHerramienta(nombre: string, entrada: unknown): Promise<{ contenido: string; error: boolean }> {
   if (!(nombre in esquemas)) return { contenido: `Herramienta desconocida: ${nombre}`, error: true }
@@ -260,6 +374,8 @@ export async function ejecutarHerramienta(nombre: string, entrada: unknown): Pro
       : nombre === "buscar_clientes" ? await buscarClientes(datos)
       : nombre === "recibos_por_cobrar" ? await recibosPorCobrar(datos)
       : nombre === "renovaciones_proximas" ? await renovacionesProximas(datos)
+      : nombre === "estado_de_cobranza" ? await estadoDeCobranza(datos)
+      : nombre === "buscar_prospectos" ? await buscarProspectos(datos)
       : await resumenCartera()
     return { contenido: JSON.stringify(resultado), error: false }
   } catch (error: any) {
@@ -275,4 +391,6 @@ export const ESTADO_HERRAMIENTA: Record<NombreHerramienta, string> = {
   recibos_por_cobrar: "Revisando la cobranza…",
   renovaciones_proximas: "Revisando renovaciones…",
   resumen_cartera: "Contando la cartera…",
+  estado_de_cobranza: "Sumando saldos…",
+  buscar_prospectos: "Buscando prospectos…",
 }

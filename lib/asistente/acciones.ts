@@ -11,12 +11,22 @@ import type { HerramientasExtra } from "@/lib/asistente/agente"
 /**
  * Tareas que Coni puede hacer desde Telegram. Coni sólo PROPONE (valida y arma un resumen);
  * la tarea se ejecuta hasta que el usuario toca ✅ Confirmar. Las reglas son las mismas de las
- * pantallas del CRM (Pólizas pendientes, Calendario).
+ * pantallas del CRM (Pólizas pendientes, Calendario, Prospección, Editar póliza).
+ *
+ * Cambios de prima, forma de pago, vigencias o días de gracia NO se hacen aquí: recalculan los
+ * recibos y esa lógica vive en "Editar póliza" del CRM.
  */
 const VIGENCIA_PROPUESTA_MS = 30 * 60_000
 const BUCKET_COMPROBANTES = "documentos-clientes"
 const METODOS_PAGO = ["efectivo", "transferencia", "tarjeta", "domiciliacion", "cheque"] as const
 const FECHA = /^\d{4}-\d{2}-\d{2}$/
+const TIPOS_EVENTO = ["cita", "recordatorio", "pago", "renovacion", "otro"] as const
+const RAMOS_PROSPECTO = ["autos", "vida", "gastos-medicos", "empresa", "hogar", "flotilla"] as const
+const ORIGENES = ["directo", "referido", "redes-sociales", "telefono", "web"] as const
+const ESTATUS_PROSPECTO = ["nuevo", "contactado", "en-seguimiento", "convertido", "perdido", "aprobado", "rechazado"] as const
+const ESTATUS_POLIZA = ["activa", "vigente", "en-movimientos", "por-renovar", "renovada", "gracia", "vencida", "cancelada", "cancelada-cliente", "cancelada-falta-pago", "espera-formato", "rechazo-bancario", "rehabilitada"] as const
+const ESTATUS_CANCELADA = ["cancelada", "cancelada-cliente", "cancelada-falta-pago"]
+const PRIORIDADES = ["alta", "media", "baja"] as const
 
 export interface Solicitante {
   chatId: number
@@ -30,13 +40,43 @@ export interface Propuesta { id: string; resumen: string }
 
 const esquemas = {
   proponer_comentario: z.object({ numero_poliza: z.string().min(1), comentario: z.string().min(1).max(1000) }),
-  proponer_recordatorio: z.object({
+  proponer_evento: z.object({
     titulo: z.string().min(1).max(200),
     fecha: z.string().regex(FECHA),
+    tipo: z.enum(TIPOS_EVENTO).optional(),
     hora: z.string().regex(/^\d{2}:\d{2}$/).optional(),
     descripcion: z.string().max(1000).optional(),
     numero_poliza: z.string().optional(),
-    prioridad: z.enum(["alta", "media", "baja"]).optional(),
+    prioridad: z.enum(PRIORIDADES).optional(),
+  }),
+  proponer_prospecto: z.object({
+    nombre: z.string().min(2).max(200),
+    telefono: z.string().min(7).max(40),
+    interes: z.enum(RAMOS_PROSPECTO),
+    origen: z.enum(ORIGENES),
+    email: z.string().email().optional(),
+    empresa: z.string().max(200).optional(),
+    prioridad: z.enum(PRIORIDADES).optional(),
+    asignado_a: z.string().max(100).optional(),
+    notas: z.string().max(2000).optional(),
+  }),
+  proponer_actualizar_prospecto: z.object({
+    prospecto: z.string().min(2),
+    estatus: z.enum(ESTATUS_PROSPECTO).optional(),
+    prioridad: z.enum(PRIORIDADES).optional(),
+    asignado_a: z.string().max(100).optional(),
+    nota: z.string().max(1000).optional(),
+  }),
+  proponer_actualizar_poliza: z.object({
+    numero_poliza: z.string().min(1),
+    estatus: z.enum(ESTATUS_POLIZA).optional(),
+    motivo: z.string().max(500).optional(),
+    vendedor: z.string().max(100).optional(),
+    grupo: z.string().max(100).optional(),
+    porcentaje_comision: z.number().min(0).max(100).optional(),
+    tipo_pago: z.enum(METODOS_PAGO).optional(),
+    agente: z.string().max(100).optional(),
+    nombre_asegurado: z.string().max(200).optional(),
   }),
   proponer_registro_pago: z.object({
     numero_poliza: z.string().min(1),
@@ -62,20 +102,77 @@ export const DEFINICIONES_ACCIONES: Anthropic.Tool[] = [
     },
   },
   {
-    name: "proponer_recordatorio",
-    description: "Prepara un recordatorio en el Calendario del CRM (llamadas, citas, seguimientos). No lo guarda: el usuario lo confirma con un botón. Convierte fechas relativas ('el jueves', 'mañana') a AAAA-MM-DD usando la fecha de hoy.",
+    name: "proponer_evento",
+    description: "Prepara un evento en el Calendario del CRM: cita, recordatorio, pago, renovación u otro. No lo guarda: el usuario lo confirma con un botón. Convierte fechas relativas ('el jueves', 'mañana') a AAAA-MM-DD con la fecha de hoy.",
     eager_input_streaming: true,
     input_schema: {
       type: "object",
       properties: {
         titulo: { type: "string", description: "Qué hay que hacer, p. ej. 'Llamar a Lozano por el recibo 6/12'." },
         fecha: { type: "string", description: "AAAA-MM-DD" },
+        tipo: { type: "string", enum: [...TIPOS_EVENTO], description: "Por defecto recordatorio." },
         hora: { type: "string", description: "HH:MM en 24 horas (opcional)." },
         descripcion: { type: "string", description: "Detalle opcional." },
         numero_poliza: { type: "string", description: "Póliza relacionada (opcional)." },
-        prioridad: { type: "string", enum: ["alta", "media", "baja"] },
+        prioridad: { type: "string", enum: [...PRIORIDADES] },
       },
       required: ["titulo", "fecha"],
+    },
+  },
+  {
+    name: "proponer_prospecto",
+    description: "Prepara el alta de un prospecto en Prospección (estatus 'nuevo', fecha de contacto hoy). No lo guarda: el usuario lo confirma con un botón. Si faltan nombre, teléfono, ramo de interés u origen, pregúntalos antes.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        nombre: { type: "string" },
+        telefono: { type: "string" },
+        interes: { type: "string", enum: [...RAMOS_PROSPECTO], description: "Ramo que le interesa." },
+        origen: { type: "string", enum: [...ORIGENES], description: "Cómo llegó." },
+        email: { type: "string" },
+        empresa: { type: "string" },
+        prioridad: { type: "string", enum: [...PRIORIDADES] },
+        asignado_a: { type: "string", description: "Responsable (nombre de un usuario del CRM). Por defecto, quien lo pide." },
+        notas: { type: "string" },
+      },
+      required: ["nombre", "telefono", "interes", "origen"],
+    },
+  },
+  {
+    name: "proponer_actualizar_prospecto",
+    description: "Prepara cambios a un prospecto: estatus (nuevo, contactado, en-seguimiento, convertido, perdido, aprobado, rechazado), prioridad, responsable o una nota de seguimiento. No lo guarda: el usuario lo confirma con un botón.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        prospecto: { type: "string", description: "Nombre, teléfono o correo del prospecto." },
+        estatus: { type: "string", enum: [...ESTATUS_PROSPECTO] },
+        prioridad: { type: "string", enum: [...PRIORIDADES] },
+        asignado_a: { type: "string", description: "Nuevo responsable (nombre de un usuario del CRM)." },
+        nota: { type: "string", description: "Nota de seguimiento que se agrega a las notas." },
+      },
+      required: ["prospecto"],
+    },
+  },
+  {
+    name: "proponer_actualizar_poliza",
+    description: "Prepara cambios a una póliza: estatus, vendedor, grupo, % de comisión, tipo de pago, agente de cobranza o nombre del asegurado. Para marcarla vencida o cancelarla se requiere un motivo; cancelarla también cancela sus recibos pendientes. No sirve para prima, forma de pago, vigencias, primer recibo ni días de gracia (recalculan recibos): para eso indica usar 'Editar póliza' en el CRM. No lo guarda: el usuario lo confirma con un botón.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        numero_poliza: { type: "string" },
+        estatus: { type: "string", enum: [...ESTATUS_POLIZA] },
+        motivo: { type: "string", description: "Obligatorio al marcar vencida o cancelar." },
+        vendedor: { type: "string", description: "Nombre de un usuario del CRM." },
+        grupo: { type: "string" },
+        porcentaje_comision: { type: "number" },
+        tipo_pago: { type: "string", enum: [...METODOS_PAGO] },
+        agente: { type: "string" },
+        nombre_asegurado: { type: "string" },
+      },
+      required: ["numero_poliza"],
     },
   },
   {
@@ -108,7 +205,9 @@ async function buscarPoliza(db: SupabaseServidor, numero: string) {
   return data[0] as any
 }
 
-async function proponer(db: SupabaseServidor, solicitante: Solicitante, tipo: "comentario" | "recordatorio" | "pago", datos: object, resumen: string): Promise<Propuesta> {
+type TipoAccion = "comentario" | "evento" | "pago" | "prospecto" | "prospecto_cambio" | "poliza_cambio"
+
+async function proponer(db: SupabaseServidor, solicitante: Solicitante, tipo: TipoAccion, datos: object, resumen: string): Promise<Propuesta> {
   const { data, error } = await db.from("telegram_acciones")
     .insert([{ telegram_chat_id: solicitante.chatId, usuario_email: solicitante.email, tipo, datos, resumen }])
     .select("id").single()
@@ -121,7 +220,10 @@ export function herramientasDeAcciones(solicitante: Solicitante, propuestas: Pro
   const db = supabaseServidor(solicitante.email)
   return {
     definiciones: DEFINICIONES_ACCIONES,
-    estados: { proponer_comentario: "Preparando el comentario…", proponer_recordatorio: "Preparando el recordatorio…", proponer_registro_pago: "Preparando el registro del pago…" },
+    estados: {
+      proponer_comentario: "Preparando el comentario…", proponer_evento: "Preparando el evento…", proponer_registro_pago: "Preparando el registro del pago…",
+      proponer_prospecto: "Preparando el prospecto…", proponer_actualizar_prospecto: "Preparando los cambios…", proponer_actualizar_poliza: "Preparando los cambios a la póliza…",
+    },
     async ejecutar(nombre, entrada) {
       if (!(nombre in esquemas)) return null
       const validada = esquemas[nombre as keyof typeof esquemas].safeParse(entrada ?? {})
@@ -133,14 +235,71 @@ export function herramientasDeAcciones(solicitante: Solicitante, propuestas: Pro
           const poliza = await buscarPoliza(db, d.numero_poliza)
           propuesta = await proponer(db, solicitante, "comentario", { polizaId: poliza.id, comentario: d.comentario },
             `📝 Comentario en la póliza ${poliza.numero_poliza} (${poliza.clientes?.nombre ?? "sin cliente"}):\n"${d.comentario}"`)
-        } else if (nombre === "proponer_recordatorio") {
-          const d = validada.data as z.infer<typeof esquemas.proponer_recordatorio>
-          if (compareDateOnly(d.fecha, todayDateOnly()) < 0) throw new Error("La fecha del recordatorio ya pasó.")
+        } else if (nombre === "proponer_evento") {
+          const d = validada.data as z.infer<typeof esquemas.proponer_evento>
+          if (compareDateOnly(d.fecha, todayDateOnly()) < 0) throw new Error("La fecha del evento ya pasó.")
           const poliza = d.numero_poliza ? await buscarPoliza(db, d.numero_poliza) : null
-          propuesta = await proponer(db, solicitante, "recordatorio", {
-            titulo: d.titulo, fecha: d.fecha, hora: d.hora ?? null, descripcion: d.descripcion ?? null,
+          const tipo = d.tipo ?? "recordatorio"
+          propuesta = await proponer(db, solicitante, "evento", {
+            titulo: d.titulo, fecha: d.fecha, hora: d.hora ?? null, descripcion: d.descripcion ?? null, tipo,
             prioridad: d.prioridad ?? "media", polizaId: poliza?.id ?? null, clienteId: poliza?.cliente_id ?? null,
-          }, `⏰ Recordatorio: ${d.titulo}\n${formatDateOnly(d.fecha)}${d.hora ? ` a las ${d.hora}` : ""}${poliza ? ` · póliza ${poliza.numero_poliza}` : ""}`)
+          }, `📅 ${ETIQUETA_EVENTO[tipo]}: ${d.titulo}\n${formatDateOnly(d.fecha)}${d.hora ? ` a las ${d.hora}` : ""}${poliza ? ` · póliza ${poliza.numero_poliza}` : ""} · prioridad ${d.prioridad ?? "media"}`)
+        } else if (nombre === "proponer_prospecto") {
+          const d = validada.data as z.infer<typeof esquemas.proponer_prospecto>
+          const responsable = d.asignado_a ? await usuarioPorNombre(db, d.asignado_a) : { nombre: solicitante.nombre }
+          propuesta = await proponer(db, solicitante, "prospecto", { ...d, asignado_a: responsable.nombre }, [
+            `🆕 Nuevo prospecto: ${d.nombre}`,
+            `📞 ${d.telefono}${d.email ? ` · ${d.email}` : ""}${d.empresa ? ` · ${d.empresa}` : ""}`,
+            `Interés: ${d.interes} · origen: ${d.origen} · prioridad ${d.prioridad ?? "media"} · responsable ${responsable.nombre}`,
+            d.notas ? `Notas: ${d.notas}` : "",
+          ].filter(Boolean).join("\n"))
+        } else if (nombre === "proponer_actualizar_prospecto") {
+          const d = validada.data as z.infer<typeof esquemas.proponer_actualizar_prospecto>
+          const prospecto = await buscarProspecto(db, d.prospecto)
+          const responsable = d.asignado_a ? (await usuarioPorNombre(db, d.asignado_a)).nombre : undefined
+          const cambios: string[] = []
+          if (d.estatus && d.estatus !== prospecto.estatus) cambios.push(`Estatus: ${prospecto.estatus} → ${d.estatus}`)
+          if (d.prioridad && d.prioridad !== prospecto.prioridad) cambios.push(`Prioridad: ${prospecto.prioridad} → ${d.prioridad}`)
+          if (responsable && responsable !== prospecto.asignado_a) cambios.push(`Responsable: ${prospecto.asignado_a || "sin asignar"} → ${responsable}`)
+          if (d.nota) cambios.push(`Nota: "${d.nota}"`)
+          if (!cambios.length) throw new Error("No hay cambios: el prospecto ya tiene esos datos.")
+          propuesta = await proponer(db, solicitante, "prospecto_cambio", { prospectoId: prospecto.id, estatus: d.estatus, prioridad: d.prioridad, asignadoA: responsable, nota: d.nota },
+            `✏️ Prospecto ${prospecto.nombre}\n${cambios.join("\n")}`)
+        } else if (nombre === "proponer_actualizar_poliza") {
+          const d = validada.data as z.infer<typeof esquemas.proponer_actualizar_poliza>
+          const { data: poliza, error } = await db.from("polizas")
+            .select("id, numero_poliza, estatus, vendedor_id, grupo, porcentaje_comision, tipo_pago, agente, nombre_asegurado, clientes(nombre)")
+            .ilike("numero_poliza", d.numero_poliza.trim()).limit(2)
+          if (error) throw error
+          if (!poliza?.length) throw new Error(`No encontré la póliza ${d.numero_poliza}.`)
+          if (poliza.length > 1) throw new Error(`Hay más de una póliza que coincide con ${d.numero_poliza}; dime el número completo.`)
+          const p: any = poliza[0]
+          const cambios: Record<string, { antes: unknown; despues: unknown }> = {}
+          const anotar = (campo: string, antes: unknown, despues: unknown) => {
+            if (despues !== undefined && despues !== (antes ?? undefined)) cambios[campo] = { antes: antes ?? null, despues }
+          }
+          if (d.estatus && d.estatus !== p.estatus) {
+            if (ESTATUS_CANCELADA.includes(p.estatus)) throw new Error("La póliza está cancelada: reactivarla recalcula sus recibos, hazlo desde Editar póliza en el CRM.")
+            if ((d.estatus === "vencida" || ESTATUS_CANCELADA.includes(d.estatus)) && !d.motivo?.trim()) throw new Error("Para marcarla vencida o cancelarla necesito el motivo.")
+            anotar("estatus", p.estatus, d.estatus)
+          }
+          let vendedorNombre: string | undefined
+          if (d.vendedor) {
+            const vendedor = await usuarioPorNombre(db, d.vendedor)
+            vendedorNombre = vendedor.nombre
+            anotar("vendedor_id", p.vendedor_id, vendedor.id)
+          }
+          anotar("grupo", p.grupo, d.grupo)
+          anotar("porcentaje_comision", p.porcentaje_comision == null ? null : Number(p.porcentaje_comision), d.porcentaje_comision)
+          anotar("tipo_pago", p.tipo_pago, d.tipo_pago)
+          anotar("agente", p.agente, d.agente)
+          anotar("nombre_asegurado", p.nombre_asegurado, d.nombre_asegurado)
+          if (!Object.keys(cambios).length) throw new Error("No hay cambios: la póliza ya tiene esos datos.")
+          const etiquetas: Record<string, string> = { estatus: "Estatus", vendedor_id: "Vendedor", grupo: "Grupo", porcentaje_comision: "% comisión", tipo_pago: "Tipo de pago", agente: "Agente", nombre_asegurado: "Asegurado" }
+          const lineas = Object.entries(cambios).map(([campo, c]) => `${etiquetas[campo]}: ${campo === "vendedor_id" ? "(actual)" : c.antes ?? "—"} → ${campo === "vendedor_id" ? vendedorNombre : c.despues}`)
+          if (cambios.estatus && ESTATUS_CANCELADA.includes(String(cambios.estatus.despues))) lineas.push("⚠️ Se cancelarán sus recibos pendientes y vencidos.")
+          propuesta = await proponer(db, solicitante, "poliza_cambio", { polizaId: p.id, estatusAnterior: p.estatus, cambios, motivo: d.motivo?.trim() || null },
+            `✏️ Póliza ${p.numero_poliza} (${p.clientes?.nombre ?? "sin cliente"})\n${lineas.join("\n")}${d.motivo ? `\nMotivo: ${d.motivo}` : ""}`)
         } else {
           const d = validada.data as z.infer<typeof esquemas.proponer_registro_pago>
           if (!solicitante.fotoFileId) throw new Error("Falta la foto del comprobante: pide al usuario que la mande al chat.")
@@ -187,7 +346,10 @@ export async function ejecutarAccion(accionId: string, chatId: number): Promise<
   const { data: usuario } = await db.from("usuarios").select("id, nombre").ilike("email", accion.usuario_email).maybeSingle()
   try {
     const resultado = accion.tipo === "comentario" ? await guardarComentario(db, accion.datos, usuario)
-      : accion.tipo === "recordatorio" ? await guardarRecordatorio(db, accion.datos)
+      : accion.tipo === "evento" || accion.tipo === "recordatorio" ? await guardarEvento(db, accion.datos)
+      : accion.tipo === "prospecto" ? await guardarProspecto(db, accion.datos)
+      : accion.tipo === "prospecto_cambio" ? await actualizarProspecto(db, accion.datos, usuario)
+      : accion.tipo === "poliza_cambio" ? await actualizarPoliza(db, accion.datos, usuario)
       : await registrarPago(db, accion.datos, usuario)
     await admin.from("telegram_acciones").update({ resultado }).eq("id", accionId)
     return resultado
@@ -221,13 +383,95 @@ async function guardarComentario(db: SupabaseServidor, datos: any, usuario: any)
   return `✅ Comentario guardado en la póliza ${poliza.numero_poliza}.`
 }
 
-async function guardarRecordatorio(db: SupabaseServidor, datos: any) {
+const ETIQUETA_EVENTO: Record<string, string> = { cita: "Cita", recordatorio: "Recordatorio", pago: "Pago", renovacion: "Renovación", otro: "Evento" }
+
+async function usuarioPorNombre(db: SupabaseServidor, nombre: string) {
+  const { data, error } = await db.from("usuarios").select("id, nombre").eq("activo", true).ilike("nombre", `%${nombre.trim()}%`)
+  if (error) throw error
+  if (!data?.length) throw new Error(`No hay un usuario del CRM llamado ${nombre}.`)
+  if (data.length > 1) throw new Error(`Hay varios usuarios que coinciden con ${nombre}: ${data.map(u => u.nombre).join(", ")}.`)
+  return data[0]
+}
+
+async function buscarProspecto(db: SupabaseServidor, busqueda: string) {
+  const t = busqueda.trim().replace(/[%,()]/g, " ")
+  const { data, error } = await db.from("prospectos").select("id, nombre, estatus, prioridad, asignado_a, notas")
+    .or([`nombre.ilike.%${t}%`, `telefono.ilike.%${t}%`, `email.ilike.%${t}%`].join(",")).limit(3)
+  if (error) throw error
+  if (!data?.length) throw new Error(`No encontré un prospecto que coincida con ${busqueda}.`)
+  if (data.length > 1) throw new Error(`Hay varios prospectos que coinciden: ${data.map(p => p.nombre).join(", ")}. ¿Cuál?`)
+  return data[0] as any
+}
+
+async function guardarEvento(db: SupabaseServidor, datos: any) {
+  const tipo = datos.tipo ?? "recordatorio"
   const { error } = await db.from("eventos").insert([{
     titulo: datos.titulo, descripcion: datos.descripcion, fecha: datos.fecha, hora: datos.hora,
-    tipo: "recordatorio", prioridad: datos.prioridad, poliza_id: datos.polizaId, cliente_id: datos.clienteId, completado: false,
+    tipo, prioridad: datos.prioridad, poliza_id: datos.polizaId, cliente_id: datos.clienteId, completado: false,
   }])
   if (error) throw error
-  return `✅ Recordatorio creado para el ${formatDateOnly(datos.fecha)}${datos.hora ? ` a las ${datos.hora}` : ""}. Lo verás en el Calendario del CRM.`
+  return `✅ ${ETIQUETA_EVENTO[tipo] ?? "Evento"} creado para el ${formatDateOnly(datos.fecha)}${datos.hora ? ` a las ${datos.hora}` : ""}. Lo verás en el Calendario del CRM.`
+}
+
+async function guardarProspecto(db: SupabaseServidor, datos: any) {
+  const { error } = await db.from("prospectos").insert([{
+    nombre: datos.nombre, telefono: datos.telefono, email: datos.email ?? null, empresa: datos.empresa ?? null,
+    origen: datos.origen, interes: datos.interes, prioridad: datos.prioridad ?? "media", estatus: "nuevo",
+    fecha_contacto: todayDateOnly(), notas: datos.notas ?? null, asignado_a: datos.asignado_a ?? null,
+  }])
+  if (error) throw error
+  return `✅ Prospecto ${datos.nombre} dado de alta en Prospección.`
+}
+
+async function actualizarProspecto(db: SupabaseServidor, datos: any, usuario: any) {
+  const { data: actual, error } = await db.from("prospectos").select("nombre, notas").eq("id", datos.prospectoId).single()
+  if (error) throw error
+  const cambios: Record<string, unknown> = {}
+  if (datos.estatus) cambios.estatus = datos.estatus
+  if (datos.prioridad) cambios.prioridad = datos.prioridad
+  if (datos.asignadoA) cambios.asignado_a = datos.asignadoA
+  if (datos.nota) {
+    const linea = `[${new Date().toLocaleDateString("es-MX", { timeZone: "America/Mexico_City" })}] ${datos.nota}${usuario?.nombre ? ` — ${usuario.nombre}` : ""}`
+    cambios.notas = actual.notas ? `${actual.notas}\n${linea}` : linea
+  }
+  const { error: e2 } = await db.from("prospectos").update(cambios).eq("id", datos.prospectoId)
+  if (e2) throw e2
+  return `✅ Prospecto ${actual.nombre} actualizado.`
+}
+
+/** Cambios sin recálculo de recibos. Cancelar cancela los recibos por cobrar, como en el CRM. */
+async function actualizarPoliza(db: SupabaseServidor, datos: any, usuario: any) {
+  const cambios: Record<string, { antes: unknown; despues: unknown }> = datos.cambios
+  const actualizacion: Record<string, unknown> = Object.fromEntries(Object.entries(cambios).map(([campo, c]) => [campo, c.despues]))
+  const nuevoEstatus = cambios.estatus?.despues as string | undefined
+  const hoy = todayDateOnly()
+  const fecha = new Date().toLocaleDateString("es-MX", { timeZone: "America/Mexico_City" })
+  const { data: poliza, error } = await db.from("polizas").select("numero_poliza, comentarios").eq("id", datos.polizaId).single()
+  if (error) throw error
+  if (nuevoEstatus === "vencida" || (nuevoEstatus && ESTATUS_CANCELADA.includes(nuevoEstatus))) {
+    const linea = `[${fecha}] ${nuevoEstatus === "vencida" ? "VENCIDA" : "CANCELADA"}: ${datos.motivo}${usuario?.nombre ? ` — ${usuario.nombre}` : ""}`
+    actualizacion.comentarios = poliza.comentarios ? `${poliza.comentarios}\n${linea}` : linea
+    if (nuevoEstatus === "vencida") actualizacion.fecha_vencimiento_real = hoy
+  }
+  // Sólo si nadie cambió el estatus desde que se propuso.
+  const { data: actualizada, error: e2 } = await db.from("polizas").update(actualizacion).eq("id", datos.polizaId).eq("estatus", datos.estatusAnterior).select("id").maybeSingle()
+  if (e2) throw e2
+  if (!actualizada) throw new Error("la póliza cambió de estatus mientras tanto; pídemelo de nuevo")
+
+  let recibosCancelados = 0
+  if (nuevoEstatus && ESTATUS_CANCELADA.includes(nuevoEstatus)) {
+    const { data: cancelados, error: e3 } = await db.from("pagos").update({
+      estatus: "cancelado", cancelado_en: new Date().toISOString(), cancelado_por: usuario?.id ?? null, motivo_cancelacion: "poliza_cancelada",
+    }).eq("poliza_id", datos.polizaId).in("estatus", ["pendiente", "vencido"]).select("id")
+    if (e3) throw e3
+    recibosCancelados = cancelados?.length ?? 0
+    await sincronizarResumenCobranza(db, datos.polizaId)
+  }
+  const nombresApp: Record<string, string> = { estatus: "estatus", vendedor_id: "vendedorId", grupo: "grupo", porcentaje_comision: "porcentajeComision", tipo_pago: "tipoPago", agente: "agente", nombre_asegurado: "nombreAsegurado" }
+  for (const [campo, c] of Object.entries(cambios)) {
+    await historial(db, datos.polizaId, `${nombresApp[campo] ?? campo}_cambiado`, nombresApp[campo] ?? campo, c.antes, c.despues, usuario, datos.motivo ? { motivo: datos.motivo } : {})
+  }
+  return `✅ Póliza ${poliza.numero_poliza} actualizada.${recibosCancelados ? ` Se cancelaron ${recibosCancelados} recibo${recibosCancelados === 1 ? "" : "s"} por cobrar.` : ""}`
 }
 
 /** Mismo flujo que "Registrar pago" en Pólizas pendientes: el recibo queda por validar. */
