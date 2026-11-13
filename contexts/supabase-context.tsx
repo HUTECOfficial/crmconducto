@@ -229,6 +229,12 @@ async function seleccionarTodo(
   }
 }
 
+// Sin la función en Supabase el borrado no puede revisar movimientos; se avisa qué script falta.
+function mensajeErrorBorrado(err: any): string {
+  if (err?.code === 'PGRST202' || err?.code === '42883') return 'falta correr supabase-borrado-sin-movimientos.sql en Supabase'
+  return err?.message || 'error desconocido'
+}
+
 function mapearPoliza(p: any): Poliza {
   // Algunas pólizas históricas sólo tenían prima. Usarla como respaldo evita
   // que Cobranza las interprete erróneamente como pólizas de $0.
@@ -442,7 +448,7 @@ interface SupabaseContextType {
   loadingClientes: boolean
   agregarCliente: (cliente: Omit<Cliente, 'id'>) => Promise<string | null>
   actualizarCliente: (id: string, cliente: Partial<Cliente>) => Promise<void>
-  eliminarCliente: (id: string) => Promise<void>
+  eliminarCliente: (id: string) => Promise<boolean>
   
   // Compañías
   companias: Compania[]
@@ -461,7 +467,7 @@ interface SupabaseContextType {
   textoBusquedaPoliza: Map<string, string>
   agregarPoliza: (poliza: Omit<Poliza, 'id'>) => Promise<string | null>
   actualizarPoliza: (id: string, poliza: Partial<Poliza>) => Promise<void>
-  eliminarPoliza: (id: string) => Promise<void>
+  eliminarPoliza: (id: string) => Promise<boolean>
 
   usuariosSistema: UsuarioSistema[]
   pagos: PagoPoliza[]
@@ -668,12 +674,15 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
   const eliminarCliente = async (id: string) => {
     try {
-      const { error } = await supabase.from('clientes').delete().eq('id', id)
+      const polizaIds = polizas.filter(poliza => poliza.clienteId === id).map(poliza => poliza.id)
+      const { error } = await supabase.rpc('eliminar_cliente_sin_movimientos', { p_cliente: id })
       if (error) throw error
       toast.success('Cliente eliminado')
-      await fetchClientes()
+      await Promise.all([fetchClientes(), refrescarPolizas(polizaIds)])
+      return true
     } catch (err: any) {
-      toast.error('Error al eliminar cliente: ' + err.message)
+      toast.error('No se pudo eliminar el cliente: ' + mensajeErrorBorrado(err))
+      return false
     }
   }
 
@@ -1910,12 +1919,14 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
   const eliminarPoliza = async (id: string) => {
     try {
-      const { error } = await supabase.from('polizas').delete().eq('id', id)
+      const { error } = await supabase.rpc('eliminar_poliza_sin_movimientos', { p_poliza: id })
       if (error) throw error
       toast.success('Póliza eliminada')
       await refrescarPolizas([id])
+      return true
     } catch (err: any) {
-      toast.error('Error al eliminar póliza: ' + err.message)
+      toast.error('No se pudo eliminar la póliza: ' + mensajeErrorBorrado(err))
+      return false
     }
   }
 

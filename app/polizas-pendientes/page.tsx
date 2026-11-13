@@ -30,6 +30,7 @@ import { useUdiPorFecha } from "@/hooks/use-udi-por-fecha"
 import { EquivalenteUdi } from "@/components/equivalente-udi"
 import { etiquetaRamo } from "@/lib/ramos"
 import { ETIQUETA_RENOVACION, situacionRenovacion } from "@/lib/renovaciones"
+import { formatoIncisoEndoso } from "@/lib/inciso-endoso"
 
 type FiltroCobranza = "pendientes" | "por_validar" | "vencidas" | "pagadas" | "todas"
 type FiltroEstatus = "todas" | EstatusEnCobranza
@@ -699,7 +700,7 @@ function PolizasPendientesContent() {
                   <tr className="bg-zinc-900 text-white">
                     <th className="p-3 text-left font-bold border-r border-zinc-700">VENCE EN</th>
                     <th className="p-3 text-left font-bold border-r border-zinc-700">PÓLIZA</th>
-                    <th className="p-3 text-left font-bold border-r border-zinc-700">INCISO O ENDOSO</th>
+                    <th className="p-3 text-left font-bold border-r border-zinc-700">INCISO / ENDOSO</th>
                     <th className="p-3 text-left font-bold border-r border-zinc-700">COMPAÑÍA</th>
                     <th className="p-3 text-left font-bold border-r border-zinc-700">RAMO</th>
                     <th className="p-3 text-left font-bold border-r border-zinc-700">NOMBRE</th>
@@ -739,7 +740,7 @@ function PolizasPendientesContent() {
                           {poliza.numeroPoliza}
                         </td>
                         <td className={celda}>
-                          {poliza.incisoEndoso || "-"}
+                          {formatoIncisoEndoso(poliza.incisoEndoso) || "-"}
                         </td>
                         <td className={celda}>
                           <Badge
@@ -921,7 +922,7 @@ function PolizasPendientesContent() {
                       </div>
                       <div>
                         <p className="text-muted-foreground">Inciso/Endoso</p>
-                        <p className="font-medium">{poliza.incisoEndoso || "-"}</p>
+                        <p className="font-medium">{formatoIncisoEndoso(poliza.incisoEndoso) || "-"}</p>
                       </div>
                     </div>
 

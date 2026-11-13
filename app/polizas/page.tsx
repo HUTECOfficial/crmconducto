@@ -17,7 +17,7 @@ import { motion } from "framer-motion"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ProtectedRoute } from "@/components/protected-route"
 import { EventoRapidoButton } from "@/components/evento-rapido-button"
-import { Plus, FileText, UserPlus, User, Search, Edit2, X, RefreshCw, Trash2, MoreVertical, Loader2 } from "lucide-react"
+import { Plus, FileText, UserPlus, User, Search, Edit2, X, RefreshCw, Trash2, MoreVertical, Loader2, Ban } from "lucide-react"
 import { PdfUploadZone } from "@/components/pdf-upload-zone"
 import { VehiculoSelector } from "@/components/vehiculo-selector"
 import { FlotillaUnidades } from "@/components/flotilla-unidades"
@@ -34,6 +34,7 @@ import { useListaPorTandas } from "@/hooks/use-lista-por-tandas"
 import { CargarMas } from "@/components/cargar-mas"
 import { EquivalenteUdi } from "@/components/equivalente-udi"
 import { useUdiPorFecha } from "@/hooks/use-udi-por-fecha"
+import { separarIncisoEndoso, unirIncisoEndoso } from "@/lib/inciso-endoso"
 
 const ESTATUS_COLORS: Record<string, string> = {
   activa: "bg-green-500/10 text-green-500 border-green-500/20",
@@ -69,10 +70,12 @@ function PolizasContent() {
   const {
     polizas, clientes, companias, usuariosSistema, historialPolizas,
     clientesPorId, companiasPorId, pagosPorPoliza, textoBusquedaPoliza,
-    agregarPoliza, actualizarPoliza, agregarCliente,
+    agregarPoliza, actualizarPoliza, eliminarPoliza, agregarCliente,
     iniciarRenovacion, completarRenovacion, cancelarRenovacion, regenerarRecibosPoliza,
   } = useSupabase()
   const [recalculando, setRecalculando] = useState(false)
+  const [confirmarEliminarPoliza, setConfirmarEliminarPoliza] = useState(false)
+  const [eliminandoPoliza, setEliminandoPoliza] = useState(false)
 
   const [busqueda, setBusqueda] = useState("")
   const [filtroCompania, setFiltroCompania] = useState("todas")
@@ -116,7 +119,7 @@ function PolizasContent() {
 
   const [nuevaPoliza, setNuevaPoliza] = useState({
     clienteId: "", companiaId: "", ramo: "" as SPoliza["ramo"] | "",
-    numeroPoliza: "", incisoEndoso: "", nombreAsegurado: "",
+    numeroPoliza: "", inciso: "", endoso: "", nombreAsegurado: "",
     vigenciaInicio: "", vigenciaFin: "", vigenciaPagoFin: "", vigenciaProductoFin: "", prima: "", formaPago: "" as SPoliza["formaPago"] | "",
     tipoPago: "" as "efectivo" | "transferencia" | "tarjeta" | "domiciliacion" | "cheque" | "",
     vigenciaVidaPago: "", vigenciaVidaProducto: "", agente: "", vendedorId: "", ultimoDiaPago: "", numeroRecibo: "",
@@ -157,7 +160,7 @@ function PolizasContent() {
 
   // Estado edición
   const [editForm, setEditForm] = useState({
-    numeroPoliza: "",
+    numeroPoliza: "", inciso: "", endoso: "",
     estatus: "" as SPoliza["estatus"] | "",
     comentarios: "", notas: "", prima: "", primaTotal: "",
     formaPago: "" as SPoliza["formaPago"] | "",
@@ -360,7 +363,7 @@ function PolizasContent() {
     setPolizaIdRenovando(null)
     setRenovacionIdActiva(null)
     setNuevaPoliza({
-      clienteId: "", companiaId: "", ramo: "", numeroPoliza: "", incisoEndoso: "",
+      clienteId: "", companiaId: "", ramo: "", numeroPoliza: "", inciso: "", endoso: "",
       nombreAsegurado: "", vigenciaInicio: "", vigenciaFin: "", vigenciaPagoFin: "", vigenciaProductoFin: "", prima: "", formaPago: "",
       tipoPago: "", vigenciaVidaPago: "", vigenciaVidaProducto: "", agente: "", vendedorId: "", ultimoDiaPago: "", numeroRecibo: "",
       registroSistemaCobranza: false, comentarios: "", notas: "", marcaActualizacion: false,
@@ -452,7 +455,7 @@ function PolizasContent() {
         agente: nuevaPoliza.agente || undefined,
         vendedorId: nuevaPoliza.vendedorId || undefined,
         renovadaDesdeId: polizaIdRenovando || undefined,
-        incisoEndoso: nuevaPoliza.incisoEndoso || undefined,
+        incisoEndoso: unirIncisoEndoso(nuevaPoliza.inciso, nuevaPoliza.endoso) || undefined,
         nombreAsegurado: nuevaPoliza.nombreAsegurado || undefined,
         ultimoDiaPago: nuevaPoliza.ultimoDiaPago || undefined,
         numeroRecibo: nuevaPoliza.numeroRecibo || "1/1",
@@ -495,6 +498,7 @@ function PolizasContent() {
     setPolizaEditar(poliza)
     setEditForm({
       numeroPoliza: poliza.numeroPoliza,
+      ...separarIncisoEndoso(poliza.incisoEndoso),
       estatus: poliza.estatus,
       comentarios: poliza.comentarios || "",
       notas: poliza.notas || "",
@@ -523,7 +527,23 @@ function PolizasContent() {
       porcentajeComision: poliza.porcentajeComision?.toString() || "",
     })
     setPolizaSeleccionada(null)
+    setConfirmarEliminarPoliza(false)
     setModalEditarPoliza(true)
+  }
+
+  // La base revisa que no tenga pagos registrados ni renovaciones antes de borrar.
+  const borrarPoliza = async () => {
+    if (!polizaEditar) return
+    setEliminandoPoliza(true)
+    try {
+      if (await eliminarPoliza(polizaEditar.id)) {
+        setModalEditarPoliza(false)
+        setPolizaEditar(null)
+      }
+    } finally {
+      setEliminandoPoliza(false)
+      setConfirmarEliminarPoliza(false)
+    }
   }
 
   // Recalcula sólo los recibos pendientes con la configuración guardada; los pagados no cambian.
@@ -584,6 +604,7 @@ function PolizasContent() {
 
     await actualizarPoliza(polizaEditar.id, {
       numeroPoliza: numeroPoliza !== polizaEditar.numeroPoliza ? numeroPoliza : undefined,
+      incisoEndoso: unirIncisoEndoso(editForm.inciso, editForm.endoso),
       estatus: editForm.estatus as SPoliza["estatus"],
       ramo: editForm.ramo && editForm.ramo !== polizaEditar.ramo ? editForm.ramo : undefined,
       grupo: editForm.grupo,
@@ -654,7 +675,7 @@ function PolizasContent() {
       companiaId: polizaAccion.companiaId,
       ramo: polizaAccion.ramo,
       numeroPoliza: "",
-      incisoEndoso: polizaAccion.incisoEndoso || "",
+      ...separarIncisoEndoso(polizaAccion.incisoEndoso),
       nombreAsegurado: polizaAccion.nombreAsegurado || "",
       vigenciaInicio: polizaAccion.vigenciaFin,
       vigenciaFin: "",
@@ -926,7 +947,7 @@ function PolizasContent() {
                             ) : null}
                             <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-destructive hover:text-destructive"
                               onClick={e => { e.stopPropagation(); handleCancelar(poliza) }}>
-                              <Trash2 className="w-3 h-3 mr-1" /> Cancelar
+                              <Ban className="w-3 h-3 mr-1" /> Cancelar
                             </Button>
                             <Button size="sm" variant="ghost" className="h-7 w-7 p-0"
                               onClick={e => { e.stopPropagation(); abrirEdicion(poliza) }}>
@@ -1088,6 +1109,16 @@ function PolizasContent() {
                     onChange={e => setEditForm(f => ({ ...f, numeroPoliza: e.target.value }))}
                     className="h-8 font-mono"
                   />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs">Inciso</Label>
+                    <Input value={editForm.inciso} onChange={e => setEditForm(f => ({ ...f, inciso: e.target.value }))} className="h-8 font-mono" placeholder="Ej: 652" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Endoso</Label>
+                    <Input value={editForm.endoso} onChange={e => setEditForm(f => ({ ...f, endoso: e.target.value }))} className="h-8 font-mono" placeholder="Ej: AI749377" />
+                  </div>
                 </div>
                 <div>
                   <Label className="text-xs">Estatus</Label>
@@ -1296,10 +1327,31 @@ function PolizasContent() {
                   </div>
                 )}
               </div>
-              <div className="flex justify-end gap-2 mt-2">
-                <Button variant="outline" onClick={() => setModalEditarPoliza(false)}>Cancelar</Button>
-                <Button onClick={guardarEdicion}>Guardar Cambios</Button>
-              </div>
+              {confirmarEliminarPoliza ? (
+                <div className="mt-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 space-y-2">
+                  <p className="text-sm text-red-500">
+                    ¿Eliminar la póliza {polizaEditar?.numeroPoliza} permanentemente? Se borran también sus recibos pendientes. Sólo se permite si no tiene pagos registrados ni renovaciones; si los tiene, cancélala.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="destructive" className="flex-1" disabled={eliminandoPoliza} onClick={() => void borrarPoliza()}>
+                      {eliminandoPoliza && <Loader2 className="mr-1 h-3 w-3 animate-spin" />} Sí, eliminar
+                    </Button>
+                    <Button size="sm" variant="outline" className="flex-1" disabled={eliminandoPoliza} onClick={() => setConfirmarEliminarPoliza(false)}>
+                      Atrás
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap justify-between gap-2 mt-2">
+                  <Button variant="outline" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => setConfirmarEliminarPoliza(true)}>
+                    <Trash2 className="w-4 h-4 mr-2" /> Eliminar póliza
+                  </Button>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => setModalEditarPoliza(false)}>Cancelar</Button>
+                    <Button onClick={guardarEdicion}>Guardar Cambios</Button>
+                  </div>
+                </div>
+              )}
             </DialogContent>
           </Dialog>
 
@@ -1386,7 +1438,7 @@ function PolizasContent() {
                           vigenciaFin: data.vigenciaFin && !p.vigenciaFin ? data.vigenciaFin : p.vigenciaFin,
                           agente: data.agente && !p.agente ? data.agente : p.agente,
                           numeroRecibo: data.numeroRecibo && !p.numeroRecibo ? data.numeroRecibo : p.numeroRecibo,
-                          incisoEndoso: data.incisoEndoso && !p.incisoEndoso ? data.incisoEndoso : p.incisoEndoso,
+                          ...(data.incisoEndoso && !p.inciso && !p.endoso ? separarIncisoEndoso(data.incisoEndoso) : {}),
                           ultimoDiaPago: data.ultimoDiaPago && !p.ultimoDiaPago ? data.ultimoDiaPago : p.ultimoDiaPago,
                           formaPago: (data.formaPago as any) && !p.formaPago ? data.formaPago as any : p.formaPago,
                           tipoPago: (data.tipoPago as any) && !p.tipoPago ? data.tipoPago as any : p.tipoPago,
@@ -1462,17 +1514,24 @@ function PolizasContent() {
                   </div>
                 </div>
 
-                {/* # Póliza e Inciso */}
+                {/* # Póliza */}
+                <div className="space-y-2">
+                  <Label>Número de Póliza *</Label>
+                  <Input placeholder="Ej: VCI852350000" value={nuevaPoliza.numeroPoliza}
+                    onChange={e => setNuevaPoliza(p => ({ ...p, numeroPoliza: e.target.value }))} />
+                </div>
+
+                {/* Inciso y Endoso */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Número de Póliza *</Label>
-                    <Input placeholder="Ej: VCI852350000" value={nuevaPoliza.numeroPoliza}
-                      onChange={e => setNuevaPoliza(p => ({ ...p, numeroPoliza: e.target.value }))} />
+                    <Label>Inciso</Label>
+                    <Input placeholder="Ej: 652" value={nuevaPoliza.inciso}
+                      onChange={e => setNuevaPoliza(p => ({ ...p, inciso: e.target.value }))} />
                   </div>
                   <div className="space-y-2">
-                    <Label>Inciso o Endoso</Label>
-                    <Input placeholder="Ej: 652 | AI749377" value={nuevaPoliza.incisoEndoso}
-                      onChange={e => setNuevaPoliza(p => ({ ...p, incisoEndoso: e.target.value }))} />
+                    <Label>Endoso</Label>
+                    <Input placeholder="Ej: AI749377" value={nuevaPoliza.endoso}
+                      onChange={e => setNuevaPoliza(p => ({ ...p, endoso: e.target.value }))} />
                   </div>
                 </div>
 

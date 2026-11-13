@@ -177,9 +177,9 @@ function ClientesContent() {
   }
 
   const handleEliminar = async (id: string) => {
-    await eliminarCliente(id)
+    const eliminado = await eliminarCliente(id)
     setConfirmarBorrar(null)
-    setModalDetalle(false)
+    if (eliminado) setModalDetalle(false)
   }
 
   const polizasCliente = (clienteId: string) => polizasPorCliente.get(clienteId) || []
@@ -436,7 +436,7 @@ function ClientesContent() {
                   <Trash2 className="w-5 h-5" /> Eliminar cliente
                 </DialogTitle>
                 <DialogDescription>
-                  ¿Eliminar a <strong>{clienteSeleccionado?.nombre}</strong> permanentemente? Esta acción no se puede deshacer.
+                  ¿Eliminar a <strong>{clienteSeleccionado?.nombre}</strong> permanentemente? También se borran sus pólizas y recibos pendientes. Sólo se permite si ninguna póliza tiene pagos registrados ni renovaciones. Esta acción no se puede deshacer.
                 </DialogDescription>
               </DialogHeader>
               <div className="flex gap-3 pt-2">
@@ -581,7 +581,7 @@ function ClientesContent() {
 
                   {confirmarBorrar === clienteSeleccionado.id ? (
                     <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 space-y-2">
-                      <p className="text-sm text-red-500">¿Eliminar este cliente permanentemente?</p>
+                      <p className="text-sm text-red-500">¿Eliminar este cliente permanentemente? También se borran sus pólizas sin pagos registrados.</p>
                       <div className="flex gap-2">
                         <Button size="sm" variant="destructive" className="flex-1" onClick={() => handleEliminar(clienteSeleccionado.id)}>
                           Eliminar

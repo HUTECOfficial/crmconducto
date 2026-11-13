@@ -79,7 +79,7 @@ DATOS DE LA PÓLIZA:
 - vigenciaFin: Fecha de fin de vigencia en formato YYYY-MM-DD
 - agente: ID o nombre del agente
 - numeroRecibo: Número de recibo (ej: 1/12, 2/6, etc.)
-- incisoEndoso: Inciso o número de endoso si aparece
+- incisoEndoso: Inciso y número de endoso con formato "inciso | endoso" (ej. "652 | AI749377"); si sólo hay endoso usa "| endoso"
 - ultimoDiaPago: Fecha límite de pago en formato YYYY-MM-DD
 - diasGraciaPrimerRecibo: Días de gracia para el primer recibo (número)
 - diasGraciaSubsecuentes: Días de gracia para recibos subsecuentes (número)
